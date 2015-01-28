@@ -1,0 +1,1081 @@
+-- Wee Euphoria Editor
+-- 
+-- Copyright (c) 1998-2015  Pete Eberlein
+-- 
+-- Permission is hereby granted, free of charge, to any person obtaining a copy
+-- of this software and associated documentation files (the "Software"), to deal
+-- in the Software without restriction, including without limitation the rights
+-- to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+-- copies of the Software, and to permit persons to whom the Software is
+-- furnished to do so, subject to the following conditions:
+-- 
+-- The above copyright notice and this permission notice shall be included in
+-- all copies or substantial portions of the Software.
+-- 
+-- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+-- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+-- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+-- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+-- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+-- OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+-- THE SOFTWARE.
+
+global constant
+  window_title = "Wee Euphoria Editor",
+  author = "Pete Eberlein <pete.eberlein@gmail.com>",
+  version = "0.13"
+
+-- revision notes:
+--  added: syntax coloring! 
+--  bug fixed: save mode changed to "wb" (Thanks Lucius)
+--  added: replace all
+--  added: goto error
+--  fixed: hotkeys
+--  added: cursor position
+--  added: recent files list
+--  added: saving window pos+size and recent files to "wee_conf.txt"
+--  added: subroutines list dialog (F2)
+--  added: choose font dialog (we suggest "Consolas" 11pt)
+--  added: tabs (can be selected using Alt+1..9)
+--  added: watch tabs for changes to files and ex.err
+--  added: goto declaration (Ctrl+F2) and view completions (Ctrl+Space)
+--  added: Scintilla edit control (using Lua lexer :/)
+--  added: view completions will search std includes
+--  added: Search->Find will remember last phrase
+--  added: auto expansions for "if" "while" "for" and subroutines (thanks dcuny)
+--  added: auto indent newlines
+--  bugs fixed: 
+--    ViewDeclaration wrong cursor pos
+--    audible ding when pressing Alt+1..9
+--    ViewCompletions on whitespace crash
+--    parser updates cache for modified include files
+--    files are now opened in binary mode since scintilla can handle any line endings
+--    fixed tab names not updating when save-as
+--    fixed "too many open files" error, wasn't closing files in view_error function
+--    fixed parsing ifdefs
+--    fixed crash after changing font (thanks euphoric)
+--    reloading a file that is modified externally loads into wrong tab (thanks dcuny)
+
+-- todo:
+--  save tabs in conf file?
+--  indent/unindent selection with tab/shift-tab
+--  comment/uncomment selected lines
+--  choose which intepreter to use for run
+--  new ex.err dialog? <cancel> <open ex.err> <goto error>
+--    and listbox with call stack
+--  64-bit safe
+--  Linux/Mac (using EuGTK)
+--  shift-ctrl-Z should redo
+--  bug with reloading files, first few characters get garbled
+--  ':' autocomplete should look at style and avoid activating inside comments and strings
+--  expanding "for" should then tab between "=", "to", and "do"
+--  dialog to change syntax highlighting colors
+--  store syntax highlighting colors in wee.conf
+
+
+
+without warning
+
+include parser.e
+include scintilla.e
+include get.e
+
+
+-- The ui includes are recursively included: 
+--      wee.exw -> ui_win.e -> wee.exw
+-- The ui include is responsible for calling wee_init() and startup.
+ifdef WINDOWS then
+include ui_win.e
+elsedef
+include ui_gtk.e
+end ifdef
+
+-- all variables must be initialized in wee_init() due to recursive include
+constant indent_str = "    " -- TODO: make this user configurable
+global constant max_recent_files = 5
+global atom x_pos, y_pos, x_size, y_size
+global sequence font_name
+global integer font_height
+global sequence file_name, run_file_name
+global integer tab, expand_line
+
+-- local variables
+sequence
+	tab_hedits, tab_file_names, tab_timestamps, 
+	recent_files, recent_pos
+integer current_tab, modified
+atom hedit
+atom ex_err_timestamp
+
+
+global procedure wee_init()
+
+  recent_files = {}
+  recent_pos = {}
+
+  font_name = ""
+  font_height = 10
+
+  file_name = ""
+  hedit = 0
+  
+  run_file_name = ""
+  tab_hedits = {}
+  tab_file_names = {}
+  tab_timestamps = {}
+
+  modified = 0
+  ex_err_timestamp = -1
+  expand_line = -1
+
+end procedure
+
+
+
+global procedure load_wee_conf(sequence wee_conf_file)
+    integer f, eq
+    object l
+    sequence key, val
+    f = open(wee_conf_file, "r")
+    if f = -1 then return end if
+    l = gets(f)
+    while sequence(l) do
+        eq = find('=', l)
+        if eq then
+            key = l[1..eq-1]
+            val = l[eq+1..length(l)-1]
+            l = value(val)
+            if equal(key, "x_pos") then
+                x_pos = l[2]
+            elsif equal(key, "y_pos") then
+                y_pos = l[2]
+            elsif equal(key, "x_size") then
+                x_size = l[2]
+            elsif equal(key, "y_size") then
+                y_size = l[2]
+            elsif equal(key, "recent_file") then
+                recent_files &= {val}
+            elsif equal(key, "recent_pos") then
+                recent_pos &= l[2]
+            elsif equal(key, "font_name") then
+                font_name = val
+            elsif equal(key, "font_height") then
+                font_height = l[2]
+                if font_height < 0 then 
+                    font_height = -floor((font_height*96+36)/72)
+                end if
+            end if
+        end if
+        l = gets(f)
+    end while
+    close(f)
+    ui_refresh_file_menu(recent_files)
+end procedure
+
+global procedure save_wee_conf(sequence wee_conf_file)
+    integer f
+    f = open(wee_conf_file, "w")
+    printf(f, "x_pos=%d\ny_pos=%d\nx_size=%d\ny_size=%d\n", {x_pos, y_pos, x_size, y_size})
+    for i = 1 to length(recent_files) do
+        puts(f, "recent_file="&recent_files[i]&"\n")
+        printf(f, "recent_pos=%d\n", {recent_pos[i]})
+    end for
+    if length(font_name) and font_height != 0 then
+      printf(f, "font_name=%s\nfont_height=%d\n", {font_name, font_height})
+    end if
+    close(f)
+end procedure
+
+
+constant             -- colors of various syntax classes
+    Black = #000000,
+    Gray = #AAAAAA,
+    DGray = #808080,
+    Green = #00AA00,
+    Yellow = #88FFFF,
+    Magenta = #AA00AA,
+    Cyan = #AAAA00,
+    Red = #0000AA,
+    Blue = #AA0000,
+    LightBlue = #FFFFDD
+
+-- init edit, (or reinit all existing edits when hedit = 0)
+global procedure init_edit(atom hedit)
+    atom junk
+    --? {hedit, scintilla_send_message(hedit, SCI_GETIDENTIFIER, 0, 0)}
+
+    junk = scintilla_send_message(hedit, SCI_STYLESETFONT, STYLE_DEFAULT, font_name)
+    junk = scintilla_send_message(hedit, SCI_STYLESETSIZE, STYLE_DEFAULT, font_height)
+    junk = scintilla_send_message(hedit, SCI_STYLECLEARALL, 0, 0)
+
+    junk = scintilla_send_message(hedit, SCI_SETLEXER, SCLEX_LUA, 0)
+    junk = scintilla_send_message(hedit, SCI_SETKEYWORDS, 0, 
+     "procedure function type end and or xor not if then elsif else for to by do while "&
+     "global constant include with without return exit " &
+     -- OE4
+     "public export enum as namespace ifdef elsifdef elsedef "&
+     "label entry break continue loop until"
+     )
+    junk = scintilla_send_message(hedit, SCI_SETKEYWORDS, 1, 
+     "length puts integer sequence position object append prepend print printf "&
+     "floor getc gets get_key rand repeat atom compare find match time command_line "&
+     "open close trace getenv sqrt sin cos tan log system date remainder power "&
+     "machine_proc abort peek poke call sprintf arctan and_bits or_bits xor_bits "&
+     "not_bits mem_copy mem_set c_proc c_func routine_id call_proc call_func call_back "&
+     "poke4 peek4s peek4u equal")
+
+    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_COMMENT, DGray)
+    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, DGray)
+    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_NUMBER, Black)
+    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_WORD, Green)
+    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_WORD2, Magenta)
+    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_STRING, Blue)
+
+    junk = scintilla_send_message(hedit, SCI_STYLESETBACK, STYLE_BRACELIGHT, LightBlue)
+    junk = scintilla_send_message(hedit, SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1)
+end procedure
+
+global procedure reinit_all_edits()
+    for i = 1 to length(tab_hedits) do
+        init_edit(tab_hedits[i])
+    end for
+end procedure
+
+
+global function get_pos()
+    return scintilla_send_message(hedit, SCI_GETCURRENTPOS, 0, 0)
+end function
+
+global procedure set_top_line(integer line)
+    integer fv, los
+    if line = -1 then
+        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+        fv = scintilla_send_message(hedit, SCI_GETFIRSTVISIBLELINE, 0, 0)
+        los = scintilla_send_message(hedit, SCI_LINESONSCREEN, 0, 0)
+        if line >= fv and line < fv + los-1 then
+            return -- don't need to scroll
+        end if
+    end if
+    line = scintilla_send_message(hedit, SCI_SETFIRSTVISIBLELINE, line, 0)
+end procedure
+
+global function get_modified()
+    return scintilla_send_message(hedit, SCI_GETMODIFY, 0, 0)
+end function
+
+global function get_line_length(integer line)
+    if line = -1 then
+        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+    end if
+    return scintilla_send_message(hedit, SCI_LINELENGTH, line, 0)
+end function
+
+global function get_line_end_position(integer line)
+    if line = -1 then
+        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+    end if
+    return scintilla_send_message(hedit, SCI_GETLINEENDPOSITION, line, 0)
+end function
+
+global function get_line(integer line)
+    atom junk, len, buf
+    sequence text
+
+    if line = -1 then
+        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+    end if
+    len = get_line_length(line)
+    buf = allocate(len+1)
+    junk = scintilla_send_message(hedit, SCI_GETLINE, line, buf)
+    text = peek({buf, len})
+    free(buf)
+    return text
+end function
+
+global function get_edit_text()
+    atom junk, text_buffer, text_len
+    sequence text
+
+    text_len = scintilla_send_message(hedit, SCI_GETTEXTLENGTH, 0, 0)+1
+    text_buffer = allocate(text_len)
+    junk = scintilla_send_message(hedit, SCI_GETTEXT, text_len, text_buffer)
+    text = peek({text_buffer, text_len-1})
+    free(text_buffer)
+    return text
+end function
+
+global procedure update_status()
+    atom pos, line, col
+    pos = get_pos()
+    line = 1+scintilla_send_message(hedit, SCI_LINEFROMPOSITION, pos, 0)
+    col = 1+scintilla_send_message(hedit, SCI_GETCOLUMN, pos, 0)
+    ui_update_status(sprintf("%d:%d ", {line, col}))
+    if line-1 != expand_line then
+        expand_line = -1
+    end if
+end procedure
+
+
+global function make_tab_name()
+    sequence name
+
+    if length(file_name) = 0 then
+        name = "New File"
+    else
+        name = file_name
+        for i = length(name) to 1 by -1 do
+            if name[i] = '\\' or name[i] = '/' then
+                name = name[i+1..$]
+                exit
+            end if
+        end for
+    end if
+    if modified then name &= "*" end if
+    return name
+end function
+
+
+procedure update_tab_timestamp()
+    if length(file_name) then
+        tab_timestamps[current_tab] = get_timestamp(file_name)
+    else
+        tab_timestamps[current_tab] = -1
+    end if
+end procedure 
+
+
+global procedure select_tab(integer tab)
+    if tab < 1 or tab > length(tab_hedits) then
+        return
+    end if
+    current_tab = tab
+    file_name = tab_file_names[tab]
+    hedit = tab_hedits[tab]
+    modified = get_modified()
+
+    ui_select_tab(tab)
+    ui_update_window_title(file_name)
+    update_status()
+end procedure
+
+global procedure update_tab_name()
+    ui_update_window_title(file_name)
+    ui_update_tab_name(current_tab, make_tab_name())
+end procedure
+
+global procedure new_tab(sequence file_name)
+    integer tab
+
+    if equal(tab_file_names, {""}) and modified = 0 then
+        -- unmodified new file, just reuse it and update the tab name
+        tab = 1
+        tab_file_names[tab] = file_name
+        update_tab_name()
+    else
+        hedit = ui_new_tab(file_name)
+        init_edit(hedit)
+
+        tab_hedits = append(tab_hedits, hedit)
+        tab_file_names = append(tab_file_names, file_name)
+        tab_timestamps = append(tab_timestamps, -1)
+        tab = length(tab_hedits)
+    end if
+    select_tab(tab)
+end procedure
+
+-- returns tab index of opened file, or 0 if cancelled
+global function open_file(sequence open_file, integer reload)
+    atom result, text_buffer
+    integer fn, tab
+    object temp, s
+    sequence text
+
+    if length(open_file) = 0 then
+        open_file = ui_get_open_file_name()
+        if length(open_file) = 0 then return 0 end if
+    end if
+
+    -- check if already existing tab
+    tab = find(open_file, tab_file_names)
+    if tab and reload = 0 then
+      select_tab(tab)
+      return tab
+    end if
+
+    text = ""
+    fn = open(open_file, "rb")
+    if fn = -1 then
+      -- file couldn't be opened
+      if ui_message_box_yes_no("Open", "Unable to open "&open_file&"\n\n"&
+                     "Do you want to create it?") = 0 then
+	  return 0
+      end if
+    else
+      -- read the contents of the file into text
+      s = gets(fn)
+      while sequence(s) do
+	  text &= s
+	  s = gets(fn)
+      end while
+      close(fn)
+    end if
+
+    if reload = 0 then
+      new_tab(open_file)
+    end if
+    update_tab_timestamp()
+
+    result = scintilla_send_message(hedit, SCI_CLEARALL, 0, 0)
+    result = scintilla_send_message(hedit, SCI_SETTEXT, 0, text)
+    result = scintilla_send_message(hedit, SCI_SETSAVEPOINT, 0, 0)
+    modified = 0
+    if reload then
+      update_tab_name()
+    end if
+    
+    result = scintilla_send_message(hedit, SCI_SETSEL, 0, 0)
+    result = scintilla_send_message(hedit, SCI_EMPTYUNDOBUFFER, 0, 0)
+
+    add_recent_file(open_file)
+    return tab
+end function
+
+procedure save_file()
+    atom fn, junk
+
+    junk = scintilla_send_message(hedit, SCI_SETSAVEPOINT, 0, 0)
+    modified = 0
+
+    fn = open(file_name, "wb")
+    puts(fn, get_edit_text())
+    close(fn)
+
+    update_tab_name()
+    update_tab_timestamp()
+end procedure
+
+global function save_file_as()  -- returns 1 if ok, 0 if cancelled
+    object temp
+
+    temp = ui_get_save_file_name(file_name)
+    if length(temp) = 0 then return 0 end if
+
+    file_name = temp
+    tab_file_names[current_tab] = file_name
+    save_file()
+    update_tab_name()
+    return 1
+end function
+
+
+global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if cancelled
+    atom result, junk
+    sequence text
+    
+    if not get_modified() then 
+       return 1
+    end if
+
+    if confirm then
+	text = ""
+	if length(file_name) then
+	    text = " in " & file_name
+	end if
+	text = "The text"&text&" has changed.\n\nDo you want to save the changes?"
+	result = ui_message_box_yes_no_cancel(window_title, text)
+	if result != 1 then -- no or cancel
+	    return result + 1
+	end if
+    end if
+    if length(file_name) = 0 then
+        return save_file_as()
+    end if
+    save_file()
+    return 1
+end function
+
+global function save_modified_tabs()  --returns 1 if ok, 0 if cancelled
+    integer idx
+    atom saved_hedit
+    saved_hedit = hedit
+    for tab = 1 to length(tab_hedits) do
+        hedit = tab_hedits[tab]
+        idx = find(tab_file_names[tab], recent_files)
+        if idx then
+            recent_pos[idx] = get_pos()
+        end if
+        if get_modified() then
+            select_tab(tab)
+            if save_if_modified(1) = 0 then
+                return 0 -- cancelled
+            end if
+            saved_hedit = hedit
+        end if
+    end for
+    hedit = saved_hedit
+    return 1
+end function
+
+
+global procedure close_tab()
+    integer tab
+    tab = current_tab
+    save_recent_pos()
+    ui_close_tab()
+
+    tab_hedits = tab_hedits[1..tab-1] & tab_hedits[tab+1..$]
+    tab_file_names = tab_file_names[1..tab-1] & tab_file_names[tab+1..$]
+    tab_timestamps = tab_timestamps[1..tab-1] & tab_timestamps[tab+1..$]
+    if length(tab_hedits) = 0 then
+       new_file() -- must always have a edit available
+    elsif tab > length(tab_hedits) then
+       tab = length(tab_hedits)
+    end if
+    select_tab(tab)
+end procedure
+
+global procedure new_file()
+    atom junk
+
+    new_tab("")
+    junk = scintilla_send_message(hedit, SCI_SETTEXT, 0, "")
+    junk = scintilla_send_message(hedit, SCI_SETSAVEPOINT, 0, 0)
+end procedure
+
+
+global procedure check_externally_modified_tabs()
+    atom ts
+    for i = 1 to length(tab_file_names) do
+        if length(tab_file_names[i]) and tab_timestamps[i] != -1 then
+            ts = get_timestamp(tab_file_names[i])
+            if ts != tab_timestamps[i] then
+	          --? {ts, tab_timestamps[i]}
+                 -- clear the timestamp here so that don't repeat when the MessageBox retriggers WM_SETFOCUS
+		tab_timestamps[i] = -1
+                if ui_message_box_yes_no(window_title, tab_file_names[i] & 
+                                         "\n\nThis file has been modified by another application.  Do you want to reload it?") then
+                    select_tab(i)
+                    open_file(tab_file_names[i], 1)
+                else
+                    tab_timestamps[i] = ts
+                end if
+            end if
+        end if
+    end for
+end procedure
+
+
+global procedure add_recent_file(sequence filename)
+    integer idx
+    idx = find(filename, recent_files)
+    if idx then
+        -- move it to the top of the list
+        recent_files = {recent_files[idx]} & recent_files[1..idx-1] & 
+                       recent_files[idx+1..length(recent_files)]
+        recent_pos = {recent_pos[idx]} & recent_pos[1..idx-1] &
+                      recent_pos[idx+1..length(recent_pos)]   
+    else
+        idx = length(recent_files)
+        if idx >= max_recent_files then
+            idx -= 1
+        end if
+        recent_files = {filename} & recent_files[1..idx]
+        recent_pos = {0} & recent_pos[1..idx]
+    end if
+    ui_refresh_file_menu(recent_files)
+end procedure
+
+global procedure save_recent_pos()
+    integer idx
+    idx = find(file_name, recent_files)
+    if idx then
+        recent_pos[idx] = get_pos()
+    end if
+end procedure
+
+global procedure open_recent(integer idx)
+    atom junk
+    integer tab
+    if idx >= 1 and idx <= length(recent_files) then
+        tab = open_file(recent_files[idx], 0)
+        if tab then
+            junk = scintilla_send_message(hedit, SCI_SETSEL, recent_pos[1], recent_pos[1])
+            set_top_line(-1) -- set the top visible line to the current line
+        end if
+    end if
+end procedure
+
+
+
+-------------------------------------------------------------------
+-- ex.err file handling routines
+-------------------------------------------------------------------
+
+global procedure view_error()
+    atom fn, result
+    object s
+    integer line, colon, caret, tab
+    sequence file, message
+    fn = open("ex.err", "r")
+    if fn = -1 then
+	return
+    end if
+    s = gets(fn)  -- "filename:line"
+    if atom(s) then
+        close(fn)
+	return
+    end if
+    if length(s) < 3 then
+        close(fn)
+	return
+    end if
+    colon = match(":", s[3..length(s)]) + 2
+    if colon < 3 then
+        close(fn)
+	return
+    end if
+    file = s[1..colon-1]
+    tab = find(file, tab_file_names)
+    if tab then
+      select_tab(tab)
+    else
+	if ui_message_box_yes_no("Goto Error",
+		"The file ex.err refers to\n"&file&
+		"\n\nDo you want to open this file?")= 0 then
+            close(fn)
+	    return
+	end if
+	tab = open_file(file, 0)
+    end if
+    s = value(s[colon+1..length(s)])
+    if s[1] != GET_SUCCESS 
+    or not integer(s[2]) then
+        close(fn)
+	return
+    end if
+    line = s[2]
+    s = gets(fn)
+    if atom(s) then
+        close(fn)
+	return
+    end if
+    message = s
+    s = gets(fn)
+    s = gets(fn)
+    close(fn)
+    if atom(s) then
+	return
+    end if
+    caret = find('^', s)
+    caret += scintilla_send_message(hedit, SCI_POSITIONFROMLINE, line-1, 0)
+    result = scintilla_send_message(hedit, SCI_SETSEL, caret, caret)
+    set_top_line(-1)
+    result = ui_message_box_error("Goto Error", message)
+end procedure
+
+global procedure check_ex_err()
+  sequence ex_err
+  atom ts
+
+  if length(run_file_name) = 0 then return end if
+
+  ex_err = run_file_name
+  for i = length(ex_err) to 1 by -1 do
+    if ex_err[i] = '\\' then
+      ex_err = ex_err[1..i] & "ex.err"
+      exit
+    end if
+  end for
+
+  ts = get_timestamp(ex_err)
+  if ex_err_timestamp != -1 and ts > ex_err_timestamp then
+    run_file_name = ""
+    view_error()
+  end if
+  ex_err_timestamp = ts
+end procedure
+
+
+-------------------------------------------------------------------
+-- code syntax routines
+-------------------------------------------------------------------
+
+global procedure view_completions()
+    sequence text, word, decls, namespace, suggestions
+    integer pos, junk
+
+    -- use scintilla's code completion
+        text = get_edit_text()
+        pos = get_pos()
+        word = word_pos(text, pos)
+        if length(word) < 4 then 
+            return
+        end if
+        --printf(1, "word=%s namespace=%s pos=%d end=%d\n", word)
+        junk = scintilla_send_message(hedit, SCI_SETSEL, word[4], word[4])
+        namespace = word[2]
+        word = word[1]
+
+        decls = get_declarations(parse(text, file_name), pos, namespace)
+        suggestions = suggest_includes(word, namespace)
+
+        -- try to remove duplicates
+        --for i = 1 to length(suggestions) by 2 do
+        --    if not find(suggestions[i+1], decls) then
+        --        decls &= suggestions[i..i+1]
+        --    end if
+        --end for
+        decls &= suggestions
+        
+        if length(decls) = 0 then
+            return
+        end if
+
+        text = ""
+        for i = 1 to length(decls) by 2 do
+            if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then
+              if length(text) then 
+                text &= '\n'
+              end if
+              text &= decls[i]
+            end if
+        end for
+        if length(text) then
+          junk = scintilla_send_message(hedit, SCI_AUTOCSETSEPARATOR, '\n', 0)
+          junk = scintilla_send_message(hedit, SCI_AUTOCSETORDER, SC_ORDER_CUSTOM, 0)
+          junk = scintilla_send_message(hedit, SCI_AUTOCSETCANCELATSTART, 0, 0)
+          junk = scintilla_send_message(hedit, SCI_AUTOCSHOW, length(word), text)
+        end if
+end procedure
+
+global procedure view_subroutine_arguments()
+    sequence text, word, decls, namespace
+    integer pos, junk
+
+    -- use scintilla's code completion
+    text = get_edit_text()
+    pos = get_pos()
+    word = word_pos(text, pos)
+    if length(word) < 4 then
+        return
+    end if
+    pos = word[3]
+    namespace = word[2]
+    word = word[1]
+
+    decls = get_subroutine_arguments(parse(text, file_name), word, namespace)
+    if length(decls) then
+        text = decls[$-1] & " " & word & "( "
+        decls = decls[$] -- overloaded?  use the last one
+        for i = 1 to length(decls) by 3 do
+          if i != 1 then text &= ", " end if
+          if decls[i+2] then text &= "[" end if
+          text &= decls[i] & " " & decls[i+1]
+          if decls[i+2] then text &= "]" end if
+        end for
+        text &= " )"
+        --puts(1, text & "\n")
+        junk = scintilla_send_message(hedit, SCI_CALLTIPSHOW, pos, text)
+    end if
+end procedure
+
+global procedure view_declaration()
+    sequence text, decls, word, namespace
+    integer pos, junk
+
+    text = get_edit_text()
+    pos = get_pos()
+    word = word_pos(text, pos)
+    if length(word) < 2 then return end if
+    namespace = word[2]
+    word = word[1]
+
+    decls = get_declarations(parse(text, file_name), pos, namespace)
+    pos = -1
+    for i = 1 to length(decls) by 2 do
+      if equal(decls[i], word) then
+        if atom(decls[i+1]) then
+          pos = decls[i+1]-1
+        else
+          open_file(decls[i+1][1], 0)
+          pos = decls[i+1][2]-1
+        end if
+      end if
+    end for
+    if pos != -1 then
+      junk = scintilla_send_message(hedit, SCI_SETSEL, pos, pos+length(word))
+      set_top_line(-1) -- set the top visible line to the current line
+    end if
+end procedure
+
+function ltrim(sequence s)
+  for i = 1 to length(s) do
+    if s[i] != ' ' and s[i] != '\t' and s[i] != '\n' and s[i] != '\r' then
+      return s[i..$]
+    end if
+  end for
+  return "" 
+end function
+
+function rtrim(sequence s)
+  for i = length(s) to 1 by -1 do
+    if s[i] != ' ' and s[i] != '\t' and s[i] != '\n' and s[i] != '\r' then
+      return s[1..i]
+    end if
+  end for
+  return "" 
+end function
+
+-- expand "if " to "if  then\n\nend if", etc.
+procedure auto_expand()
+    sequence text, indent
+    integer pos, end_pos
+    atom junk
+
+    -- make sure the current position is at the end of the line
+    pos = get_pos()
+    end_pos = get_line_end_position(-1)
+    if pos != end_pos then return end if
+
+    -- save the indentation and trim the line
+    indent = get_line(-1)
+    text = ltrim(indent)
+    indent = "\n" & indent[1..$-length(text)]
+    text = rtrim(text)
+
+    -- get the text to insert
+    if equal(text, "if") then
+        text = {" then", "end if"}
+    elsif equal(text, "elsif") then
+        text = {" then"}
+    elsif equal(text, "while") then
+        text = {" do", "end while"}
+    elsif equal(text, "loop") then
+        text = {"do", "end loop"}
+    elsif equal(text, "for") then
+        text = {" =  to  do", "end for"}
+    else
+        if match("global ", text) = 1
+        or match("public ", text) = 1
+        or match("export ", text) = 1 then
+            text = ltrim(text[7..$])
+        end if
+	if equal(text, "procedure") then
+            text = {"()", "end procedure"}
+        elsif equal(text, "function") then
+            text = {"()", "end function"}
+        elsif equal(text, "type") then
+            text = {"()", "end type"}
+        else
+            return
+        end if
+    end if
+    if length(text) = 1 then
+        text = text[1] & indent & indent_str
+    else
+        text = text[1] & indent & indent_str & indent & text[2]
+    end if
+    
+    -- save the line for auto_indent()
+    expand_line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+
+    -- insert the text and restore cursor position
+    junk = scintilla_send_message(hedit, SCI_ADDTEXT, length(text), text)
+    junk = scintilla_send_message(hedit, SCI_GOTOPOS, pos, 0)
+end procedure
+
+procedure auto_indent()
+    integer line, pos, end_pos
+    sequence indent
+    atom junk
+
+    -- get the previous line and get the indentation
+    pos = get_pos()
+    line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, pos, 0) - 1
+    end_pos = get_line_end_position(line)
+
+    if line = expand_line then
+        -- delete the newline character and go to end of the next line
+	junk = scintilla_send_message(hedit, SCI_DELETERANGE, end_pos, pos - end_pos)
+	end_pos = get_line_end_position(line + 1)
+	junk = scintilla_send_message(hedit, SCI_GOTOPOS, end_pos, 0)
+        expand_line = -1
+        return
+    end if
+    expand_line = -1
+    
+    -- get the indentation of the previous line, and remove newline
+    indent = get_line(line)
+    for i = length(indent)-length(ltrim(indent)) to 0 by -1 do
+      if i = 0 or (indent[i] != '\n' and indent[i] != '\r') then
+        indent = indent[1..i]
+        exit
+      end if
+    end for
+
+    -- insert the indentation
+    junk = scintilla_send_message(hedit, SCI_ADDTEXT, length(indent), indent)
+end procedure
+
+procedure log_notification(atom notification)
+  integer code, pos, ch, modifiers
+  --? peek4u({notification, 24})
+  code = peek4u(notification+8)
+  pos = peek4u(notification+12)
+  if code = SCN_STYLENEEDED then
+    puts(1, "SCN_STYLENEEDED\n")
+  elsif code = SCN_CHARADDED then
+    ch = peek4s(notification+16)
+    printf(1, "SCN_CHARADDED ch=%d '%s'\n", {ch, {ch}})
+  elsif code = SCN_SAVEPOINTREACHED then
+    puts(1, "SCN_SAVEPOINTREACHED\n")
+  elsif code = SCN_SAVEPOINTLEFT then
+    puts(1, "SCN_SAVEPOINTLEFT\n")
+  elsif code = SCN_MODIFYATTEMPTRO then
+    puts(1, "SCN_MODIFYATTEMPTRO\n")
+  elsif code = SCN_KEY then
+    ch = peek4s(notification+16)
+    modifiers = peek4s(notification+20)
+    printf(1, "SCN_KEY ch=%d modifiers=#%x\n", {ch, modifiers})
+  elsif code = SCN_DOUBLECLICK then
+    puts(1, "SCN_DOUBLECLICK\n")
+  elsif code = SCN_UPDATEUI then
+    printf(1, "SCN_UPDATEUI updated=#%x\n", {peek4s(notification+88)})
+  elsif code = SCN_MODIFIED then
+    puts(1, "SCN_MODIFIED\n")
+  elsif code = SCN_MACRORECORD then
+    puts(1, "SCN_MACRORECORD\n")
+  elsif code = SCN_MARGINCLICK then
+    puts(1, "SCN_MARGINCLICK\n")
+  elsif code = SCN_NEEDSHOWN then
+    puts(1, "SCN_NEEDSHOWN\n")
+  elsif code = SCN_PAINTED then
+    --gets sent after each caret blink
+    --puts(1, "SCN_PAINTED\n")
+  elsif code = SCN_USERLISTSELECTION then
+    puts(1, "SCN_USERLISTSELECTION\n")
+  elsif code = SCN_URIDROPPED then
+    puts(1, "SCN_URIDROPPED\n")
+  elsif code = SCN_DWELLSTART then
+    puts(1, "SCN_DWELLSTART\n")
+  elsif code = SCN_DWELLEND then
+    puts(1, "SCN_DWELLEND\n")
+  elsif code = SCN_ZOOM then
+    puts(1, "SCN_ZOOM\n")
+  elsif code = SCN_HOTSPOTCLICK then
+    puts(1, "SCN_HOTSPOTCLICK\n")
+  elsif code = SCN_HOTSPOTDOUBLECLICK then
+    puts(1, "SCN_HOTSPOTDOUBLECLICK\n")
+  elsif code = SCN_HOTSPOTRELEASECLICK then
+    puts(1, "SCN_HOTSPOTRELEASECLICK\n")
+  elsif code = SCN_INDICATORCLICK then
+    puts(1, "SCN_INDICATORCLICK\n")
+  elsif code = SCN_INDICATORRELEASE then
+    puts(1, "SCN_INDICATORRELEASE\n")
+  elsif code = SCN_CALLTIPCLICK then
+    puts(1, "SCN_CALLTIPCLICK\n")
+  elsif code = SCN_AUTOCSELECTION then
+    puts(1, "SCN_AUTOCSELECTION\n")
+  elsif code = SCN_AUTOCCANCELLED then
+    puts(1, "SCN_AUTOCCANCELLED\n")
+  elsif code = SCN_AUTOCCHARDELETED then
+    puts(1, "SCN_AUTOCCHARDELETED\n")
+  elsif code = SCN_FOCUSIN then
+    puts(1, "SCN_FOCUSIN\n")
+  elsif code = SCN_FOCUSOUT then
+    puts(1, "SCN_FOCUSOUT\n")
+  end if
+end procedure
+
+procedure do_brace_highlight(atom hedit)
+  integer pos, brace, ch
+  brace = -1
+  pos = get_pos()-1
+  if find(scintilla_send_message(hedit, SCI_GETCHARAT, pos, 0), "{}()[]") then
+    brace = scintilla_send_message(hedit, SCI_BRACEMATCH, pos, 0)
+  end if
+  if brace = -1 then
+    pos += 1
+    if find(scintilla_send_message(hedit, SCI_GETCHARAT, pos, 0), "{}()[]") then
+      brace = scintilla_send_message(hedit, SCI_BRACEMATCH, pos, 0)
+    end if
+    if brace = -1 then
+      pos = -1
+    end if
+  end if
+  brace = scintilla_send_message(hedit, SCI_BRACEHIGHLIGHT, pos, brace)
+end procedure
+-- FIXME: this has a problem with brace chars within strings, for ex: {1, "}{", 2}
+
+ifdef BITS64 then
+constant
+  NOTIFICATION_CODE = 16,
+  NOTIFICATION_CH = 28,
+  NOTIFICATION_MODIFIERS = 32
+elsedef
+constant
+  NOTIFICATION_CODE = 8,
+  NOTIFICATION_CH = 16,
+  NOTIFICATION_MODIFIERS = 20
+end ifdef  
+
+global function sci_notify(atom hedit, atom data, atom notification, atom userdata)
+  integer code, pos, ch, modifiers, brace
+  
+  --? {ctl, data, notification, userdata}
+  if notification = 0 then return 0 end if
+  --log_notification(notification)
+  code = peek4u(notification+NOTIFICATION_CODE)
+  if code = SCN_UPDATEUI then
+    update_status()
+    do_brace_highlight(hedit)
+
+  elsif code = SCN_SAVEPOINTREACHED or code = SCN_SAVEPOINTLEFT then
+    modified = (code = SCN_SAVEPOINTLEFT)
+    update_tab_name()
+
+  elsif code = SCN_KEY then
+    ch = peek4s(notification+NOTIFICATION_CH)
+    modifiers = peek4s(notification+NOTIFICATION_MODIFIERS)
+    
+    if ch = 'O' and modifiers = SCMOD_CTRL then
+      open_file("", 1)
+
+    elsif ch = 'N' and modifiers = SCMOD_CTRL then
+      new_file()
+
+    elsif ch = 'S' and modifiers = SCMOD_CTRL then
+      save_if_modified(0)
+
+    elsif ch = 'Z' and modifiers = SCMOD_CTRL+SCMOD_SHIFT then
+      -- redo
+      scintilla_send_message(hedit, SCI_REDO, 0, 0)
+    
+    elsif ch < 128 then
+    printf(1, "SCN_KEY ch=%d '%s' modifiers=%d\n", {ch, {ch}, modifiers})
+    else
+    printf(1, "SCN_KEY ch=#%x modifiers=%d\n", {ch, modifiers})
+    end if
+
+  elsif code = SCN_CHARADDED then
+    ch = peek4s(notification+NOTIFICATION_CH)
+    --printf(1, "SCN_CHARADDED ch=%d '%s'\n", {ch, {ch}})
+    if ch = ':' then
+      view_completions()
+    elsif ch = ' ' then
+      auto_expand()
+    elsif ch = '\n' then
+      auto_indent()
+    elsif ch = '(' then
+      -- check for displaying subroutine arguments
+    end if
+  elsif code = SCN_AUTOCSELECTION then
+    -- check for "--include" in selection, then add include statement near top of file
+    --  or after the first non-commented line, or ideally with other includes
+    --puts(1, "SCN_AUTOCSELECTION\n")
+      
+    
+  end if
+
+  return 0
+end function
