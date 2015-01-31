@@ -152,12 +152,12 @@ global procedure ui_select_tab(integer tab)
     junk = c_func(SetFocus, {hedit})
 end procedure
 
-global function ui_new_tab(sequence file_name)
+global function ui_new_tab(sequence name)
     atom junk, tcitem, tab, hedit
     tab = c_func(SendMessage, {htabs, TCM_GETITEMCOUNT, 0, 0})
 
     tcitem = allocate(4+4+4+4+4+4+4)
-    poke4(tcitem, {TCIF_TEXT, 0, 0, alloc_string(make_tab_name()), 0, 0, 0})
+    poke4(tcitem, {TCIF_TEXT, 0, 0, alloc_string(name), 0, 0, 0})
     junk = c_func(SendMessage, {htabs, TCM_INSERTITEMA, tab+(tab!=0), tcitem})
     free(tcitem)
     free_strings()
@@ -175,19 +175,17 @@ global function ui_new_tab(sequence file_name)
     return c_func(SendMessage, {hedit, SCI_GETDIRECTPOINTER, 0, 0})
 end function
 
-global procedure ui_close_tab()
+global procedure ui_close_tab(integer tab)
     atom junk
-    integer tab
     
-    tab = c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0})
+    --tab = c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0})
 
     -- get the edit window handle and destroy it
     junk = c_func(DestroyWindow, {hedit})
     hedit = 0
     -- delete the tab
-    junk = c_func(SendMessage, {htabs, TCM_DELETEITEM, tab, 0})
+    junk = c_func(SendMessage, {htabs, TCM_DELETEITEM, tab-1, 0})
     -- remove the window handle
-    tab += 1
     ui_hedits = ui_hedits[1..tab-1] & ui_hedits[tab+1..$]
 end procedure
 

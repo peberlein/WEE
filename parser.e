@@ -154,7 +154,7 @@ keywords = {"global", "function", "procedure", "type", "end", "if", "then",
             "else", "elsif", "for", "to", "by", "while", "do", "include", 
             "with", "without"}
 if OE4 then
-  keywords &= {"enum", "label", "break", "case", "fallthru"}
+  keywords &= {"enum", "label", "break", "case", "fallthru", "routine"}
   -- "namespace" is not a reserved word, since it can be used as an identifier
 end if
 
@@ -391,7 +391,7 @@ end function
 function string_literal()
   sequence s
   s = ""
-  while text[idx] != '"' do
+  while idx <= length(text) and text[idx] != '"' do
     if text[idx] = '\n' or text[idx] = '\r' then
       error("unterminated string literal")
       return s
@@ -496,7 +496,7 @@ if equal(get_basename(include_dir), "bin" & SLASH) then
     include_dir = include_dir[1..$-4]
 end if
 include_dir &= "include" & SLASH
-
+puts(1, include_dir&"\n")
 
 function convert_path_separators(sequence filename)
   integer x
@@ -1768,8 +1768,31 @@ global function suggest_includes(sequence word, sequence namespace)
   return suggested_includes
 end function
 
-
-
+-- parse argument expressions, returning the last argument position
+global function parse_argument_position(sequence source_text)
+  integer arg
+  sequence e
+  text = source_text
+  idx = 1
+  tok_idx = 1
+  tok = ""
+  arg = 1
+  while tok_idx <= length(text) do
+    if token(")") then
+        return 0
+    end if
+    if token(",") then
+        arg += 1
+    end if
+    e = expr(1)
+    --? {e, tok, tok_idx}
+    if length(e) = 0 and length(tok) = 0 then
+	exit
+    end if
+  end while
+  
+  return arg
+end function
 
 --if length(get_declarations(parse("parser.e"), 23880)) then end if
 --? get_declaration(read_file("parser.e"), 23430)

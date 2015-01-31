@@ -46,7 +46,7 @@ global function scintilla_send_message(atom hwnd, atom m, object w, object l)
   return c_func(scintilla_send_message_, {hwnd, m, w, l})
 end function
 
-global procedure SSM(atom hwnd, atom m, object w, object l)
+global procedure SSM(atom hwnd, atom m, object w=0, object l=0)
   if sequence(w) then w = allocate_string(w) end if
   if sequence(l) then l = allocate_string(l) end if
   m = c_func(scintilla_send_message_, {hwnd, m, w, l})
