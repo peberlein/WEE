@@ -496,7 +496,6 @@ if equal(get_basename(include_dir), "bin" & SLASH) then
     include_dir = include_dir[1..$-4]
 end if
 include_dir &= "include" & SLASH
-puts(1, include_dir&"\n")
 
 function convert_path_separators(sequence filename)
   integer x
