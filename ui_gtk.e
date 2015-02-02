@@ -1,5 +1,12 @@
 -- ui_gtk.e
 
+
+-- todo:
+-- fix intermittent hang on quit
+-- fix font on OS X
+-- fix modifier keys not working on OS X
+-- investigate do widgets need to be Destroy'd
+
 public include std/machine.e
 public include scintilla.e
 include EuGTK/GtkEngine.e
@@ -66,7 +73,7 @@ function ViewFont()
 	if tmp[1] = 0 then
 	  font_height = tmp[2]
           font_name = font[1..i-1]
-          printf(1, "%s %d\n", {font_name, font_height})
+          --printf(1, "%s %d\n", {font_name, font_height})
 	  reinit_all_edits()
 	end if
 	exit
@@ -111,6 +118,10 @@ function delete_event()
   return TRUE
 end function
 
+function notebook_switch_page(atom nb, atom page, atom page_num)
+    select_tab(page_num + 1)
+    return 0
+end function
 -------------------------------------------------------------
 
 constant 
@@ -221,7 +232,7 @@ constant
   notebook = create(GtkNotebook)
 
 pack(panel, notebook, 1, 1)
-
+connect(notebook, "switch-page", call_back(routine_id("notebook_switch_page")))
 
 --------------------------------------------------
 
