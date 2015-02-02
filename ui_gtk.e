@@ -1,14 +1,19 @@
 -- ui_gtk.e
 
 
+-- fix intermittent hang on quit (found it, caused by putting the program in the
+-- background using Ctrl-Z, then "bg".  It blocks on doing something to console
+-- before exiting, so need to do "fg" to unfreeze and exit normally.)
+
+-- font seems to be ok on OSX now, 
+-- needed to strip spaces and "bold", "italic", from the font name.
+
 -- todo:
--- fix intermittent hang on quit
--- fix font on OS X
--- fix modifier keys not working on OS X
+-- fix modifier keys not working on OS X (might be ok now using gtk accelerators)
 -- investigate do widgets need to be Destroy'd
 
 public include std/machine.e
-public include scintilla.e
+include scintilla.e
 include EuGTK/GtkEngine.e
 include wee.exw as wee
 
@@ -47,6 +52,7 @@ function FileQuit()
   return 0
 end function
 function EditUndo() SSM(tab_hedit(), SCI_UNDO) return 0 end function
+function EditRedo() SSM(tab_hedit(), SCI_REDO) return 0 end function
 function EditCut() SSM(tab_hedit(), SCI_CUT) return 0 end function
 function EditCopy() SSM(tab_hedit(), SCI_COPY) return 0 end function
 function EditPaste() SSM(tab_hedit(), SCI_PASTE) return 0 end function
@@ -54,11 +60,11 @@ function EditClear() SSM(tab_hedit(), SCI_CLEAR) return 0 end function
 function EditSelectAll() SSM(tab_hedit(), SCI_SELECTALL) return 0 end function
 function SearchFind() return 0 end function
 function SearchReplace() return 0 end function
-function ViewSubs() return 0 end function
-function ViewDecl() return 0 end function
-function ViewArgs() return 0 end function
-function ViewComp() return 0 end function
-function ViewError() return 0 end function
+function ViewSubs() view_subroutines() return 0 end function
+function ViewDecl() view_declaration() return 0 end function
+function ViewArgs() view_subroutine_arguments() return 0 end function
+function ViewComp() view_completions() return 0 end function
+function ViewError() view_error() return 0 end function
 function ViewFont()
   atom dialog
   sequence font, tmp
@@ -125,23 +131,23 @@ end function
 -------------------------------------------------------------
 
 constant 
-  win = create(GtkWindow)
+  win = create(GtkWindow),
+  group = create(GtkAccelGroup),
+  panel = create(GtkBox, VERTICAL)
 
 set(win, "border width", 0)
 connect(win, "destroy", main_quit)
 connect(win, "configure-event", call_back(routine_id("configure_event")))
 connect(win, "delete-event", call_back(routine_id("delete_event")))
-
-constant
-  panel = create(GtkBox, VERTICAL)
+set(win, "add accel group", group)
 add(win, panel)
 
 constant
   about_dialog = create(GtkAboutDialog)
-  set(about_dialog, "transient for", win)
-  set(about_dialog, "program name", window_title)
-  set(about_dialog, "version", wee:version)
-  set(about_dialog, "authors", {author})
+set(about_dialog, "transient for", win)
+set(about_dialog, "program name", window_title)
+set(about_dialog, "version", wee:version)
+set(about_dialog, "authors", {author})
 
 constant
   menubar = create(GtkMenuBar),
@@ -159,9 +165,12 @@ constant
   helpmenu = create(GtkMenu)
 
 
--- create a menu item with activate connected to local routine
-function createmenuitem(sequence text, object r)
+
+-- create a menu item with "activate" signal connected to local routine
+-- and add parsed accelerator key 
+function createmenuitem(sequence text, object r, object key = 0, integer mod = 0)
   atom widget, x
+
   widget = create(GtkMenuItem, text)
   if sequence(r) then
     x = routine_id(r)
@@ -171,50 +180,62 @@ function createmenuitem(sequence text, object r)
     r = call_back(x)
   end if
   connect(widget, "activate", r)
+
+  if sequence(key) then
+      x = allocate(8)
+      gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(key, 1), x, x+4})
+      key = peek4u(x)
+      mod = peek4u(x+4)
+      free(x)
+  end if
+  if key then
+      set(widget, "add accelerator", "activate", group, key, mod, 1)
+  end if
   return widget
 end function
 
 add(filemenu, {
-  createmenuitem("_New", "FileNew"),
-  createmenuitem("_Open...", "FileOpen"),
-  createmenuitem("_Save", "FileSave"),
+  createmenuitem("_New", "FileNew", "<Control>N"),
+  createmenuitem("_Open...", "FileOpen", "<Control>O"),
+  createmenuitem("_Save", "FileSave", "<Control>S"),
   createmenuitem("Save _As...", "FileSaveAs"),
   createmenuitem("_Close", "FileClose"),
   create(GtkSeparatorMenuItem),
-  createmenuitem("_Quit", "FileQuit")
+  createmenuitem("_Quit", "FileQuit", "<Control>Q")
   })
 set(menuFile, "submenu", filemenu)
 
 add(editmenu, {
-  createmenuitem("_Undo", "EditUndo"),
+  createmenuitem("_Undo", "EditUndo", "<Control>Z"),
+  createmenuitem("_Redo", "EditRedo", "<Control><Shift>Z"),
   create(GtkSeparatorMenuItem),
-  createmenuitem("_Cut", "EditCut"),
-  createmenuitem("C_opy", "EditCopy"),
-  createmenuitem("_Paste", "EditPaste"),
+  createmenuitem("_Cut", "EditCut", "<Control>X"),
+  createmenuitem("C_opy", "EditCopy", "<Control>C"),
+  createmenuitem("_Paste", "EditPaste", "<Control>V"),
   createmenuitem("Clear", "EditClear"),
-  createmenuitem("Select _All", "EditSelectAll")
+  createmenuitem("Select _All", "EditSelectAll", "<Control>A")
   })
 set(menuEdit, "submenu", editmenu)
 
 add(searchmenu, {
-  createmenuitem("Find...", "SearchFind"),
+  createmenuitem("Find...", "SearchFind", "F3"),
   createmenuitem("Replace...", "SearchReplace")
   })
 set(menuSearch, "submenu", searchmenu)
 
 add(viewmenu, {
-  createmenuitem("Subroutines...\tF2", "ViewSubs"),
-  createmenuitem("Declaration\tCtrl+F2", "ViewDecl"),
-  createmenuitem("Subroutine Arguments...\tShift+F2", "ViewArgs"),
-  createmenuitem("Completions...\tCtrl+Space", "ViewComp"),
-  createmenuitem("Goto Error\tF4", "ViewError"),
+  createmenuitem("Subroutines...", "ViewSubs", "F2"),
+  createmenuitem("Declaration", "ViewDecl", "<Control>F2"),
+  createmenuitem("Subroutine Arguments...", "ViewArgs", "<Shift>F2"),
+  createmenuitem("Completions...", "ViewComp", "<Control>space"),
+  createmenuitem("Goto Error", "ViewError", "F4"),
   create(GtkSeparatorMenuItem),
   createmenuitem("Font...", "ViewFont")
   })
 set(menuView, "submenu", viewmenu)
 
 add(runmenu, {
-  createmenuitem("Start\tF5", "RunStart")
+  createmenuitem("Start", "RunStart", "F5")
   })
 set(menuRun, "submenu", runmenu)
 
