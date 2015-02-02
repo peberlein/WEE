@@ -26,9 +26,12 @@
 --  OE4 labels and goto
 --  OE4 switch statement
 --  use eu.cfg for finding includes
---  use timestamps for updating include ast cache
+--  get_declarations with namespace shouldn't include local symbols
 
-include file.e -- for walk_dir and dir
+-- file.e doesn't work right on OSX
+--include file,e -- for walk_dir and dir
+include std/filesys.e
+include std/os.e
 
 constant 
     OE4 = 1, -- enable OpenEuphoria 4 syntax
@@ -1402,16 +1405,22 @@ constant
   FILTER_GLOBAL = 2,
   FILTER_PUBLIC = 4,
   FILTER_EXPORT = 8,
-  FILTER_ALL = 15,
-  FILTER_NO_INCLUDES = 16
+  FILTER_INCLUDE = 16,
+  FILTER_INCLUDE_AS = 32,
+  FILTER_ALL = 63
+
+
 
   
 function get_include_filter(sequence s, sequence namespace, integer filter, integer prefix)
     integer idx, include_filter
 
-    idx = s[2]
+    idx = s[2] -- cache[] index
     if length(namespace) then
-      if and_bits(filter, FILTER_LOCAL) and length(s) >= 3 and equal(s[3], namespace) then
+      --if length(s) >= 3 then
+      --    printf(1, "filter=%x namespace=%s include as %s\n", {filter, namespace, s[3]})
+      --end if
+      if and_bits(filter, FILTER_INCLUDE_AS) and length(s) >= 3 and equal(s[3], namespace) then
         -- top-level and matched "include as"
         include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
       elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
@@ -1419,12 +1428,12 @@ function get_include_filter(sequence s, sequence namespace, integer filter, inte
         include_filter = FILTER_GLOBAL + FILTER_PUBLIC
       elsif length(cache[idx]) >= 3 and 
             equal(cache[idx][3], {NAMESPACE, namespace}) then
-        -- include has same namespace 
+        -- include has same namespace
         include_filter = FILTER_GLOBAL + FILTER_PUBLIC * (and_bits(filter, FILTER_LOCAL) != 0)
       else
         include_filter = 0
       end if
-    elsif and_bits(filter, FILTER_LOCAL) then
+    elsif and_bits(filter, FILTER_INCLUDE_AS) then
       -- top-level include
       include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
     elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
@@ -1448,7 +1457,7 @@ function get_include_filter(sequence s, sequence namespace, integer filter, inte
     include_filter = and_bits(include_filter, not_bits(include_flags[idx]))
     include_flags[idx] = or_bits(include_flags[idx], include_filter)
    
-    return include_filter
+    return include_filter + FILTER_INCLUDE
 end function
 	
   
@@ -1464,15 +1473,17 @@ end function
 -- get a list of declarations from ast in scope at pos
 -- returns {"name1", pos1, "name2", pos2...}
 --  pos may be be an integer for the position in the current file,
---  or zero for included files.
+--  or {pos, "include-path"} for included files.
 
 function get_decls(sequence ast, integer pos, sequence namespace, integer filter)
   sequence result, s
   integer x, decl, prefix, include_filter
 
-  if and_bits(filter, FILTER_NO_INCLUDES) and length(namespace) and 
-     length(ast) >= 3 and (ast[3][1] != NAMESPACE or not equal(namespace, ast[3][2])) then
-     return {}  -- no namespace or mismatch
+  if length(namespace) and length(ast) >= 3 and 
+     (ast[3][1] != NAMESPACE or not equal(namespace, ast[3][2])) then
+     if and_bits(filter, FILTER_INCLUDE) = 0 then
+         return {}  -- no namespace or mismatch
+     end if
   end if
 
   result = {}
@@ -1481,25 +1492,33 @@ function get_decls(sequence ast, integer pos, sequence namespace, integer filter
 
     prefix = power(2, find(s[1], {GLOBAL, PUBLIC, EXPORT}))
     if prefix > 1 then
-      s = s[2..$] -- remove prefix      
+      s = s[2..$] -- remove prefix
     end if
     decl = s[1]
-    if and_bits(filter, prefix) = 0 and s[1] != INCLUDE then
-      decl = 0
+    if and_bits(prefix, filter) = 0 then
+      -- the scope modifier didn't pass the filter
+      -- but we also need to check the include filter
+      if decl != INCLUDE or and_bits(filter, FILTER_INCLUDE) = 0 then
+        decl = 0
+      end if
     end if
 
     if decl = NAMESPACE then
       -- {NAMESPACE, "namespace"}
       if and_bits(filter, FILTER_LOCAL) and length(namespace) and 
          length(s) >= 2 and not equal(namespace, s[2]) then
-        filter = 0  -- namespace doesn't match
+         -- namespace doesn't match
+         filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
+         if filter = 0 then
+             return {}
+         end if
       end if
     
     elsif decl = INCLUDE then
       -- {INCLUDE, includes-index, ["namespace"]}
       x = s[2]
       --printf(1, "include %s filter=%x\n", {cache[x][1], filter})
-      if x != -1 and and_bits(filter, FILTER_NO_INCLUDES) = 0 then
+      if x != -1 then
         include_filter = get_include_filter(s, namespace, filter, prefix)
         if include_filter != -1 then
           check_cache_timestamp(x)
@@ -1633,7 +1652,7 @@ function get_args(sequence ast, sequence word, sequence namespace, integer filte
   sequence result, s
   integer x, decl, prefix, include_filter
 
-  if and_bits(filter, FILTER_NO_INCLUDES) and length(namespace) and 
+  if and_bits(filter, FILTER_INCLUDE) = 0 and length(namespace) and 
      length(ast) >= 3 and (ast[3][1] != NAMESPACE or not equal(namespace, ast[3][2])) then
      return {}  -- no namespace or mismatch
   end if
@@ -1661,7 +1680,7 @@ function get_args(sequence ast, sequence word, sequence namespace, integer filte
     elsif decl = INCLUDE then
       -- {INCLUDE, includes-index, ["namespace"]}
       x = s[2]
-      if x != -1 and and_bits(filter, FILTER_NO_INCLUDES) = 0 then
+      if x != -1 and and_bits(filter, FILTER_INCLUDE) then
         include_filter = get_include_filter(s, namespace, filter, prefix)
         if include_filter != -1 then
           result &= get_args(cache[x], word, namespace, include_filter)
@@ -1731,7 +1750,7 @@ function walk_include(sequence path_name, sequence dirent)
     object state
     sequence decls
 
-    path_name &= '\\' & dirent[D_NAME]
+    path_name &= SLASH & dirent[D_NAME]
     if length(path_name) < 2 or (path_name[$] != 'e' and path_name[$] != 'E') or path_name[$-1] != '.' then
       -- path_name doesn't end with .e or .E
       return 0
@@ -1742,7 +1761,7 @@ function walk_include(sequence path_name, sequence dirent)
     end if
     if state > 0 then
       decls = get_decls(cache[state], 0, suggested_namespace, 
-                        FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT+FILTER_NO_INCLUDES)
+                        FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
       for i = 1 to length(decls) by 2 do
         if length(decls[i]) >= length(suggested_word) and 
            equal(decls[i][1..length(suggested_word)], suggested_word) then
@@ -1756,13 +1775,15 @@ function walk_include(sequence path_name, sequence dirent)
     return 0 -- keep searching all files
 end function
 
+constant walk_include_id = routine_id("walk_include")
+
 -- returns a list of include files which contain a declaration decl
 global function suggest_includes(sequence word, sequence namespace)
   suggested_includes = {}
   suggested_word = word
   suggested_namespace = namespace
   --puts(1, "include_dir="&include_dir&"\n")
-  if walk_dir(include_dir, routine_id("walk_include"), 1) then
+  if walk_dir(include_dir, walk_include_id, 1) then
   end if
   return suggested_includes
 end function
@@ -1776,7 +1797,10 @@ global function parse_argument_position(sequence source_text)
   tok_idx = 1
   tok = ""
   arg = 1
-  while tok_idx <= length(text) do
+  for i = 1 to 1000 do
+    if tok_idx > length(text) then
+	return arg
+    end if
     if token(")") then
         return 0
     end if
@@ -1786,14 +1810,12 @@ global function parse_argument_position(sequence source_text)
     e = expr(1)
     --? {e, tok, tok_idx}
     if length(e) = 0 and length(tok) = 0 then
-	exit
+	return arg
     end if
-  end while
-  
+  end for
+  printf(1, "stuck parsing argument position for \"%s\"\n", {text})
+  ? e
+  ? tok
   return arg
 end function
 
---if length(get_declarations(parse("parser.e"), 23880)) then end if
---? get_declaration(read_file("parser.e"), 23430)
-
---? length(get_declarations(parse_file("wee.exw"), 1, ""))
