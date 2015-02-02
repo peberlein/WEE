@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.13"
+  version = "0.15"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -75,10 +75,14 @@ global constant
 --  shift-ctrl-Z should redo
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
+--    as it is now, its really annoying
 --  dialog to change syntax highlighting colors
 --  store syntax highlighting colors in wee.conf
 --  fix brace highlighting in comments and strings
 --  configurable indent size
+--  fix typing [ then backspace, leaves behind the ]
+--  fix typing [ then delete, then type ] deletes the next character
+
 
 without warning
 
@@ -96,13 +100,13 @@ elsedef
 include ui_gtk.e
 end ifdef
 
--- all variables must be initialized in wee_init() due to recursive include
+-- all variables must be initialized in wee_init() due to circular include
 constant 
     indent_size = 4 -- TODO: make this user configurable
 global constant max_recent_files = 5
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
-global integer font_height
+global integer font_height, line_numbers
 global sequence file_name, run_file_name
 
 -- local variables
@@ -112,10 +116,15 @@ sequence
 integer current_tab, modified
 atom hedit
 atom ex_err_timestamp
-integer expand_line, insert_pos
+integer expand_line, insert_pos, last_deleted_char
 sequence insert_chars
 sequence calltip_args -- {{start,end},...}
 integer calltip_pos
+
+-- shorthand helper function
+function ssm(integer m, object w=0, object l=0)
+    return scintilla_send_message(hedit, m, w, l)
+end function
 
 global procedure wee_init()
 
@@ -124,6 +133,7 @@ global procedure wee_init()
 
   font_name = ""
   font_height = 10
+  line_numbers = 0
 
   file_name = ""
   hedit = 0
@@ -138,10 +148,13 @@ global procedure wee_init()
   expand_line = -1
   insert_pos = -1
   insert_chars = ""
+  last_deleted_char = 0
 
   indent_str = repeat(' ', indent_size)
   calltip_args = {}
   calltip_pos = -1
+  
+  current_tab = 0
 
 end procedure
 
@@ -179,6 +192,8 @@ global procedure load_wee_conf(sequence wee_conf_file)
                 if font_height < 0 then 
                     font_height = -floor((font_height*96+36)/72)
                 end if
+            elsif equal(key, "line_numbers") then
+                line_numbers = l[2]
             end if
         end if
         l = gets(f)
@@ -190,7 +205,8 @@ end procedure
 global procedure save_wee_conf(sequence wee_conf_file)
     integer f
     f = open(wee_conf_file, "w")
-    printf(f, "x_pos=%d\ny_pos=%d\nx_size=%d\ny_size=%d\n", {x_pos, y_pos, x_size, y_size})
+    printf(f, "x_pos=%d\ny_pos=%d\nx_size=%d\ny_size=%d\nline_numbers=%d\n", 
+	{x_pos, y_pos, x_size, y_size, line_numbers})
     for i = 1 to length(recent_files) do
         puts(f, "recent_file="&recent_files[i]&"\n")
         printf(f, "recent_pos=%d\n", {recent_pos[i]})
@@ -214,24 +230,49 @@ constant             -- colors of various syntax classes
     Blue = #AA0000,
     LightBlue = #FFFFDD
 
+function sreplace(sequence text, sequence what, sequence replacement)
+    integer i
+    i = match(what, text)
+    if i then
+        return text[1..i-1] & replacement & text[i+length(what)..$]
+    end if
+    return text
+end function
+
 -- init edit, (or reinit all existing edits when hedit = 0)
-global procedure init_edit(atom hedit)
-    atom junk
-    --? {hedit, scintilla_send_message(hedit, SCI_GETIDENTIFIER, 0, 0)}
+global procedure init_edit(atom edit)
+    sequence font
+    
+    hedit = edit
+    
+    --? {hedit, ssm(SCI_GETIDENTIFIER, 0, 0)}
+    font = font_name
+    ifdef not WINDOWS then
+	font = sreplace(font, "Medium", "")
+	font = sreplace(font, "Thin", "")
+	font = sreplace(font, "Bold", "")
+	font = sreplace(font, "Italic", "")
+	font = rtrim(font)
+	puts(1, font&".\n")
+    end ifdef
 
-    junk = scintilla_send_message(hedit, SCI_STYLESETFONT, STYLE_DEFAULT, font_name)
-    junk = scintilla_send_message(hedit, SCI_STYLESETSIZE, STYLE_DEFAULT, font_height)
-    junk = scintilla_send_message(hedit, SCI_STYLECLEARALL, 0, 0)
+    ssm(SCI_STYLESETFONT, STYLE_DEFAULT, font)
+    ifdef not WINDOWS then
+      ssm(SCI_STYLESETBOLD, STYLE_DEFAULT, match(" Bold", font_name))
+      ssm(SCI_STYLESETITALIC, STYLE_DEFAULT, match(" Italic", font_name))
+    end ifdef
+    ssm(SCI_STYLESETSIZE, STYLE_DEFAULT, font_height)
+    ssm(SCI_STYLECLEARALL)
 
-    junk = scintilla_send_message(hedit, SCI_SETLEXER, SCLEX_LUA, 0)
-    junk = scintilla_send_message(hedit, SCI_SETKEYWORDS, 0, 
+    ssm(SCI_SETLEXER, SCLEX_LUA)
+    ssm(SCI_SETKEYWORDS, 0, 
      "procedure function type end and or xor not if then elsif else for to by do while "&
      "global constant include with without return exit " &
      -- OE4
      "public export enum as namespace ifdef elsifdef elsedef "&
      "label entry break continue loop until routine"
      )
-    junk = scintilla_send_message(hedit, SCI_SETKEYWORDS, 1, 
+    ssm(SCI_SETKEYWORDS, 1, 
      "length puts integer sequence position object append prepend print printf "&
      "floor getc gets get_key rand repeat atom compare find match time command_line "&
      "open close trace getenv sqrt sin cos tan log system date remainder power "&
@@ -239,68 +280,77 @@ global procedure init_edit(atom hedit)
      "not_bits mem_copy mem_set c_proc c_func routine_id call_proc call_func call_back "&
      "poke4 peek4s peek4u equal")
 
-    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_COMMENT, DGray)
-    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, DGray)
-    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_NUMBER, Black)
-    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_WORD, Green)
-    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_WORD2, Magenta)
-    junk = scintilla_send_message(hedit, SCI_STYLESETFORE, SCE_LUA_STRING, Blue)
+    ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, DGray)
+    ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, DGray)
+    ssm(SCI_STYLESETFORE, SCE_LUA_NUMBER, Black)
+    ssm(SCI_STYLESETFORE, SCE_LUA_WORD, Green)
+    ssm(SCI_STYLESETFORE, SCE_LUA_WORD2, Magenta)
+    ssm(SCI_STYLESETFORE, SCE_LUA_STRING, Blue)
 
-    junk = scintilla_send_message(hedit, SCI_STYLESETBACK, STYLE_BRACELIGHT, LightBlue)
-    junk = scintilla_send_message(hedit, SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1)
+    ssm(SCI_STYLESETBACK, STYLE_BRACELIGHT, LightBlue)
+    ssm(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1)
     
-    junk = scintilla_send_message(hedit, SCI_SETINDENT, indent_size, 0)
+    ssm(SCI_STYLESETFORE, STYLE_LINENUMBER, DGray)
+    ssm(SCI_SETMARGINWIDTHN, 0, 48*line_numbers) -- line numbers margin visible
+    ssm(SCI_SETMARGINWIDTHN, 1, 0) -- non-folding symbols margin hidden
+    
+    ssm(SCI_SETINDENT, indent_size)
 
-    junk = scintilla_send_message(hedit, SCI_AUTOCSETSEPARATOR, '\n', 0)
-    junk = scintilla_send_message(hedit, SCI_AUTOCSTOPS, 0, " ")
-    junk = scintilla_send_message(hedit, SCI_AUTOCSETORDER, SC_ORDER_CUSTOM, 0)
-    junk = scintilla_send_message(hedit, SCI_AUTOCSETCANCELATSTART, 0, 0)
+    ssm(SCI_AUTOCSETSEPARATOR, '\n')
+    ssm(SCI_AUTOCSTOPS, 0, " ")
+    ssm(SCI_AUTOCSETORDER, SC_ORDER_CUSTOM)
+    ssm(SCI_AUTOCSETCANCELATSTART)
 
     -- call tips display above text
-    junk = scintilla_send_message(hedit, SCI_CALLTIPSETPOSITION, 1, 0)
+    ssm(SCI_CALLTIPSETPOSITION, 1)
 
+    -- get modification events for deletetext
+    ssm(SCI_SETMODEVENTMASK, SC_MOD_BEFOREDELETE)
 end procedure
 
 global procedure reinit_all_edits()
+    atom saved_hedit
+    saved_hedit = hedit
     for i = 1 to length(tab_hedits) do
         init_edit(tab_hedits[i])
     end for
+    hedit = saved_hedit
 end procedure
 
 
 global function get_pos()
-    return scintilla_send_message(hedit, SCI_GETCURRENTPOS, 0, 0)
+    return ssm(SCI_GETCURRENTPOS)
 end function
 
 global procedure set_top_line(integer line)
     integer fv, los
     if line = -1 then
-        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
-        fv = scintilla_send_message(hedit, SCI_GETFIRSTVISIBLELINE, 0, 0)
-        los = scintilla_send_message(hedit, SCI_LINESONSCREEN, 0, 0)
+        line = ssm(SCI_LINEFROMPOSITION, get_pos())
+        fv = ssm(SCI_GETFIRSTVISIBLELINE)
+        los = ssm(SCI_LINESONSCREEN)
         if line >= fv and line < fv + los-1 then
             return -- don't need to scroll
         end if
     end if
-    line = scintilla_send_message(hedit, SCI_SETFIRSTVISIBLELINE, line, 0)
+    line = ssm(SCI_SETFIRSTVISIBLELINE, line)
 end procedure
 
 global function get_modified()
-    return scintilla_send_message(hedit, SCI_GETMODIFY, 0, 0)
+    return ssm(SCI_GETMODIFY)
 end function
 
 global function get_line_length(integer line)
     if line = -1 then
-        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+        line = ssm(SCI_LINEFROMPOSITION, get_pos())
     end if
-    return scintilla_send_message(hedit, SCI_LINELENGTH, line, 0)
+    return ssm(SCI_LINELENGTH, line)
 end function
 
 global function get_line_end_position(integer line)
     if line = -1 then
-        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+        line = ssm(SCI_LINEFROMPOSITION, get_pos())
     end if
-    return scintilla_send_message(hedit, SCI_GETLINEENDPOSITION, line, 0)
+    return ssm(SCI_GETLINEENDPOSITION, line)
 end function
 
 global function get_line(integer line)
@@ -308,11 +358,11 @@ global function get_line(integer line)
     sequence text
 
     if line = -1 then
-        line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, get_pos(), 0)
+        line = ssm(SCI_LINEFROMPOSITION, get_pos())
     end if
     len = get_line_length(line)
     buf = allocate(len+1)
-    junk = scintilla_send_message(hedit, SCI_GETLINE, line, buf)
+    ssm(SCI_GETLINE, line, buf)
     text = peek({buf, len})
     free(buf)
     return text
@@ -322,9 +372,9 @@ global function get_edit_text()
     atom junk, text_buffer, text_len
     sequence text
 
-    text_len = scintilla_send_message(hedit, SCI_GETTEXTLENGTH, 0, 0)+1
+    text_len = ssm(SCI_GETTEXTLENGTH)+1
     text_buffer = allocate(text_len)
-    junk = scintilla_send_message(hedit, SCI_GETTEXT, text_len, text_buffer)
+    ssm(SCI_GETTEXT, text_len, text_buffer)
     text = peek({text_buffer, text_len-1})
     free(text_buffer)
     return text
@@ -333,8 +383,8 @@ end function
 global procedure update_status()
     atom pos, line, col
     pos = get_pos()
-    line = 1+scintilla_send_message(hedit, SCI_LINEFROMPOSITION, pos, 0)
-    col = 1+scintilla_send_message(hedit, SCI_GETCOLUMN, pos, 0)
+    line = 1+ssm(SCI_LINEFROMPOSITION, pos)
+    col = 1+ssm(SCI_GETCOLUMN, pos)
     ui_update_status(sprintf("%d:%d ", {line, col}))
     if line-1 != expand_line then
         expand_line = -1
@@ -371,13 +421,19 @@ end procedure
 
 
 global procedure select_tab(integer tab)
-    if tab < 1 or tab > length(tab_hedits) then
+    if tab < 1 or tab > length(tab_hedits) or tab = current_tab then
         return
     end if
     current_tab = tab
     file_name = tab_file_names[tab]
     hedit = tab_hedits[tab]
     modified = get_modified()
+    
+    expand_line = -1
+    insert_chars = ""
+    insert_pos = -1
+    calltip_args = {}
+    calltip_pos = -1
 
     ui_select_tab(tab)
     ui_update_window_title(file_name)
@@ -397,6 +453,7 @@ global procedure new_tab(sequence file_name)
         tab = 1
         tab_file_names[tab] = file_name
         update_tab_name()
+        current_tab = 0 -- to force select_tab
     else
         hedit = ui_new_tab(make_tab_name())
         init_edit(hedit)
@@ -451,16 +508,16 @@ global function open_file(sequence open_file, integer reload)
     end if
     update_tab_timestamp()
 
-    result = scintilla_send_message(hedit, SCI_CLEARALL, 0, 0)
-    result = scintilla_send_message(hedit, SCI_SETTEXT, 0, text)
-    result = scintilla_send_message(hedit, SCI_SETSAVEPOINT, 0, 0)
+    result = ssm(SCI_CLEARALL)
+    result = ssm(SCI_SETTEXT, 0, text)
+    result = ssm(SCI_SETSAVEPOINT)
     modified = 0
     if reload then
       update_tab_name()
     end if
     
-    result = scintilla_send_message(hedit, SCI_SETSEL, 0, 0)
-    result = scintilla_send_message(hedit, SCI_EMPTYUNDOBUFFER, 0, 0)
+    result = ssm(SCI_SETSEL)
+    result = ssm(SCI_EMPTYUNDOBUFFER)
 
     add_recent_file(open_file)
     return tab
@@ -469,7 +526,7 @@ end function
 procedure save_file()
     atom fn, junk
 
-    junk = scintilla_send_message(hedit, SCI_SETSAVEPOINT, 0, 0)
+    ssm(SCI_SETSAVEPOINT, 0, 0)
     modified = 0
 
     fn = open(file_name, "wb")
@@ -557,6 +614,7 @@ global procedure close_tab()
     elsif tab > length(tab_hedits) then
        tab = length(tab_hedits)
     end if
+    current_tab = 0
     select_tab(tab)
 end procedure
 
@@ -564,8 +622,8 @@ global procedure new_file()
     atom junk
 
     new_tab("")
-    junk = scintilla_send_message(hedit, SCI_SETTEXT, 0, "")
-    junk = scintilla_send_message(hedit, SCI_SETSAVEPOINT, 0, 0)
+    ssm(SCI_SETTEXT, 0, "")
+    ssm(SCI_SETSAVEPOINT, 0, 0)
 end procedure
 
 
@@ -625,7 +683,7 @@ global procedure open_recent(integer idx)
     if idx >= 1 and idx <= length(recent_files) then
         tab = open_file(recent_files[idx], 0)
         if tab then
-            junk = scintilla_send_message(hedit, SCI_SETSEL, recent_pos[1], recent_pos[1])
+            ssm(SCI_SETSEL, recent_pos[1], recent_pos[1])
             set_top_line(-1) -- set the top visible line to the current line
         end if
     end if
@@ -693,8 +751,8 @@ global procedure view_error()
 	return
     end if
     caret = find('^', s)
-    caret += scintilla_send_message(hedit, SCI_POSITIONFROMLINE, line-1, 0)
-    result = scintilla_send_message(hedit, SCI_SETSEL, caret, caret)
+    caret += ssm(SCI_POSITIONFROMLINE, line-1)
+    result = ssm(SCI_SETSEL, caret, caret)
     set_top_line(-1)
     result = ui_message_box_error("Goto Error", message)
 end procedure
@@ -750,7 +808,7 @@ global procedure view_declaration()
       end if
     end for
     if pos != -1 then
-      junk = scintilla_send_message(hedit, SCI_SETSEL, pos, pos+length(word))
+      ssm(SCI_SETSEL, pos, pos+length(word))
       set_top_line(-1) -- set the top visible line to the current line
     end if
 end procedure
@@ -762,7 +820,7 @@ global procedure view_completions()
 
     pos = get_pos()
 
-    style = scintilla_send_message(hedit, SCI_GETSTYLEAT, pos-2, 0)
+    style = ssm(SCI_GETSTYLEAT, pos-2)
     if style = SCE_LUA_STRING or style = SCE_LUA_COMMENTLINE then
         return -- no completion in strings or comments
     end if
@@ -774,7 +832,7 @@ global procedure view_completions()
 	return
     end if
     --printf(1, "word=%s namespace=%s pos=%d end=%d\n", word)
-    junk = scintilla_send_message(hedit, SCI_SETSEL, word[4], word[4])
+    ssm(SCI_SETSEL, word[4], word[4])
     namespace = word[2]
     word = word[1]
 
@@ -803,21 +861,27 @@ global procedure view_completions()
 	end if
     end for
     if length(text) then
-      junk = scintilla_send_message(hedit, SCI_AUTOCSHOW, length(word), text)
+      ssm(SCI_AUTOCSHOW, length(word), text)
     end if
 end procedure
 
 
 global procedure view_subroutine_arguments()
     sequence text, word, decls, namespace
-    integer pos, junk, calltip_save
+    integer pos, end_pos, junk, calltip_save, style
+
+    pos = get_pos()
+    style = ssm(SCI_GETSTYLEAT, pos-2)
+    if style = SCE_LUA_STRING or style = SCE_LUA_COMMENTLINE then
+        return -- no completion in strings or comments
+    end if
 
     calltip_save = calltip_pos
-    pos = get_pos()
-    if scintilla_send_message(hedit, SCI_GETCHARAT, pos-1, 0) = '(' then
+    if ssm(SCI_GETCHARAT, pos-1) = '(' then
         calltip_pos = pos
         pos -= 1
     end if
+
     -- use scintilla's code completion
     text = get_edit_text()
     word = word_pos(text, pos)
@@ -826,6 +890,7 @@ global procedure view_subroutine_arguments()
         return
     end if
     pos = word[3]
+    end_pos = word[4]
     namespace = word[2]
     word = word[1]
 
@@ -843,12 +908,33 @@ global procedure view_subroutine_arguments()
         end for
         text &= ")"
         --puts(1, text & "\n")
-        junk = scintilla_send_message(hedit, SCI_CALLTIPSHOW, pos, text)
+        ssm(SCI_CALLTIPSHOW, pos, text)
         if length(calltip_args) then
-            junk = scintilla_send_message(hedit, SCI_CALLTIPSETHLT, calltip_args[1][1], calltip_args[1][2])
+            ssm(SCI_CALLTIPSETHLT, calltip_args[1][1], calltip_args[1][2])
         else
 	    calltip_pos = -1 -- no arguments, no need to update
         end if
+        return
+    end if
+    
+    return 
+    -- don't do the following yet, it is annoying for builtins
+    
+    -- decl not found, search includes instead
+    decls = suggest_includes(word, namespace)
+    if length(decls) = 0 then return end if
+    text = ""
+    for i = 1 to length(decls) by 2 do
+	if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then
+	  if length(text) then
+	    text &= '\n'
+	  end if
+	  text &= decls[i]
+	end if
+    end for
+    if length(text) then
+      ssm(SCI_GOTOPOS, end_pos)
+      ssm(SCI_AUTOCSHOW, length(word), text)
     end if
 end procedure
 
@@ -859,9 +945,9 @@ procedure update_subroutine_arguments()
     
     pos = get_pos()-1
  
-    ch = scintilla_send_message(hedit, SCI_GETCHARAT, pos, 0)
+    ch = ssm(SCI_GETCHARAT, pos, 0)
     if ch != ',' and ch != ')' and 
-       scintilla_send_message(hedit, SCI_GETCHARAT, pos+1, 0) != ','
+       ssm(SCI_GETCHARAT, pos+1, 0) != ','
     then
         return
     end if
@@ -870,20 +956,19 @@ procedure update_subroutine_arguments()
         return
     end if
     
+    -- get the text from after '(' up to the cursor
     text = repeat(0, pos - calltip_pos + 1)
     for i = 1 to length(text) do
-        text[i] = scintilla_send_message(hedit, SCI_GETCHARAT, calltip_pos+i-1, 0)
+        text[i] = ssm(SCI_GETCHARAT, calltip_pos+i-1)
     end for
     --puts(1, text&"\n")
     
     arg = parse_argument_position(text)
-    if arg = 0 then
-        scintilla_send_message(hedit, SCI_CALLTIPCANCEL, 0, 0)
-        calltip_pos = -1
-    elsif arg <= length(calltip_args) then
-        scintilla_send_message(hedit, SCI_CALLTIPSETHLT, calltip_args[arg][1], calltip_args[arg][2])
+    if arg = 0 or arg > length(calltip_args) then
+        ssm(SCI_CALLTIPCANCEL)
+        if arg = 0 then calltip_pos = -1 end if
     else
-        scintilla_send_message(hedit, SCI_CALLTIPSETHLT, 0, 0)
+        ssm(SCI_CALLTIPSETHLT, calltip_args[arg][1], calltip_args[arg][2])
     end if
 end procedure
 
@@ -935,7 +1020,8 @@ procedure auto_expand()
     elsif equal(text, "loop") then
         text = {"do", "end loop"}
     elsif equal(text, "for") then
-        text = {" =  to  do", "end for"}
+        --text = {" =  to  do", "end for"}
+        text = {" do", "end for"}
     else
         if match("global ", text) = 1
         or match("public ", text) = 1
@@ -960,10 +1046,10 @@ procedure auto_expand()
     end if
     
     -- save the line for auto_indent()
-    expand_line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, pos, 0)
+    expand_line = ssm(SCI_LINEFROMPOSITION, pos)
 
     -- insert the text and restore cursor position
-    junk = scintilla_send_message(hedit, SCI_INSERTTEXT, pos, text)
+    ssm(SCI_INSERTTEXT, pos, text)
 end procedure
 
 
@@ -974,14 +1060,14 @@ procedure auto_indent()
 
     -- get the previous line and get the indentation
     pos = get_pos()
-    line = scintilla_send_message(hedit, SCI_LINEFROMPOSITION, pos, 0) - 1
+    line = ssm(SCI_LINEFROMPOSITION, pos) - 1
     end_pos = get_line_end_position(line)
 
     if line = expand_line then
         -- delete the newline character and go to end of the next line
-	junk = scintilla_send_message(hedit, SCI_DELETERANGE, end_pos, pos - end_pos)
+	ssm(SCI_DELETERANGE, end_pos, pos - end_pos)
 	end_pos = get_line_end_position(line + 1)
-	junk = scintilla_send_message(hedit, SCI_GOTOPOS, end_pos, 0)
+	ssm(SCI_GOTOPOS, end_pos)
         expand_line = -1
         return
     end if
@@ -997,7 +1083,7 @@ procedure auto_indent()
     end for
 
     -- insert the indentation
-    junk = scintilla_send_message(hedit, SCI_ADDTEXT, length(indent), indent)
+    ssm(SCI_ADDTEXT, length(indent), indent)
 end procedure
 
 
@@ -1005,34 +1091,34 @@ procedure do_brace_highlight(atom hedit)
   integer pos, brace, ch
   brace = -1
   pos = get_pos()-1
-  if find(scintilla_send_message(hedit, SCI_GETCHARAT, pos, 0), "{}()[]") then
-    brace = scintilla_send_message(hedit, SCI_BRACEMATCH, pos, 0)
+  if find(ssm(SCI_GETCHARAT, pos, 0), "{}()[]") then
+    brace = ssm(SCI_BRACEMATCH, pos, 0)
   end if
   if brace = -1 then
     pos += 1
-    if find(scintilla_send_message(hedit, SCI_GETCHARAT, pos, 0), "{}()[]") then
-      brace = scintilla_send_message(hedit, SCI_BRACEMATCH, pos, 0)
+    if find(ssm(SCI_GETCHARAT, pos, 0), "{}()[]") then
+      brace = ssm(SCI_BRACEMATCH, pos, 0)
     end if
     if brace = -1 then
       pos = -1
     end if
   end if
-  brace = scintilla_send_message(hedit, SCI_BRACEHIGHLIGHT, pos, brace)
+  brace = ssm(SCI_BRACEHIGHLIGHT, pos, brace)
 end procedure
 -- FIXME: this has a problem with brace chars within strings, for ex: {1, "}{", 2}
 
 
 procedure auto_complete_selection(integer pos, sequence text)
-    integer inc, len, insert_line, blank_line
+    integer inc, len, insert_line
     sequence line
     
     -- insert include statement if completion contains it
     inc = match(" --include", text)
     if inc then
-        scintilla_send_message(hedit, SCI_AUTOCCANCEL, 0, 0)
+        ssm(SCI_AUTOCCANCEL, 0, 0)
 	len = get_pos() - pos
 	if len+1 <= inc then
-	    scintilla_send_message(hedit, SCI_ADDTEXT, inc-1-len, text[len+1..inc])
+	    ssm(SCI_ADDTEXT, inc-1-len, text[len+1..inc])
         end if
         text = text[inc+3..$] & "\n"
 	
@@ -1048,6 +1134,7 @@ procedure auto_complete_selection(integer pos, sequence text)
 	    end if
 	end for
 	if insert_line = -1 then
+	    -- insert after consecutive comment lines
 	    insert_line = 0
 	    for i = 0 to 100 do
 		line = ltrim(get_line(i))
@@ -1057,13 +1144,12 @@ procedure auto_complete_selection(integer pos, sequence text)
 		    exit
 		end if
 	    end for
-	    --insert_line = blank_line
 	end if
-	inc = scintilla_send_message(hedit, SCI_POSITIONFROMLINE, insert_line, 0)
+	inc = ssm(SCI_POSITIONFROMLINE, insert_line, 0)
 	if inc = -1 or inc > pos then
 	    inc = 0
 	end if
-	scintilla_send_message(hedit, SCI_INSERTTEXT, inc, text)
+	ssm(SCI_INSERTTEXT, inc, text)
     end if
 end procedure
 
@@ -1075,17 +1161,17 @@ procedure insert_pair()
     insert_pos = -1
     
     -- only insert pairs after char was styled (except ' and ")
-    style = scintilla_send_message(hedit, SCI_GETSTYLEAT, pos, 0)
-    if style = 0 or style = SCE_LUA_OPERATOR or style = SCE_LUA_STRINGEOL then
+    style = ssm(SCI_GETSTYLEAT, pos)
+    if find(style, {0, SCE_LUA_OPERATOR, SCE_LUA_STRINGEOL, 8}) then
 	-- avoid inside strings and comments
-	style = scintilla_send_message(hedit, SCI_GETSTYLEAT, pos-1, 0)
+	style = ssm(SCI_GETSTYLEAT, pos-1)
 	if style = SCE_LUA_COMMENTLINE or style = SCE_LUA_STRING then
 	    return
 	end if
     
 	for i = pos+1 to get_line_end_position(-1) do
-	    ch = scintilla_send_message(hedit, SCI_GETCHARAT, i, 0)
-	    style = scintilla_send_message(hedit, SCI_GETSTYLEAT, i, 0)
+	    ch = ssm(SCI_GETCHARAT, i)
+	    style = ssm(SCI_GETSTYLEAT, i)
 	    --? {ch, style}
 	    if find(ch, ",)}]\r\n+-*/=!<>\0") or style = SCE_LUA_WORD then
 		exit
@@ -1093,7 +1179,7 @@ procedure insert_pair()
 		return
 	    end if
 	end for
-        ch = scintilla_send_message(hedit, SCI_GETCHARAT, pos, 0)
+        ch = ssm(SCI_GETCHARAT, pos, 0)
         if ch = '(' then
             ch = ')'
         elsif ch = '{' then
@@ -1101,12 +1187,19 @@ procedure insert_pair()
         elsif ch = '[' then
             ch = ']'
         end if
-        scintilla_send_message(hedit, SCI_INSERTTEXT, pos+1, {ch})
+        ssm(SCI_INSERTTEXT, pos+1, {ch})
         insert_chars &= ch
     end if
 end procedure
 
-
+-- remove the characters inserted by insert_pair(), won't work for ' " tho
+procedure delete_pair()
+    if find(last_deleted_char, "([{") then
+	ssm(SCI_DELETERANGE, get_pos(), 1)
+    elsif length(insert_chars) and insert_chars[$] = last_deleted_char then
+	insert_chars = insert_chars[1..$-1]
+    end if
+end procedure
 
 procedure log_notification(atom notification)
   integer code, pos, ch, modifiers
@@ -1185,7 +1278,9 @@ constant
   NOTIFICATION_POS = 24,
   NOTIFICATION_CH = 28,
   NOTIFICATION_MODIFIERS = 32,
+  NOTIFICATION_MODIFICATIONTYPE = 36,
   NOTIFICATION_TEXT = 40,
+  NOTIFICATION_LENGTH = 48,
   NOTIFICATION_UPDATED = 116
 elsedef
 constant
@@ -1193,13 +1288,16 @@ constant
   NOTIFICATION_POS = 12,
   NOTIFICATION_CH = 16,
   NOTIFICATION_MODIFIERS = 20,
+  NOTIFICATION_MODIFICATIONTYPE = 24,
   NOTIFICATION_TEXT = 28,
+  NOTIFICATION_LENGTH = 32,
   NOTIFICATION_UPDATED = 88
 end ifdef
 
 
 global function sci_notify(atom hedit, atom data, atom notification, atom userdata)
-  integer code, pos, ch, modifiers, updated
+  integer code, pos, ch, modifiers, updated, len
+  atom ptr
   
   --? {ctl, data, notification, userdata}
   if notification = 0 then return 0 end if
@@ -1213,6 +1311,9 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
     elsif and_bits(updated, SC_UPDATE_SELECTION+SC_UPDATE_CONTENT) = SC_UPDATE_SELECTION then
 	--? {updated, insert_chars}
 	insert_chars = ""
+    elsif last_deleted_char then
+	delete_pair()
+        last_deleted_char = 0
     end if
     if calltip_pos != -1 then
         update_subroutine_arguments()
@@ -1227,23 +1328,28 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   elsif code = SCN_KEY then
     ch = peek4s(notification+NOTIFICATION_CH)
     modifiers = peek4s(notification+NOTIFICATION_MODIFIERS)
+    -- on OSX, META and SHIFT are the only modifiers we receive
     
-    if ch = 'O' and modifiers = SCMOD_CTRL then
+    if ch = 'O' and and_bits(modifiers, SCMOD_CTRL+SCMOD_META) then
       open_file("", 0)
 
-    elsif ch = 'N' and modifiers = SCMOD_CTRL then
+    elsif ch = 'N' and and_bits(modifiers, SCMOD_CTRL+SCMOD_META) then
       new_file()
 
-    elsif ch = 'S' and modifiers = SCMOD_CTRL then
+    elsif ch = 'S' and and_bits(modifiers, SCMOD_CTRL+SCMOD_META) then
       save_if_modified(0)
 
-    elsif ch = 'Z' and modifiers = SCMOD_CTRL+SCMOD_SHIFT then
-      scintilla_send_message(hedit, SCI_REDO, 0, 0)
-      
-    elsif ch >= '1' and ch <= '9' and modifiers = SCMOD_ALT then
+    elsif ch = 'Z' and and_bits(modifiers, SCMOD_CTRL+SCMOD_META) then
+      if and_bits(modifiers, SCMOD_SHIFT) then
+        ssm(SCI_REDO, 0, 0)
+      else
+        ssm(SCI_UNDO, 0, 0)
+      end if
+
+    elsif ch >= '1' and ch <= '9' and and_bits(modifiers, SCMOD_ALT+SCMOD_META) then
       select_tab(ch - '0')
-    
-    elsif ch = ' ' and modifiers = SCMOD_CTRL then
+
+    elsif ch = ' ' and and_bits(modifiers, SCMOD_CTRL+SCMOD_META) then
       view_completions()
 
     elsif ch < 128 then
@@ -1258,8 +1364,8 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 
     if length(insert_chars) and ch = insert_chars[$] then
 	-- the user retyped the insert character, so delete it
-        scintilla_send_message(hedit, SCI_DELETERANGE, get_pos(), 1)
-        insert_chars = insert_chars[1..$-1]
+        ssm(SCI_DELETERANGE, get_pos(), 1)
+        -- the UPDATEUI will remove the insert_chars[$]
     elsif ch = ':' then
       view_completions()
     elsif ch = ' ' then
@@ -1280,9 +1386,24 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   elsif code = SCN_AUTOCSELECTION then
     -- check for "--include" in selection, then add include statement near top of file
     --  or after the first non-commented line, or ideally with other includes
-    auto_complete_selection(peek4u(notification+NOTIFICATION_POS),
-	peek_string(peek4u(notification+NOTIFICATION_TEXT)))
+    ifdef BITS64 then
+	ptr = peek8u(notification+NOTIFICATION_TEXT)
+    elsedef
+	ptr = peek4u(notification+NOTIFICATION_TEXT)
+    end ifdef
+    pos = peek4u(notification+NOTIFICATION_POS)
+    auto_complete_selection(pos, peek_string(ptr))
+  elsif code = SCN_MODIFIED then
+    modifiers = peek4u(notification+NOTIFICATION_MODIFICATIONTYPE)
+    if and_bits(modifiers, SC_MOD_BEFOREDELETE) then
+	pos = peek4u(notification+NOTIFICATION_POS)
+	len = peek4u(notification+NOTIFICATION_LENGTH)
+	--? {modifiers, pos, len}
+	if len = 1 then
+	    last_deleted_char = ssm(SCI_GETCHARAT, pos)
+	end if
+    end if
+   
   end if
-
   return 0
 end function
