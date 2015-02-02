@@ -32,6 +32,7 @@ constant
     View_Declaration = 405,
     View_GoBack = 406,
     View_SubArgs = 407,
+    View_LineNumbers = 408,
     Run_Start = 501,
     Run_Intepreter = 502,
     Run_Intepreter_Default = 511,
@@ -781,6 +782,10 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = View_Font then
 		choose_font()
 		return rc
+	    elsif wParam = View_LineNumbers then
+	        line_numbers = not line_numbers
+	        reinit_all_edits()
+	        return c_func(CheckMenuItem, {hviewmenu, View_LineNumbers, MF_CHECKED*line_numbers})
 	    elsif wParam = View_Completions then
 		view_completions()
 		return rc
@@ -960,6 +965,8 @@ procedure WinMain()
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_Font, alloc_string("&Font...")})
+    junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	View_LineNumbers, alloc_string("&Line Numbers")})
 -- run menu
     hrunmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -993,7 +1000,9 @@ procedure WinMain()
 
     load_wee_conf(wee_conf_filename)
     
- 
+    -- set the checkmark on the Line Numbers menu item
+    c_func(CheckMenuItem, {hviewmenu, View_LineNumbers, MF_CHECKED*line_numbers}) 
+    
 -- window creation
     hMainWnd = CreateWindow({
 		    0,                       -- extended style
