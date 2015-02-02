@@ -7,6 +7,13 @@ include std/get.e
 include std/filesys.e
 include std/hash.e
 
+puts(1, "=== WEE Source Code Updater ===\n"&
+    "This will overwrite any local changes to the source files.\n"&
+    "Press a key to continue, or 'q' to quit.\n")
+if wait_key() = 'q' then
+    abort(0)
+end if
+
 constant
   base_url = "http://cdn.rawgit.com/peberlein/WEE/" -- & "commit/filename"
 

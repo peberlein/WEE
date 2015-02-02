@@ -1,8 +1,9 @@
-include std/console.e
+include std/pretty.e
 include std/io.e
 include std/hash.e
 include std/os.e
 include std/pipeio.e
+
 
 sequence files
 files = {
@@ -39,4 +40,5 @@ for i = 1 to length(files) do
   pipeio:kill(p)
 end for
 
-display(files)
+--display(files)
+? write_file("manifest.json", pretty_sprint(files, {2}))
