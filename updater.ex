@@ -49,7 +49,7 @@ constant PLATFORM_BITS = 32
 end ifdef
 
 integer platform_bits
-sequence platforms
+sequence platforms, subdir
 
 object result, hashcode
 
@@ -77,9 +77,10 @@ for i = 1 to length(files) do
       display(result)
       printf(1, "Failed to download %s\n", {name})
     else
-      if atom(dir(dirname(name))) then
-          printf(1, "Creating directory %s\n", {dirname(name)})
-          create_directory(dirname(name))
+      subdir = dirname(name)
+      if length(subdir) and atom(dir(subdir)) then
+          printf(1, "Creating directory %s\n", {subdir})
+          create_directory(subdir)
       end if
       if write_file(name, result[2]) = -1 then
         printf(1, "Failed to write_file %s\n", {name})
@@ -87,3 +88,5 @@ for i = 1 to length(files) do
     end if
   end if
 end for
+
+puts(1, "Done.\n")
