@@ -1,8 +1,7 @@
 -- ui_gtk.e
 
-
 -- fix intermittent hang on quit (found it, caused by putting the program in the
--- background using Ctrl-Z, then "bg".  It blocks on doing something to console
+-- background using Ctrl-Z and "bg".  It blocks on doing something to console
 -- before exiting, so need to do "fg" to unfreeze and exit normally.)
 
 -- font seems to be ok on OSX now, 
@@ -10,12 +9,15 @@
 
 -- todo:
 -- fix modifier keys not working on OS X (might be ok now using gtk accelerators)
--- investigate do widgets need to be Destroy'd
+--   menu accelerator labels show up as "-/-" on OS X
+
+-- investigate if widgets need to be Destroy'd
 
 public include std/machine.e
 include scintilla.e
 include EuGTK/GtkEngine.e
 include wee.exw as wee
+
 
 
 -- check to see if 64-bit callback arguments are broken
@@ -65,6 +67,7 @@ function ViewDecl() view_declaration() return 0 end function
 function ViewArgs() view_subroutine_arguments() return 0 end function
 function ViewComp() view_completions() return 0 end function
 function ViewError() view_error() return 0 end function
+
 function ViewFont()
   atom dialog
   sequence font, tmp
@@ -163,8 +166,12 @@ constant
   viewmenu = create(GtkMenu),
   runmenu = create(GtkMenu),
   helpmenu = create(GtkMenu)
-
-
+set(filemenu, "accel group", group)
+set(editmenu, "accel group", group)
+set(searchmenu, "accel group", group)
+set(viewmenu, "accel group", group)
+set(runmenu, "accel group", group)
+set(helpmenu, "accel group", group)
 
 -- create a menu item with "activate" signal connected to local routine
 -- and add parsed accelerator key 
@@ -315,6 +322,7 @@ end function
 
 global procedure ui_close_tab(integer tab)
 --  printf(1, "close tab\n", {})
+    set(notebook, "remove page", tab-1)
 
     -- remove the window handle
     ui_hedits = ui_hedits[1..tab-1] & ui_hedits[tab+1..$]
@@ -407,8 +415,8 @@ x_size = 500 y_size = 600
 
 load_wee_conf(wee_conf_file)
 gtk_proc("gtk_window_move", {P,I,I}, {win, x_pos, y_pos-28}) -- something is moving the window 28 pixels down each time
-gtk_proc("gtk_window_resize", {P,I,I}, {win, x_size, y_size})
-
+--gtk_proc("gtk_window_resize", {P,I,I}, {win, x_size, y_size})
+set(win, "default size", x_size, y_size)
 
 constant cmdline = command_line()
 
