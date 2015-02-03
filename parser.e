@@ -1647,7 +1647,98 @@ global function get_subroutines(sequence ast)
   return result
 end function
 
+constant builtins = {
+{"function", "abort", "integer", "errcode", 0},
+{"function", "and_bits", "object", "a", 0, "object", "b", 0},
+{"function", "append", "sequence", "target", 0, "object", "x", 0},
+{"function", "arctan", "object", "tangent", 0},
+{"type", "atom", "object", "x", 0},
+{"function", "c_func", "integer", "rid", 0, "sequence", "args", 1},
+{"procedure", "c_proc", "integer", "rid", 0, "sequence", "args", 1},
+{"function", "call", "integer", "id", 0, "sequence", "args", 1},
+{"function", "call_func", "integer", "id", 0, "sequence", "args", 1},
+{"procedure", "call_proc", "integer", "id", 0, "sequence", "args", 1},
+{"procedure", "clear_screen"},
+{"procedure", "close", "atom", "fn", 0},
+{"function", "command_line"},
+{"function", "compare", "object", "compared", 0, "object", "reference", 0},
+{"function", "cos", "object", "angle", 0},
+{"function", "date"},
+{"procedure", "delete", "object", "x", 0},
+{"function", "delete_routine", "object", "x", 0, "integer", "rid", 0},
+{"function", "equal", "object", "left", 0, "object", "right", 0},
+{"function", "find", "object", "needle", 0, "sequence", "haystack", 0, "integer", "start", 1},
+{"function", "floor", "object", "value", 0},
+{"function", "get_key"},
+{"function", "getc", "integer", "fn", 0},
+{"function", "getenv", "sequence", "var_name", 0},
+{"function", "gets", "integer", "fn", 0},
+{"function", "hash", "object", "source", 0, "atom", "algo", 0},
+{"function", "head", "sequence", "source", 0, "atom", "size", 1},
+{"function", "include_paths", "integer", "convert", 0},
+{"function", "insert", "sequence", "target", 0, "object", "what", 0, "integer", "index", 0},
+{"type", "integer", "object", "x", 0},
+{"function", "length", "object", "target", 0},
+{"function", "log", "object", "value", 0},
+{"function", "machine_func", "integer", "machine_id", 0, "object", "args", 1},
+{"procedure", "machine_proc", "integer", "machine_id", 0, "object", "args", 1},
+{"function", "match", "sequence", "needle", 0, "sequence", "haystack", 0, "integer", "start", 1},
+{"procedure", "mem_copy", "atom", "destination", 0, "atom", "origin", 0, "integer", "len", 0},
+{"procedure", "mem_set", "atom", "destination", 0, "integer", "byte_value", 0, "integer", "how_many", 0},
+{"function", "not_bits", "object", "a", 0},
+{"type", "object", "object", "x", 0},
+{"function", "open", "sequence", "path", 0, "sequence", "mode", 0, "integer", "cleanup", 1},
+{"function", "option_switches"},
+{"function", "or_bits", "object", "a", 0, "object", "b", 0},
+{"function", "peek", "object", "addr_n_length", 0},
+{"function", "peek2s", "object", "addr_n_length", 0},
+{"function", "peek2u", "object", "addr_n_length", 0},
+{"function", "peek4s", "object", "addr_n_length", 0},
+{"function", "peek4u", "object", "addr_n_length", 0},
+{"function", "peek_string", "atom", "addr", 0},
+{"function", "peeks", "object", "addr_n_length", 0},
+{"function", "pixel"},
+{"function", "platform"},
+{"procedure", "poke", "atom", "addr", 0, "object", "x", 0},
+{"procedure", "poke2", "atom", "addr", 0, "object", "x", 0},
+{"procedure", "poke4", "atom", "addr", 0, "object", "x", 0},
+{"procedure", "position", "integer", "row", 0, "integer", "column", 0},
+{"function", "power", "object", "base", 0, "object", "exponent", 0},
+{"function", "prepend", "sequence", "target", 0, "object", "x", 0},
+{"procedure", "print", "integer", "fn", 0, "object", "x", 0},
+{"procedure", "printf", "integer", "fn", 0, "sequence", "format", 0, "object", "values", 0},
+{"procedure", "puts", "integer", "fn", 0, "object", "text", 0},
+{"function", "rand", "object", "maximum", 0},
+{"function", "remainder", "object", "dividend", 0, "object", "divisor", 0},
+{"function", "remove", "sequence", "target", 0, "atom", "start", 0, "atom", "stop", 1},
+{"function", "repeat", "object", "item", 0, "atom", "count", 0},
+{"function", "replace", "sequence", "target", 0, "object", "replacement", 0, "integer", "start", 0, "integer", "stop", 1},
+{"function", "routine_id", "sequence", "routine_name", 0},
+{"type", "sequence", "object", "x", 0},
+{"function", "sin", "object", "angle", 0},
+{"function", "splice", "sequence", "target", 0, "object", "what", 0, "integer", "index", 0},
+{"function", "sprintf", "sequence", "format", 0, "object", "values", 0},
+{"function", "sqrt", "object", "value", 0},
+{"procedure", "system", "sequence", "command", 0, "integer", "mode", 1},
+{"function", "system_exec", "sequence", "command", 0, "integer", "mode", 1},
+{"function", "tail", "sequence", "source", 0, "atom", "size", 1},
+{"function", "tan", "object", "angle", 0},
+{"procedure", "task_clock_start"},
+{"procedure", "task_clock_stop"},
+{"function", "task_create", "integer", "rid", 0, "sequence", "args", 0},
+{"function", "task_list"},
+{"function", "task_schedule", "atom", "task_id", 0, "object", "schedule", 0},
+{"function", "task_self"},
+{"function", "task_schedule", "atom", "task_id", 0},
+{"function", "task_suspend", "atom", "task_id", 0},
+{"function", "task_yield"},
+{"function", "time"},
+{"procedure", "trace", "integer", "mode", 0},
+{"function", "xor_bits", "object", "a", 0, "object", "b", 0}
+}
 
+
+-- returns {{"subroutine-type", "name", ["arg1-type", "arg1-name", is_default]... }... }
 function get_args(sequence ast, sequence word, sequence namespace, integer filter)
   sequence result, s
   integer x, decl, prefix, include_filter
@@ -1692,18 +1783,27 @@ function get_args(sequence ast, sequence word, sequence namespace, integer filte
       --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
       --    scope-start, scope-end, stmts...}
       if decl = FUNC_DECL then
-        result &= {"function"}
+        result &= {{"function", s[2]}}
       elsif decl = PROC_DECL then
-        result &= {"procedure"}
+        result &= {{"procedure", s[2]}}
       elsif decl = TYPE_DECL then
-        result &= {"type"}
+        result &= {{"type", s[2]}}
       end if
-      result &= {{}}
       for j = 1 to length(s[4]) do -- display arguments
         result[$] &= {s[4][j][1], s[4][j][2], length(s[4][j]) = 5}  -- {"type", "name", has-default}
       end for
+      
     end if
   end for
+  -- scan builtins
+  if length(result) = 0 then
+      for i = 1 to length(builtins) do
+          if equal(word, builtins[i][2]) then
+              result &= {builtins[i]}
+              exit
+          end if
+      end for
+  end if
   return result
 end function
 

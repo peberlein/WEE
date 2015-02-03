@@ -73,6 +73,7 @@ global constant
 --  choose which intepreter to use for run
 --  new ex.err dialog? <cancel> <open ex.err> <goto error>
 --    and listbox with call stack
+--    and multiple unresolved references
 --  64-bit safe
 --  Linux/Mac (using EuGTK)
 --  shift-ctrl-Z should redo
@@ -83,6 +84,11 @@ global constant
 --  store syntax highlighting colors in wee.conf
 --  fix brace highlighting in comments and strings
 --  configurable indent size
+--  hardcode list of builtins and arguments in get_subroutine_arguents()
+--  completions should be sorted
+--  namespaces still need to be fixed
+--  put an icon in the completion list for each type of symbol
+--  put arguments after each subroutine completion (maybe)
 
 without warning
 
@@ -915,11 +921,11 @@ global procedure view_subroutine_arguments()
 
     decls = get_subroutine_arguments(parse(text, file_name), word, namespace)
     if length(decls) then
-	calltip_args = {}
-        text = decls[$-1] & " " & word & "("
         decls = decls[$] -- overloaded?  use the last one
-        for i = 1 to length(decls) by 3 do
-          if i != 1 then text &= ", " end if
+        text = decls[1] & " " & decls[2] & "("
+	calltip_args = {}
+        for i = 3 to length(decls) by 3 do
+          if i != 3 then text &= ", " end if
           if decls[i+2] then text &= "[" end if
           calltip_args &= {{length(text), 0}}
           text &= decls[i] & " " & decls[i+1]
