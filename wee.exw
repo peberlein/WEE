@@ -277,7 +277,7 @@ global procedure init_edit(atom edit)
      "global constant include with without return exit " &
      -- OE4
      "public export enum as namespace ifdef elsifdef elsedef "&
-     "label entry break continue loop until routine"
+     "label entry break continue loop until routine switch case fallthru"
      )
     ssm(SCI_SETKEYWORDS, 1, 
      "length puts integer sequence position object append prepend print printf "&
@@ -1037,7 +1037,7 @@ procedure auto_expand()
     -- get the text to insert
     if equal(text, "if") then
         text = {" then", "end if"}
-    elsif equal(text, "elsif") then
+    elsif equal(text, "elsif") or equal(text, "case") then
         text = {" then"}
     elsif equal(text, "while") then
         text = {" do", "end while"}
@@ -1046,6 +1046,9 @@ procedure auto_expand()
     elsif equal(text, "for") then
         --text = {" =  to  do", "end for"}
         text = {" do", "end for"}
+    elsif equal(text, "switch") then
+        text = {" do", "end switch"}
+        
     else
         if match("global ", text) = 1
         or match("public ", text) = 1

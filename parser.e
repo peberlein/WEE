@@ -1479,11 +1479,11 @@ function get_decls(sequence ast, integer pos, sequence namespace, integer filter
   sequence result, s
   integer x, decl, prefix, include_filter
 
-  if length(namespace) and length(ast) >= 3 and 
-     (ast[3][1] != NAMESPACE or not equal(namespace, ast[3][2])) then
-     if and_bits(filter, FILTER_INCLUDE) = 0 then
+  if length(namespace) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, namespace})) then
+      filter = and_bits(filter, FILTER_INCLUDE)
+      if filter = 0 then
          return {}  -- no namespace or mismatch
-     end if
+      end if
   end if
 
   result = {}
