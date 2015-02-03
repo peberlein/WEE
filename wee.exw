@@ -95,6 +95,7 @@ without warning
 include parser.e
 include scintilla.e
 include get.e
+include std/sequence.e
 
 
 -- The ui includes are circular includes: 
@@ -279,13 +280,7 @@ global procedure init_edit(atom edit)
      "public export enum as namespace ifdef elsifdef elsedef "&
      "label entry break continue loop until routine switch case fallthru"
      )
-    ssm(SCI_SETKEYWORDS, 1, 
-     "length puts integer sequence position object append prepend print printf "&
-     "floor getc gets get_key rand repeat atom compare find match time command_line "&
-     "open close trace getenv sqrt sin cos tan log system date remainder power "&
-     "machine_proc abort peek poke call sprintf arctan and_bits or_bits xor_bits "&
-     "not_bits mem_copy mem_set c_proc c_func routine_id call_proc call_func call_back "&
-     "poke4 peek4s peek4u equal")
+    ssm(SCI_SETKEYWORDS, 1, get_builtins())
 
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, DGray)
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, DGray)
@@ -305,7 +300,8 @@ global procedure init_edit(atom edit)
 
     ssm(SCI_AUTOCSETSEPARATOR, '\n')
     ssm(SCI_AUTOCSTOPS, 0, " ")
-    ssm(SCI_AUTOCSETORDER, SC_ORDER_CUSTOM)
+    --ssm(SCI_AUTOCSETORDER, SC_ORDER_CUSTOM) -- declaration order
+    ssm(SCI_AUTOCSETORDER, SC_ORDER_PERFORMSORT) -- scintilla should sort
     ssm(SCI_AUTOCSETCANCELATSTART)
 
     -- call tips display above text
@@ -875,7 +871,6 @@ global procedure view_completions()
     if length(decls) = 0 then
 	return
     end if
-
     text = ""
     for i = 1 to length(decls) by 2 do
 	if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then

@@ -1737,6 +1737,16 @@ constant builtins = {
 {"function", "xor_bits", "object", "a", 0, "object", "b", 0}
 }
 
+global function get_builtins()
+  sequence s
+  s = {}
+  for i = 1 to length(builtins) do
+    if i != 1 then s &= ' ' end if
+    s &= builtins[i][2]
+  end for
+  return s
+end function
+
 
 -- returns {{"subroutine-type", "name", ["arg1-type", "arg1-name", is_default]... }... }
 function get_args(sequence ast, sequence word, sequence namespace, integer filter)
