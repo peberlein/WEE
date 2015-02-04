@@ -626,13 +626,13 @@ global procedure close_tab()
     tab_hedits = tab_hedits[1..tab-1] & tab_hedits[tab+1..$]
     tab_file_names = tab_file_names[1..tab-1] & tab_file_names[tab+1..$]
     tab_timestamps = tab_timestamps[1..tab-1] & tab_timestamps[tab+1..$]
-    if length(tab_hedits) = 0 then
-       new_file() -- must always have a edit available
-    elsif tab > length(tab_hedits) then
-       tab = length(tab_hedits)
-    end if
     current_tab = 0
-    select_tab(tab)
+    if length(tab_hedits) = 0 then
+	new_file() -- must always have a edit available
+    elsif tab > length(tab_hedits) then
+	tab = length(tab_hedits)
+	select_tab(tab)
+    end if
 end procedure
 
 global procedure new_file()
