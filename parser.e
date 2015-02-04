@@ -40,7 +40,7 @@ constant
 sequence defined_words
 defined_words = {"OE", "OE4"}
 if platform() = WIN32 then
-  defined_words &= {"WINDOWS"}
+  defined_words &= {"WINDOWS", "WIN32"}
 elsif platform() = LINUX then
   defined_words &= {"LINUX"}
 end if
@@ -473,7 +473,7 @@ constant
   SLASH = '/' + ('\\' - '/') * (platform() = WIN32),
   DOTDOT = SLASH & ".." & SLASH
 
-function get_path_directory(sequence path)
+global function get_path_directory(sequence path)
   for i = length(path) to 1 by -1 do
     if path[i] = '\\' or path[i] = '/' then
       return path[1..i]
@@ -482,7 +482,7 @@ function get_path_directory(sequence path)
   return ""
 end function
 
-function get_basename(sequence path)
+global function get_basename(sequence path)
   for i = length(path)-1 to 1 by -1 do
     if path[i] = '\\' or path[i] = '/' then
       return path[i+1..$]

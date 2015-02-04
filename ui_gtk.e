@@ -14,6 +14,7 @@
 -- investigate if widgets need to be Destroy'd
 
 public include std/machine.e
+public include std/error.e
 include scintilla.e
 include EuGTK/GtkEngine.e
 include wee.exw as wee
@@ -66,7 +67,7 @@ function ViewSubs() view_subroutines() return 0 end function
 function ViewDecl() view_declaration() return 0 end function
 function ViewArgs() view_subroutine_arguments() return 0 end function
 function ViewComp() view_completions() return 0 end function
-function ViewError() view_error() return 0 end function
+function ViewError() ui_view_error() return 0 end function
 
 function ViewFont()
   atom dialog
@@ -131,6 +132,15 @@ function notebook_switch_page(atom nb, atom page, atom page_num)
     select_tab(page_num + 1)
     return 0
 end function
+
+function window_set_focus(atom widget)
+    printf(1, "window set focus %d\n", {widget})
+    check_externally_modified_tabs()
+    check_ex_err()
+    return 0
+end function
+
+
 -------------------------------------------------------------
 
 constant 
@@ -142,6 +152,7 @@ set(win, "border width", 0)
 connect(win, "destroy", main_quit)
 connect(win, "configure-event", call_back(routine_id("configure_event")))
 connect(win, "delete-event", call_back(routine_id("delete_event")))
+--connect(win, "set-focus", call_back(routine_id("window_set_focus")))
 set(win, "add accel group", group)
 add(win, panel)
 
@@ -400,7 +411,9 @@ global function ui_message_box_error(sequence title, sequence message)
   return 0
 end function
 
+global procedure ui_view_error()
 
+end procedure
 
 
 

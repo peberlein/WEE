@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.15"
+  version = "0.16"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -49,6 +49,8 @@ global constant
 --  added: auto insert closing characters for ( { [ " '
 --  added: typing '(' after a subroutine will popup hints
 --  added: hardcoded list of builtins and arguments in get_subroutine_arguents()
+--  updated: ex.err dialog with buttons: <cancel> <open ex.err> <goto error>
+--    and listbox with call stack or multiple undeclared references
 
 --  bugs fixed: 
 --    ViewDeclaration wrong cursor pos
@@ -67,18 +69,15 @@ global constant
 --    fix EOL mode on Linux/OSX
 --    completions are now sorted
 --    switch/case syntax highlight and autocomplete were missing
+--    shift-ctrl-Z does redo
 
 -- todo:
 --  save tabs in conf file?
 --  indent/unindent selection with tab/shift-tab
 --  comment/uncomment selected lines
 --  choose which intepreter to use for run
---  new ex.err dialog? <cancel> <open ex.err> <goto error>
---    and listbox with call stack
---    and multiple unresolved references
 --  64-bit safe
 --  Linux/Mac (using EuGTK)
---  shift-ctrl-Z should redo
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
 --    as it is now, its really annoying
@@ -87,7 +86,7 @@ global constant
 --  fix brace highlighting in comments and strings
 --  configurable indent size
 --  namespaces still need to be fixed (include as)
---  put an icon in the completion list for each type of symbol
+--  put an icon in the completion list for each type of symbol (maybe)
 --  put arguments after each subroutine completion (maybe)
 
 without warning
@@ -95,7 +94,6 @@ without warning
 include parser.e
 include scintilla.e
 include get.e
-include std/sequence.e
 
 
 -- The ui includes are circular includes: 
@@ -114,7 +112,7 @@ global constant max_recent_files = 5
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
 global integer font_height, line_numbers
-global sequence file_name, run_file_name
+global sequence file_name, run_file_name, ex_err_name
 
 -- local variables
 sequence
@@ -127,13 +125,29 @@ integer expand_line, insert_pos, last_deleted_char
 sequence insert_chars
 sequence calltip_args -- {{start,end},...}
 integer calltip_pos
+sequence wee_conf_filename
 
 -- shorthand helper function
 function ssm(integer m, object w=0, object l=0)
     return scintilla_send_message(hedit, m, w, l)
 end function
 
+
+function crash_cleanup(object x)
+  ui_message_box_error(window_title, "Internal editor error occurred.\n")
+  save_modified_tabs()
+  if length(wee_conf_filename) then
+    save_wee_conf(wee_conf_filename)
+  end if
+  return 0
+end function
+
+
 global procedure wee_init()
+
+  wee_conf_filename = ""
+
+  crash_routine(routine_id("crash_cleanup"))
 
   recent_files = {}
   recent_pos = {}
@@ -146,6 +160,7 @@ global procedure wee_init()
   hedit = 0
   
   run_file_name = ""
+  ex_err_name = "ex.err"
   tab_hedits = {}
   tab_file_names = {}
   tab_timestamps = {}
@@ -173,6 +188,7 @@ global procedure load_wee_conf(sequence wee_conf_file)
     sequence key, val
     f = open(wee_conf_file, "r")
     if f = -1 then return end if
+    wee_conf_filename = wee_conf_file
     l = gets(f)
     while sequence(l) do
         eq = find('=', l)
@@ -484,29 +500,29 @@ global procedure new_tab(sequence file_name)
 end procedure
 
 -- returns tab index of opened file, or 0 if cancelled
-global function open_file(sequence open_file, integer reload)
+global function open_file(sequence file_name, integer reload)
     atom result, text_buffer
     integer fn, tab
     object temp, s
     sequence text
 
-    if length(open_file) = 0 then
-        open_file = ui_get_open_file_name()
-        if length(open_file) = 0 then return 0 end if
+    if length(file_name) = 0 then
+        file_name = ui_get_open_file_name()
+        if length(file_name) = 0 then return 0 end if
     end if
 
     -- check if already existing tab
-    tab = find(open_file, tab_file_names)
+    tab = find(file_name, tab_file_names)
     if tab and reload = 0 then
       select_tab(tab)
       return tab
     end if
 
     text = ""
-    fn = open(open_file, "rb")
+    fn = open(file_name, "rb")
     if fn = -1 then
       -- file couldn't be opened
-      if ui_message_box_yes_no("Open", "Unable to open "&open_file&"\n\n"&
+      if ui_message_box_yes_no("Open", "Unable to open "&file_name&"\n\n"&
                      "Do you want to create it?") = 0 then
 	  return 0
       end if
@@ -520,8 +536,9 @@ global function open_file(sequence open_file, integer reload)
       close(fn)
     end if
 
-    if reload = 0 then
-      new_tab(open_file)
+    if not tab then
+      new_tab(file_name)
+      tab = current_tab
     end if
     update_tab_timestamp()
 
@@ -529,14 +546,14 @@ global function open_file(sequence open_file, integer reload)
     result = ssm(SCI_SETTEXT, 0, text)
     result = ssm(SCI_SETSAVEPOINT)
     modified = 0
-    if reload then
+    if tab then
       update_tab_name()
     end if
     
     result = ssm(SCI_SETSEL)
     result = ssm(SCI_EMPTYUNDOBUFFER)
 
-    add_recent_file(open_file)
+    add_recent_file(file_name)
     return tab
 end function
 
@@ -712,11 +729,82 @@ end procedure
 -- ex.err file handling routines
 -------------------------------------------------------------------
 
+-- returns {"filename:line", "message", "line1", "line2", "line3"...}
+global function get_ex_err()
+    integer fn
+    object line, msg, txt
+    sequence result, tmp
+    
+    fn = open(ex_err_name, "r")
+    if fn = -1 then
+	return {}
+    end if
+    result = {}
+    line = gets(fn) -- filename:line
+    if not atom(line) then
+        msg = gets(fn)
+        result = {line, msg}
+        if match("Errors resolving the following references", msg) then
+	    txt = gets(fn)
+	    while sequence(txt) and length(txt) > 1 do
+		result = append(result, txt)
+	        txt = gets(fn)
+	    end while
+        else
+	    result = append(result, line)
+	    tmp = "... called from "
+	    txt = gets(fn)
+	    while sequence(txt) and length(result) < 100 do
+		if length(txt) > length(tmp) and equal(txt[1..length(tmp)], tmp) then
+		    result = append(result, txt[length(tmp)+1..$])
+		end if
+	        txt = gets(fn)
+	    end while
+        end if
+    end if
+    close(fn)
+    return result
+end function
+
+global procedure goto_error(sequence text)
+    integer a, b, c, line, tab
+    sequence val, file
+    a = find('(', text)
+    b = find(')', text)
+    c = 0
+    for i = length(text) to 1 by -1 do
+        if text[i] = ':' then
+            c = i
+            exit
+        end if
+    end for
+    if a < c and c < b then
+	-- 'blah' (filename:line) has not been declared
+	file = get_path_directory(ex_err_name) & text[a+1..c-1]
+        val = value(text[c+1..b-1])
+    elsif c then
+	-- c:\path\to\filename.ext:line subroutine_name()
+        file = text[1..c-1]
+        val = value(text[c+1..$])
+    else
+	return
+    end if
+    tab = open_file(file, 0)
+    if tab and val[1] = GET_SUCCESS then
+        ssm(SCI_GOTOLINE, val[2]-1)
+        set_top_line(val[2]-1)
+    end if
+end procedure
+
 global procedure view_error()
     atom fn, result
     object s
     integer line, colon, caret, tab
     sequence file, message
+    
+    ui_view_error()
+    return
+    
     fn = open("ex.err", "r")
     if fn = -1 then
 	return
@@ -775,23 +863,16 @@ global procedure view_error()
 end procedure
 
 global procedure check_ex_err()
-  sequence ex_err
   atom ts
 
   if length(run_file_name) = 0 then return end if
 
-  ex_err = run_file_name
-  for i = length(ex_err) to 1 by -1 do
-    if ex_err[i] = '\\' then
-      ex_err = ex_err[1..i] & "ex.err"
-      exit
-    end if
-  end for
-
-  ts = get_timestamp(ex_err)
-  if ex_err_timestamp != -1 and ts > ex_err_timestamp then
+  ex_err_name = get_path_directory(run_file_name) & "ex.err"
+  ts = get_timestamp(ex_err_name)
+--printf(1, "%s %d %d\n", {ex_err_name, ts, ex_err_timestamp})
+  if ts != -1 and ts > ex_err_timestamp then
     run_file_name = ""
-    view_error()
+    ui_view_error()
   end if
   ex_err_timestamp = ts
 end procedure

@@ -22,7 +22,7 @@ constant
     Edit_Paste = 204,
     Edit_Clear = 205,
     Edit_SelectAll = 206,
-    Edit_Wordwrap = 207,
+    Edit_Redo = 207,
     Search_Find = 301,
     Search_Replace = 302,
     View_Subs = 401,
@@ -246,6 +246,17 @@ global function ui_message_box_error(sequence title, sequence message)
 end function
 
 
+procedure get_window_size()
+    atom rect
+    rect = allocate(16)
+    c_proc(GetWindowRect, {hMainWnd, rect})
+    x_pos = peek4u(rect)
+    y_pos = peek4u(rect+4)
+    x_size = peek4u(rect+8) - x_pos
+    y_size = peek4u(rect+12) - y_pos
+    free(rect)
+end procedure
+
 
 procedure about_box()
     atom result
@@ -256,7 +267,9 @@ procedure about_box()
     free_strings()
 end procedure
 
-constant DialogListID = 1000
+constant 
+    DialogListID = 1000,
+    DialogLabelID = 1001
 sequence subs
 
 function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
@@ -327,7 +340,7 @@ procedure view_subroutines()
     junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
         --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
 	  {{WS_POPUP, WS_BORDER, WS_SYSMENU, DS_MODALFRAME, WS_CAPTION}, 0,
-         10,10, 100,124, 0, 0, "Subroutines"},
+         50,50, 100,124, 0, 0, "Subroutines"},
         --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
         {{WS_CHILD, WS_VISIBLE, WS_VSCROLL}, WS_EX_CLIENTEDGE,
          4,4, 92,110, DialogListID, DIALOG_CLASS_LIST, "ListBox"},
@@ -475,6 +488,94 @@ elsif 0 then
 end if
 end procedure
 
+function ViewErrorProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
+    atom junk, hList, hLabel, pos, len, item
+    sequence err
+
+    --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
+
+    if iMsg = WM_INITDIALOG then
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
+                      WM_SETFONT, captionFont, 0})
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDCANCEL}), 
+                      WM_SETFONT, captionFont, 0})
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDRETRY}), 
+                      WM_SETFONT, captionFont, 0})
+        hList = c_func(GetDlgItem, {hdlg, DialogListID})
+        junk = c_func(SendMessage, {hList, WM_SETFONT, messageFont, 0})
+        hLabel = c_func(GetDlgItem, {hdlg, DialogLabelID})
+        junk = c_func(SendMessage, {hLabel, WM_SETFONT, messageFont, 0})
+
+	err = get_ex_err()
+	if length(err) = 0  then
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+	end if
+	junk = c_func(SendMessage, {hLabel, WM_SETTEXT, 0, alloc_string(err[2])})
+	
+        for i = 3 to length(err) do
+	    junk = c_func(SendMessage, {hList, LB_ADDSTRING, 0, alloc_string(err[i])})
+        end for
+        junk = c_func(SendMessage, {hList, LB_SETCURSEL, 0, 0})
+        junk = c_func(SetFocus, {hList})
+
+    elsif iMsg = WM_COMMAND then
+        if LOWORD(wParam) = IDOK then
+            hList = c_func(GetDlgItem, {hdlg, DialogListID})
+            pos = c_func(SendMessage, {hList, LB_GETCURSEL, 0, 0})
+            len = c_func(SendMessage, {hList, LB_GETTEXTLEN, pos, 0})
+            if pos != -1 and len > 0 then
+              item = allocate(len+1)
+              junk = c_func(SendMessage, {hList, LB_GETTEXT, pos, item})
+              err = peek({item, len})
+              free(item)
+              goto_error(err)
+            end if
+            junk = c_func(EndDialog, {hdlg, 1})
+            return 1
+        elsif LOWORD(wParam) = IDRETRY then
+	    open_file(ex_err_name, 1)
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+        elsif LOWORD(wParam) = IDCANCEL then
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+        end if
+
+    elsif iMsg = WM_CLOSE then --closing dialog
+        junk = c_func(EndDialog, {hdlg, 0})
+    end if
+
+    return 0
+end function
+
+constant ViewErrorCallback = call_back(routine_id("ViewErrorProc"))
+
+global procedure ui_view_error()
+    integer junk
+    junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
+        --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
+	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
+         50, 50, 200,150, 0, 0, "View Error"},
+        --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
+        {{WS_CHILD, WS_VISIBLE, WS_VSCROLL}, WS_EX_CLIENTEDGE,
+         4,24, 192,108, DialogListID, DIALOG_CLASS_LIST, "ListBox"},
+        {{WS_CHILD, WS_VISIBLE}, 0,
+         4,4, 192,20, DialogLabelID, DIALOG_CLASS_STATIC, "Static"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         54,132, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         102,132, 44,12, IDRETRY, DIALOG_CLASS_BUTTON, "Open ex.err"},
+        {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
+         150,132, 44,12, IDOK, DIALOG_CLASS_BUTTON, "Goto Error"}
+        },
+        hMainWnd, 
+        ViewErrorCallback,
+        0)
+end procedure
+
+
+
 
 sequence find_phrase
 find_phrase = ""
@@ -544,17 +645,6 @@ procedure run_start()
 	NULL,
 	1})
     free_strings()
-end procedure
-
-procedure get_window_size()
-    atom rect
-    rect = allocate(16)
-    c_proc(GetWindowRect, {hMainWnd, rect})
-    x_pos = peek4u(rect)
-    y_pos = peek4u(rect+4)
-    x_size = peek4u(rect+8) - x_pos
-    y_size = peek4u(rect+12) - y_pos
-    free(rect)
 end procedure
 
 function get_appdata_path()
@@ -657,20 +747,6 @@ procedure choose_font()
     free(lf)
 end procedure
 
-function crash_cleanup(object x)
-  atom junk
-  junk = c_func(MessageBox, {hMainWnd, 
-		    alloc_string("Internal editor error occurred.\n"),
-		    alloc_string(window_title), 
-		    or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
-  if htabs then 
-    junk = save_modified_tabs()
-    save_wee_conf(wee_conf_filename)
-  end if
-  return 0
-end function
-
-crash_routine(routine_id("crash_cleanup"))
 
 integer doing_setfocus_checks
 doing_setfocus_checks = 0
@@ -757,6 +833,8 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		return c_func(SendMessage, {hwnd, WM_CLOSE, 0, 0})
 	    elsif wParam = Edit_Undo then
 		return c_func(SendMessage, {hedit, WM_UNDO, 0, 0})
+	    elsif wParam = Edit_Redo then
+		return c_func(SendMessage, {hedit, SCI_REDO, 0, 0})
 	    elsif wParam = Edit_Cut then
 		return c_func(SendMessage, {hedit, WM_CUT, 0, 0})
 	    elsif wParam = Edit_Copy then
@@ -777,7 +855,7 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		view_subroutines()
 		return rc
 	    elsif wParam = View_Error then
-		view_error()
+		ui_view_error()
 		return rc
 	    elsif wParam = View_Font then
 		choose_font()
@@ -840,6 +918,8 @@ procedure translate_editor_keys(atom msg)
         poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
       elsif wParam = VK_SPACE and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Completions, 0})
+      elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
       end if
     elsif iMsg = WM_KEYUP then
       if wParam = VK_F5 then
@@ -930,6 +1010,8 @@ procedure WinMain()
     heditmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Edit_Undo, alloc_string("U&ndo\tCtrl+Z")})
+    junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Edit_Redo, alloc_string("&Redo\tShift+Ctrl+Z")})
     junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
     junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Edit_Cut, alloc_string("Cu&t\tCtrl+X")})
