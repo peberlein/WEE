@@ -48,6 +48,7 @@ global constant
 --  added: auto-complete with include puts it near top of file
 --  added: auto insert closing characters for ( { [ " '
 --  added: typing '(' after a subroutine will popup hints
+--  added: hardcoded list of builtins and arguments in get_subroutine_arguents()
 
 --  bugs fixed: 
 --    ViewDeclaration wrong cursor pos
@@ -64,7 +65,8 @@ global constant
 --    fix weirdness with deletion autoinserted closing characters
 --    fix calltip popup displaying incorrect highlight after first time
 --    fix EOL mode on Linux/OSX
-
+--    completions are now sorted
+--    switch/case syntax highlight and autocomplete were missing
 
 -- todo:
 --  save tabs in conf file?
@@ -84,9 +86,7 @@ global constant
 --  store syntax highlighting colors in wee.conf
 --  fix brace highlighting in comments and strings
 --  configurable indent size
---  hardcode list of builtins and arguments in get_subroutine_arguents()
---  completions should be sorted
---  namespaces still need to be fixed
+--  namespaces still need to be fixed (include as)
 --  put an icon in the completion list for each type of symbol
 --  put arguments after each subroutine completion (maybe)
 
@@ -1221,10 +1221,10 @@ procedure delete_pair()
     if length(insert_chars) = 0 then
 	return
     end if
-    if find(last_deleted_char, "([{") then
-	ssm(SCI_DELETERANGE, get_pos(), 1)
+    if insert_chars[$] = last_deleted_char then
 	insert_chars = insert_chars[1..$-1]
-    elsif insert_chars[$] = last_deleted_char then
+    elsif find(last_deleted_char, "([{") then
+	ssm(SCI_DELETERANGE, get_pos(), 1)
 	insert_chars = insert_chars[1..$-1]
     end if
 end procedure
