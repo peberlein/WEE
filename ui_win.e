@@ -2,7 +2,7 @@
 
 include window.ew
 include wee.exw
-
+include std/text.e
 
 
 -- MenuItem constants
@@ -488,9 +488,11 @@ elsif 0 then
 end if
 end procedure
 
+
+sequence err
+
 function ViewErrorProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     atom junk, hList, hLabel, pos, len, item
-    sequence err
 
     --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
 
@@ -523,13 +525,8 @@ function ViewErrorProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
         if LOWORD(wParam) = IDOK then
             hList = c_func(GetDlgItem, {hdlg, DialogListID})
             pos = c_func(SendMessage, {hList, LB_GETCURSEL, 0, 0})
-            len = c_func(SendMessage, {hList, LB_GETTEXTLEN, pos, 0})
-            if pos != -1 and len > 0 then
-              item = allocate(len+1)
-              junk = c_func(SendMessage, {hList, LB_GETTEXT, pos, item})
-              err = peek({item, len})
-              free(item)
-              goto_error(err)
+            if pos != -1 then
+              goto_error(err, pos+1)
             end if
             junk = c_func(EndDialog, {hdlg, 1})
             return 1
@@ -627,6 +624,7 @@ procedure process_find(atom struc)
 
 end procedure
 
+constant cmdline = command_line()
 
 procedure run_start()
     atom result
@@ -637,6 +635,7 @@ procedure run_start()
     end if
     
     run_file_name = file_name
+    reset_ex_err()
 
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
@@ -644,6 +643,15 @@ procedure run_start()
 	NULL,
 	NULL,
 	1})
+    if result < 33 then
+	-- shellexecute failed
+	if match(".exw", lower(run_file_name)) or
+	   match(".ew", lower(run_file_name)) then
+	    system("euiw " & run_file_name)
+	else
+	    system("eui " & run_file_name)
+	end if
+    end if
     free_strings()
 end procedure
 
@@ -952,9 +960,6 @@ procedure WinMain()
     atom msg
     integer id
     atom junk, tcitem
-    sequence cmdline
-    
-    cmdline = command_line()
 
     init_fonts()
 

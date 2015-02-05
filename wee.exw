@@ -51,6 +51,7 @@ global constant
 --  added: hardcoded list of builtins and arguments in get_subroutine_arguents()
 --  updated: ex.err dialog with buttons: <cancel> <open ex.err> <goto error>
 --    and listbox with call stack or multiple undeclared references
+--  updated: indent/unindent selection with tab/shift-tab
 
 --  bugs fixed: 
 --    ViewDeclaration wrong cursor pos
@@ -73,7 +74,6 @@ global constant
 
 -- todo:
 --  save tabs in conf file?
---  indent/unindent selection with tab/shift-tab
 --  comment/uncomment selected lines
 --  choose which intepreter to use for run
 --  64-bit safe
@@ -88,6 +88,9 @@ global constant
 --  namespaces still need to be fixed (include as)
 --  put an icon in the completion list for each type of symbol (maybe)
 --  put arguments after each subroutine completion (maybe)
+--  investigate Mike Duffy's scintilla Euphoria Lexer
+--    multicolored brackets and parens
+--    multiline comments and strings
 
 without warning
 
@@ -134,7 +137,9 @@ end function
 
 
 function crash_cleanup(object x)
-  ui_message_box_error(window_title, "Internal editor error occurred.\n")
+  ui_message_box_error(window_title, 
+    "Houston, Wee have a problem.\n\n"&
+    "The editor crashed and is closing now.\n")
   save_modified_tabs()
   if length(wee_conf_filename) then
     save_wee_conf(wee_conf_filename)
@@ -161,12 +166,13 @@ global procedure wee_init()
   
   run_file_name = ""
   ex_err_name = "ex.err"
+  ex_err_timestamp = get_timestamp(ex_err_name)
+
   tab_hedits = {}
   tab_file_names = {}
   tab_timestamps = {}
 
   modified = 0
-  ex_err_timestamp = -1
   expand_line = -1
   insert_pos = -1
   insert_chars = ""
@@ -177,7 +183,6 @@ global procedure wee_init()
   calltip_pos = -1
   
   current_tab = 0
-
 end procedure
 
 
@@ -321,7 +326,7 @@ global procedure init_edit(atom edit)
     ssm(SCI_AUTOCSETCANCELATSTART)
 
     -- call tips display above text
-    ssm(SCI_CALLTIPSETPOSITION, 1)
+    --ssm(SCI_CALLTIPSETPOSITION, 1)
 
     -- get modification events for deletetext
     ssm(SCI_SETMODEVENTMASK, SC_MOD_BEFOREDELETE)
@@ -648,8 +653,8 @@ global procedure close_tab()
 	new_file() -- must always have a edit available
     elsif tab > length(tab_hedits) then
 	tab = length(tab_hedits)
-	select_tab(tab)
     end if
+    select_tab(tab)
 end procedure
 
 global procedure new_file()
@@ -766,9 +771,31 @@ global function get_ex_err()
     return result
 end function
 
-global procedure goto_error(sequence text)
-    integer a, b, c, line, tab
-    sequence val, file
+-- get the text between two delimeters, searching from end of text
+function text_between(sequence text, integer delim1, integer delim2)
+    for i = length(text) to 1 by -1 do
+	if text[i] = delim2 then
+	    for j = i-1 to 1 by -1 do
+		if text[j] = delim1 then
+		    return text[j+1..i-1]
+		end if
+	    end for
+	    exit
+	end if
+    end for
+    return ""
+end function
+
+global procedure goto_error(sequence err, integer idx)
+    integer a, b, c, line, tab, col
+    sequence val, file, item, text
+    
+    if idx < 0 or idx > length(err)-2 then
+        return
+    end if
+    
+    text = err[idx+2]
+    
     a = find('(', text)
     b = find(')', text)
     c = 0
@@ -778,21 +805,35 @@ global procedure goto_error(sequence text)
             exit
         end if
     end for
+    item = ""
     if a < c and c < b then
 	-- 'blah' (filename:line) has not been declared
 	file = get_path_directory(ex_err_name) & text[a+1..c-1]
         val = value(text[c+1..b-1])
+        item = text_between(text, '\'', '\'')
     elsif c then
 	-- c:\path\to\filename.ext:line subroutine_name()
         file = text[1..c-1]
         val = value(text[c+1..$])
+        item = text_between(err[2], '\'', '\'')
     else
 	return
     end if
     tab = open_file(file, 0)
     if tab and val[1] = GET_SUCCESS then
-        ssm(SCI_GOTOLINE, val[2]-1)
-        set_top_line(val[2]-1)
+        line = val[2]-1
+	col = 0
+        if length(item) then
+	    col = match(item, get_line(line))
+	    if col then 
+		col -= 1
+	    else
+		item = ""
+	    end if
+	end if
+	col += ssm(SCI_POSITIONFROMLINE, line)
+        ssm(SCI_SETSEL, col, col + length(item))
+        set_top_line(line)
     end if
 end procedure
 
@@ -862,15 +903,22 @@ global procedure view_error()
     result = ui_message_box_error("Goto Error", message)
 end procedure
 
+global procedure reset_ex_err()
+    if length(run_file_name) = 0 then
+        return
+    end if
+    ex_err_name = get_path_directory(run_file_name) & "ex.err"
+    ex_err_timestamp = get_timestamp(ex_err_name)
+end procedure
+
 global procedure check_ex_err()
   atom ts
 
   if length(run_file_name) = 0 then return end if
 
-  ex_err_name = get_path_directory(run_file_name) & "ex.err"
   ts = get_timestamp(ex_err_name)
 --printf(1, "%s %d %d\n", {ex_err_name, ts, ex_err_timestamp})
-  if ts != -1 and ts > ex_err_timestamp then
+  if ts > ex_err_timestamp then
     run_file_name = ""
     ui_view_error()
   end if
@@ -885,6 +933,7 @@ end procedure
 global procedure view_subroutines()
     -- TODO: get from ui_win.e
 end procedure
+
 
 global procedure view_declaration()
     sequence text, decls, word, namespace
@@ -1120,8 +1169,9 @@ procedure auto_expand()
     elsif equal(text, "loop") then
         text = {"do", "end loop"}
     elsif equal(text, "for") then
-        --text = {" =  to  do", "end for"}
-        text = {" do", "end for"}
+        text = {" =  to  do", "end for"}
+        --text = {" do", "end for"}
+        insert_chars &= " ot  = "
     elsif equal(text, "switch") then
         text = {" do", "end switch"}
         

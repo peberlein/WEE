@@ -10,8 +10,8 @@
 -- todo:
 -- fix modifier keys not working on OS X (might be ok now using gtk accelerators)
 --   menu accelerator labels show up as "-/-" on OS X
-
 -- investigate if widgets need to be Destroy'd
+
 
 public include std/machine.e
 public include std/error.e
@@ -30,13 +30,140 @@ function check_callback_func(atom x)
   return 0
 end function
 
-constant chk_cb = define_c_proc("", call_back(routine_id("check_callback_func")), {C_LONG})
-c_proc(chk_cb, {#100000000})
+c_proc(define_c_proc("",
+		     call_back(routine_id("check_callback_func")),
+		     {C_LONG}),
+       {#100000000})
 end ifdef
 
 
 
 constant wee_conf_file = getenv("HOME") & "/.wee_conf"
+constant cmdline = command_line()
+
+--------------------------------------------------
+sequence find_phrase, replace_phrase
+find_phrase = ""
+replace_phrase = ""
+
+constant 
+    GTK_RESPONSE_FIND = 1,
+    GTK_RESPONSE_REPLACE = 2,
+    GTK_RESPONSE_REPLACE_ALL = 3
+
+procedure do_find(integer rep)
+    atom dialog, content, row, vbox, hbox, lbl, hedit, find_entry, rep_entry, chk_word, chk_case
+    integer flags, result, pos
+-- Fi_nd What: __________________  [_Find Next]
+-- [ ] Match _Whole Word Only      [  Cancel  ]
+-- [ ] Match _Case
+
+-- Fi_nd What: __________________   [_Find Next]
+-- Re_place With: _______________   [_Replace ]
+-- [ ] Match _Whole Word Only       [Replace _All ]
+-- [ ] Match _Case                  [Cancel]
+
+    dialog = create(GtkDialog)
+    --set(dialog, "default size", 200, 200)
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT)
+    if rep then
+	set(dialog, "add button", "Replace All", GTK_RESPONSE_REPLACE_ALL)
+	set(dialog, "add button", "Replace", GTK_RESPONSE_REPLACE)
+    end if
+    set(dialog, "add button", "Find Next", GTK_RESPONSE_FIND)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "Find")
+    if rep then
+	set(dialog, "default response", GTK_RESPONSE_REPLACE)
+    else
+	set(dialog, "default response", GTK_RESPONSE_FIND)
+    end if
+    set(dialog, "modal", TRUE)
+    content = gtk:get(dialog, "content area")
+    
+    vbox = create(GtkBox, VERTICAL)
+    add(content, vbox)
+    
+    hbox = create(GtkBox, HORIZONTAL)
+    pack(vbox, hbox)
+    pack(hbox, create(GtkLabel, "Find What:"))
+    find_entry = create(GtkEntry)
+    set(find_entry, "activates default", TRUE)
+    set(find_entry, "text", find_phrase)
+    pack(hbox, find_entry)
+    --pack(hbox, -create(GtkButton, "Find Next", GTK_RESPONSE_OK))
+
+    if rep then
+        hbox = create(GtkBox, HORIZONTAL)
+	pack(vbox, hbox)
+	pack(hbox, create(GtkLabel, "Replace With:"))
+	rep_entry = create(GtkEntry)
+	set(rep_entry, "activates default", TRUE)
+	set(rep_entry, "text", replace_phrase)
+	pack(hbox, rep_entry)
+    end if
+
+    hbox = create(GtkBox, HORIZONTAL)
+    pack(vbox, hbox)
+    chk_word = create(GtkCheckButton, "Match Whole Word Only")
+    pack(hbox, chk_word)
+    --pack(hbox, -create(GtkButton, "Cancel", GTK_RESPONSE_DELETE_EVENT))
+    
+    hbox = create(GtkBox, HORIZONTAL)
+    pack(vbox, hbox)
+    chk_case = create(GtkCheckButton, "Match Case")
+    pack(hbox, chk_case)
+
+    show_all(dialog)
+    hedit = tab_hedit()
+    pos = -1
+    
+    result = set(dialog, "run")
+    while result != GTK_RESPONSE_DELETE_EVENT do
+	flags = 0
+	if gtk:get(chk_word, "active") then
+	    flags += SCFIND_WHOLEWORD
+	end if
+	if gtk:get(chk_case, "active") then
+	    flags += SCFIND_MATCHCASE
+	end if
+	
+	SSM(hedit, SCI_SETSEARCHFLAGS, flags)
+	find_phrase = gtk:get(find_entry, "text")
+
+	if result = GTK_RESPONSE_REPLACE_ALL then
+	    pos = 0
+	end if
+	
+	while 1 do
+	    if pos = -1 then
+		pos = SSM(hedit, SCI_GETCURRENTPOS)
+	    elsif result != GTK_RESPONSE_FIND then
+		-- replace or replace_all
+		replace_phrase = gtk:get(rep_entry, "text")
+		SSM(hedit, SCI_REPLACETARGET, length(replace_phrase), replace_phrase)
+		pos += length(replace_phrase)
+	    end if
+	    
+	    SSM(hedit, SCI_SETTARGETSTART, pos)
+	    SSM(hedit, SCI_SETTARGETEND, SSM(hedit, SCI_GETTEXTLENGTH))
+	    pos = SSM(hedit, SCI_SEARCHINTARGET, length(find_phrase), find_phrase)
+	    if pos < 0 then
+		SSM(hedit, SCI_GOTOPOS, 0)
+	        pos = -1
+	        exit
+	    end if
+	    if result != GTK_RESPONSE_REPLACE_ALL then
+	        SSM(hedit, SCI_SETSEL, pos, pos+length(find_phrase))
+	        pos += length(find_phrase)
+	        exit
+	    end if
+	end while
+	result = set(dialog, "run")
+    end while
+    hide(dialog)
+    return
+end procedure
 
 
 --------------------------------------------------
@@ -61,13 +188,64 @@ function EditCopy() SSM(tab_hedit(), SCI_COPY) return 0 end function
 function EditPaste() SSM(tab_hedit(), SCI_PASTE) return 0 end function
 function EditClear() SSM(tab_hedit(), SCI_CLEAR) return 0 end function
 function EditSelectAll() SSM(tab_hedit(), SCI_SELECTALL) return 0 end function
-function SearchFind() return 0 end function
-function SearchReplace() return 0 end function
-function ViewSubs() view_subroutines() return 0 end function
+function SearchFind() do_find(0) return 0 end function
+function SearchReplace() do_find(1) return 0 end function
 function ViewDecl() view_declaration() return 0 end function
 function ViewArgs() view_subroutine_arguments() return 0 end function
 function ViewComp() view_completions() return 0 end function
 function ViewError() ui_view_error() return 0 end function
+
+function ViewSubs() 
+    sequence text, word, subs
+    integer pos, result
+    atom dialog, scroll, list, content, row
+
+    text = get_edit_text()
+    pos = get_pos()
+    word = word_pos(text, pos)
+    subs = get_subroutines(parse(text, file_name))
+    word = word[1]
+    
+    dialog = create(GtkDialog)
+    set(dialog, "default size", 200, 400)
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
+    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "Subroutines")
+    set(dialog, "default response", GTK_RESPONSE_OK)
+    set(dialog, "modal", TRUE)
+
+    content = gtk:get(dialog, "content area")
+    scroll = create(GtkScrolledWindow)
+    pack(content, scroll, TRUE, TRUE)
+
+    list = create(GtkListBox)
+    add(scroll, list)
+    for i = 1 to length(subs) by 2 do
+	set(list, "insert", create(GtkLabel, subs[i]), -1)
+	if equal(subs[i], word) then
+	    row = gtk:get(list, "row at index", floor(i/2))
+	    set(list, "select row", row)
+	end if
+    end for
+
+    show_all(dialog)
+    if set(dialog, "run") = GTK_RESPONSE_OK then
+	row = gtk:get(list, "selected row")
+        --result = gtk:get(row, "index") -- doesn't work?
+	for i = 1 to floor(length(subs) / 2)  do
+	    if row = gtk:get(list, "row at index", i-1) then
+		word = subs[i*2-1]
+		pos = subs[i*2]-1
+		SSM(tab_hedit(), SCI_SETSEL, pos, pos + length(word))
+		set_top_line(-1)
+		exit
+	    end if
+	end for
+    end if
+    hide(dialog)
+    return 0
+end function
 
 function ViewFont()
   atom dialog
@@ -94,7 +272,19 @@ function ViewFont()
     
   return 0 
 end function
-function RunStart() return 0 end function
+
+function RunStart() 
+    if save_if_modified(0) = 0 or length(file_name) = 0 then
+        return 0 -- cancelled, or no name
+    end if
+    
+    run_file_name = file_name
+    reset_ex_err()
+    
+    system(cmdline[1] & " " & run_file_name)
+    check_ex_err()
+    return 0 
+end function
 
 function HelpAbout()
   set(about_dialog, "run")
@@ -270,7 +460,7 @@ pack(panel, menubar)
 constant
   notebook = create(GtkNotebook)
 
-pack(panel, notebook, 1, 1)
+pack(panel, notebook, TRUE, TRUE)
 connect(notebook, "switch-page", call_back(routine_id("notebook_switch_page")))
 
 --------------------------------------------------
@@ -346,10 +536,10 @@ global function ui_get_open_file_name()
   dialog = create(GtkFileChooserDialog, "Open...", win, GTK_FILE_CHOOSER_ACTION_OPEN)
   --set(dialog, "transient for", win)
   set(dialog, "select multiple", FALSE)
-  set(dialog, "add button", "gtk-cancel", 0)
-  set(dialog, "add button", "gtk-ok", 1)
+  set(dialog, "add button", "gtk-cancel", GTK_RESPONSE_CLOSE)
+  set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
-  if gtk:get(dialog, "run") = 1 then
+  if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
     filename = ""
@@ -364,12 +554,12 @@ global function ui_get_save_file_name(sequence filename)
   
   dialog = create(GtkFileChooserDialog, "Save As...", win, GTK_FILE_CHOOSER_ACTION_SAVE)
   set(dialog, "select multiple", FALSE)
-  set(dialog, "overwrite confirmation", TRUE)
-  set(dialog, "add button", "gtk-cancel", 0)
-  set(dialog, "add button", "gtk-ok", 1)
+  set(dialog, "do overwrite confirmation", TRUE)
+  set(dialog, "add button", "gtk-cancel", GTK_RESPONSE_CLOSE)
+  set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
   set(dialog, "filename", filename)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
-  if gtk:get(dialog, "run") = 1 then
+  if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
     filename = ""
@@ -412,7 +602,52 @@ global function ui_message_box_error(sequence title, sequence message)
 end function
 
 global procedure ui_view_error()
+    sequence err
+    atom dialog, scroll, list, content, row, lbl
+    integer result
 
+    err = get_ex_err()
+    if length(err) = 0 then return end if
+    
+    dialog = create(GtkDialog)
+    set(dialog, "default size", 200, 400)
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
+    set(dialog, "add button", "Open Ex.Err", GTK_RESPONSE_YES)
+    set(dialog, "add button", "Goto Error", GTK_RESPONSE_OK)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "View Error")
+    set(dialog, "default response", GTK_RESPONSE_OK)
+    set(dialog, "modal", TRUE)
+    content = gtk:get(dialog, "content area")
+
+    lbl = create(GtkLabel, err[2])
+    pack(content, lbl)
+
+    content = gtk:get(dialog, "content area")
+    scroll = create(GtkScrolledWindow)
+    pack(content, scroll, TRUE, TRUE)
+
+    list = create(GtkListBox)
+    add(scroll, list)
+    for i = 3 to length(err) do
+	set(list, "insert", create(GtkLabel, err[i]), -1)
+    end for
+
+    show_all(dialog)
+    result = set(dialog, "run")
+    if result = GTK_RESPONSE_OK then
+	row = gtk:get(list, "selected row")
+        --result = gtk:get(row, "index") -- doesn't work?
+	for i = 0 to length(err)-3 do
+	    if row = gtk:get(list, "row at index", i) then
+		goto_error(err, i+1)
+		exit
+	    end if
+	end for
+    elsif result = GTK_RESPONSE_YES then
+        open_file(ex_err_name, 1)
+    end if
+    hide(dialog)
 end procedure
 
 
@@ -430,8 +665,6 @@ load_wee_conf(wee_conf_file)
 gtk_proc("gtk_window_move", {P,I,I}, {win, x_pos, y_pos-28}) -- something is moving the window 28 pixels down each time
 --gtk_proc("gtk_window_resize", {P,I,I}, {win, x_size, y_size})
 set(win, "default size", x_size, y_size)
-
-constant cmdline = command_line()
 
 if length(cmdline) > 2 then
   open_file(cmdline[3], 0)
