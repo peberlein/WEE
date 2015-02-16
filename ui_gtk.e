@@ -545,6 +545,7 @@ global function ui_get_open_file_name()
   set(dialog, "add button", "gtk-cancel", GTK_RESPONSE_CLOSE)
   set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
+  set(dialog, "current folder", pathname(canonical_path(file_name)))
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
@@ -565,6 +566,7 @@ global function ui_get_save_file_name(sequence filename)
   set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
   set(dialog, "filename", filename)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
+  set(dialog, "current folder", pathname(canonical_path(file_name)))
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
