@@ -198,7 +198,7 @@ function ViewError() ui_view_error() return 0 end function
 function ViewSubs() 
     sequence text, word, subs
     integer pos, result
-    atom dialog, scroll, list, content, row
+    atom dialog, scroll, list, content, row, lbl
 
     text = get_edit_text()
     pos = get_pos()
@@ -222,7 +222,9 @@ function ViewSubs()
     list = create(GtkListBox)
     add(scroll, list)
     for i = 1 to length(subs) by 2 do
-	set(list, "insert", create(GtkLabel, subs[i]), -1)
+	lbl = create(GtkLabel, subs[i])
+	set(lbl, "halign", GTK_ALIGN_START)
+	set(list, "insert", lbl, -1)
 	if equal(subs[i], word) then
 	    row = gtk:get(list, "row at index", floor(i/2))
 	    set(list, "select row", row)
@@ -483,7 +485,11 @@ end procedure
 
 
 global procedure ui_refresh_file_menu(sequence items)
-
+    integer count
+--    count = gtk:get(filemenu, "")
+--    if then
+--	create(GtkSeparatorMenuItem),
+--    end if
 end procedure
 
 global procedure ui_select_tab(integer tab)
@@ -630,7 +636,9 @@ global procedure ui_view_error()
     list = create(GtkListBox)
     add(scroll, list)
     for i = 3 to length(err) do
-	set(list, "insert", create(GtkLabel, err[i]), -1)
+	lbl = create(GtkLabel, err[i])
+	set(lbl, "halign", GTK_ALIGN_START)
+	set(list, "insert", lbl, -1)
     end for
 
     show_all(dialog)
