@@ -1,5 +1,11 @@
 -- ui_gtk.e
 
+-- A huge thanks to Irv Mullins for making EuGTK, which made the Linux 
+-- and OSX GTK ports painless.  Thanks to Irv for:
+--  focus-in-event for checking modified tabs
+--  current folder for load and save dialogs
+
+-- Changes:
 -- fix intermittent hang on quit (found it, caused by putting the program in the
 -- background using Ctrl-Z and "bg".  It blocks on doing something to console
 -- before exiting, so need to do "fg" to unfreeze and exit normally.)
@@ -7,7 +13,7 @@
 -- font seems to be ok on OSX now, 
 -- needed to strip spaces and "bold", "italic", from the font name.
 
--- todo:
+-- Todo:
 -- fix modifier keys not working on OS X (might be ok now using gtk accelerators)
 --   menu accelerator labels show up as "-/-" on OS X
 -- investigate if widgets need to be Destroy'd
@@ -344,7 +350,7 @@ set(win, "border width", 0)
 connect(win, "destroy", main_quit)
 connect(win, "configure-event", call_back(routine_id("configure_event")))
 connect(win, "delete-event", call_back(routine_id("delete_event")))
---connect(win, "set-focus", call_back(routine_id("window_set_focus")))
+connect(win, "focus-in-event", call_back(routine_id("window_set_focus")))
 set(win, "add accel group", group)
 add(win, panel)
 
