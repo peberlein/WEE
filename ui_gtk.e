@@ -47,6 +47,14 @@ end ifdef
 constant wee_conf_file = getenv("HOME") & "/.wee_conf"
 constant cmdline = command_line()
 
+wee_init() -- initialize global variables
+
+x_pos = 100    y_pos = 50
+x_size = 500 y_size = 600
+
+load_wee_conf(wee_conf_file)
+
+
 --------------------------------------------------
 sequence find_phrase, replace_phrase
 find_phrase = ""
@@ -281,6 +289,12 @@ function ViewFont()
   return 0 
 end function
 
+function ViewLineNumbers(atom handle)
+    line_numbers = gtk:get(handle, "active")
+    reinit_all_edits()
+    return 0
+end function
+
 function RunStart() 
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
@@ -332,12 +346,16 @@ function notebook_switch_page(atom nb, atom page, atom page_num)
 end function
 
 function window_set_focus(atom widget)
-    printf(1, "window set focus %d\n", {widget})
+    --printf(1, "window set focus %d\n", {widget})
     check_externally_modified_tabs()
     check_ex_err()
     return 0
 end function
 
+function setx(atom handle, sequence property, object p1)
+    set(handle, property, p1)
+    return handle
+end function
 
 -------------------------------------------------------------
 
@@ -369,25 +387,23 @@ constant
   menuView = create(GtkMenuItem, "_View"),
   menuRun = create(GtkMenuItem, "_Run"),
   menuHelp = create(GtkMenuItem, "_Help"),
-  filemenu = create(GtkMenu),
-  editmenu = create(GtkMenu),
-  searchmenu = create(GtkMenu),
-  viewmenu = create(GtkMenu),
-  runmenu = create(GtkMenu),
-  helpmenu = create(GtkMenu)
-set(filemenu, "accel group", group)
-set(editmenu, "accel group", group)
-set(searchmenu, "accel group", group)
-set(viewmenu, "accel group", group)
-set(runmenu, "accel group", group)
-set(helpmenu, "accel group", group)
+  filemenu = setx(create(GtkMenu), "accel group", group),
+  editmenu = setx(create(GtkMenu), "accel group", group),
+  searchmenu = setx(create(GtkMenu), "accel group", group),
+  viewmenu = setx(create(GtkMenu), "accel group", group),
+  runmenu = setx(create(GtkMenu), "accel group", group),
+  helpmenu = setx(create(GtkMenu), "accel group", group)
 
 -- create a menu item with "activate" signal connected to local routine
 -- and add parsed accelerator key 
-function createmenuitem(sequence text, object r, object key = 0, integer mod = 0)
+function createmenuitem(sequence text, object r, object key = 0, integer mod = 0, integer check = -1)
   atom widget, x
-
-  widget = create(GtkMenuItem, text)
+  if check = -1 then
+    widget = create(GtkMenuItem, text)
+  else
+    widget = create(GtkCheckMenuItem, text)
+    set(widget, "active", check)
+  end if
   if sequence(r) then
     x = routine_id(r)
     if x <= 0 then
@@ -446,7 +462,8 @@ add(viewmenu, {
   createmenuitem("Completions...", "ViewComp", "<Control>space"),
   createmenuitem("Goto Error", "ViewError", "F4"),
   create(GtkSeparatorMenuItem),
-  createmenuitem("Font...", "ViewFont")
+  createmenuitem("Font...", "ViewFont"),
+  createmenuitem("Line Numbers", "ViewLineNumbers", 0, 0, line_numbers)
   })
 set(menuView, "submenu", viewmenu)
 
@@ -672,12 +689,7 @@ end procedure
 --------------------------------------------------
 
 
-wee_init()
 
-x_pos = 100    y_pos = 50
-x_size = 500 y_size = 600
-
-load_wee_conf(wee_conf_file)
 gtk_proc("gtk_window_move", {P,I,I}, {win, x_pos, y_pos-28}) -- something is moving the window 28 pixels down each time
 --gtk_proc("gtk_window_resize", {P,I,I}, {win, x_size, y_size})
 set(win, "default size", x_size, y_size)
