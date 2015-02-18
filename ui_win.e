@@ -1087,6 +1087,9 @@ procedure WinMain()
 
     load_wee_conf(wee_conf_filename)
     
+    -- set the recent items on the file menu
+    ui_refresh_file_menu(recent_files)
+    
     -- set the checkmark on the Line Numbers menu item
     c_func(CheckMenuItem, {hviewmenu, View_LineNumbers, MF_CHECKED*line_numbers}) 
     

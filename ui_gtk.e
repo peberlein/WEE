@@ -2,8 +2,9 @@
 
 -- A huge thanks to Irv Mullins for making EuGTK, which made the Linux 
 -- and OSX GTK ports painless.  Thanks to Irv for:
---  focus-in-event for checking modified tabs
---  current folder for load and save dialogs
+--  * focus-in-event for checking modified tabs
+--  * current folder for load and save dialogs
+--  * window placement taking window theme into account 
 
 -- Changes:
 -- fix intermittent hang on quit (found it, caused by putting the program in the
@@ -51,6 +52,8 @@ wee_init() -- initialize global variables
 x_pos = 100    y_pos = 50
 x_size = 500 y_size = 600
 
+constant wee_conf_file = getenv("HOME") & "/.wee_conf"
+load_wee_conf(wee_conf_file)
 
 
 --------------------------------------------------
@@ -314,18 +317,12 @@ end function
 
 -- this gets called when window is moved or resized
 function configure_event(atom w, atom s)
-  -- s is struct GdkEventConfigure*
-  -- skip over GdkEventType, GdkWindow *, gint8
-  ifdef BITS64 then
-    s += 20
-  elsedef
-    s += 12
-  end ifdef
-  x_pos = peek4u(s)
-  y_pos = peek4u(s+4)
-  x_size = peek4u(s+8)
-  y_size = peek4u(s+12)
-  --? {x_pos, y_pos, x_size, y_size}
+  atom left_margin, top_margin -- not used, just for show
+  
+  {left_margin, top_margin, x_size, y_size} =
+    gtk:get(gtk:get(w, "window"), "geometry")
+  {x_pos, y_pos} = gtk:get(w, "position")
+  --? {x_pos, y_pos, x_size, y_size, left_margin, top_margin}
   return 0
 end function
 
@@ -370,9 +367,8 @@ connect(win, "focus-in-event", call_back(routine_id("window_set_focus")))
 set(win, "add accel group", group)
 add(win, panel)
 
-gtk_proc("gtk_window_move", {P,I,I}, {win, x_pos, y_pos-28}) -- something is moving the window 28 pixels down each time
 set(win, "default size", x_size, y_size)
-
+set(win, "move", x_pos, y_pos)
 
 constant
   about_dialog = create(GtkAboutDialog)
@@ -705,10 +701,8 @@ end procedure
 
 
 --------------------------------------------------
-constant wee_conf_file = getenv("HOME") & "/.wee_conf"
 
-load_wee_conf(wee_conf_file)
-
+ui_refresh_file_menu(recent_files)
 
 -- open files on command line
 if length(cmdline) > 2 then

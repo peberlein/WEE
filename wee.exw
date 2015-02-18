@@ -116,12 +116,12 @@ global constant max_recent_files = 5
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
 global integer font_height, line_numbers
-global sequence file_name, run_file_name, ex_err_name
+global sequence file_name, run_file_name, ex_err_name, recent_files
 
 -- local variables
 sequence
 	tab_hedits, tab_file_names, tab_timestamps, 
-	recent_files, recent_pos, indent_str
+	recent_pos, indent_str
 integer current_tab, modified
 atom hedit
 atom ex_err_timestamp
@@ -227,7 +227,6 @@ global procedure load_wee_conf(sequence wee_conf_file)
         l = gets(f)
     end while
     close(f)
-    ui_refresh_file_menu(recent_files)
 end procedure
 
 global procedure save_wee_conf(sequence wee_conf_file)
