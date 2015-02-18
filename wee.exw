@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.16"
+  version = "0.17"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -97,6 +97,7 @@ without warning
 include parser.e
 include scintilla.e
 include get.e
+include std/filesys.e
 
 
 -- The ui includes are circular includes: 
@@ -124,7 +125,7 @@ sequence
 integer current_tab, modified
 atom hedit
 atom ex_err_timestamp
-integer expand_line, insert_pos, last_deleted_char
+integer expand_line, last_deleted_char
 sequence insert_chars
 sequence calltip_args -- {{start,end},...}
 integer calltip_pos
@@ -174,7 +175,6 @@ global procedure wee_init()
 
   modified = 0
   expand_line = -1
-  insert_pos = -1
   insert_chars = ""
   last_deleted_char = 0
 
@@ -321,6 +321,7 @@ global procedure init_edit(atom edit)
 
     ssm(SCI_AUTOCSETSEPARATOR, '\n')
     ssm(SCI_AUTOCSTOPS, 0, " ")
+    ssm(SCI_AUTOCSETFILLUPS, 0, "")
     --ssm(SCI_AUTOCSETORDER, SC_ORDER_CUSTOM) -- declaration order
     ssm(SCI_AUTOCSETORDER, SC_ORDER_PERFORMSORT) -- scintilla should sort
     ssm(SCI_AUTOCSETCANCELATSTART)
@@ -469,7 +470,6 @@ global procedure select_tab(integer tab)
     
     expand_line = -1
     insert_chars = ""
-    insert_pos = -1
     calltip_args = {}
     calltip_pos = -1
 
@@ -515,6 +515,8 @@ global function open_file(sequence file_name, integer reload)
         file_name = ui_get_open_file_name()
         if length(file_name) = 0 then return 0 end if
     end if
+    
+    file_name = canonical_path(file_name, 0, CORRECT)
 
     -- check if already existing tab
     tab = find(file_name, tab_file_names)
@@ -582,7 +584,7 @@ global function save_file_as()  -- returns 1 if ok, 0 if cancelled
     temp = ui_get_save_file_name(file_name)
     if length(temp) = 0 then return 0 end if
 
-    file_name = temp
+    file_name = canonical_path(temp, 0, CORRECT)
     tab_file_names[current_tab] = file_name
     save_file()
     update_tab_name()
@@ -1015,9 +1017,9 @@ global procedure view_completions()
     end if
 end procedure
 
-
+-- show the subroutine arguments, usually triggered after a pressing '('
 global procedure view_subroutine_arguments()
-    sequence text, word, decls, namespace
+    sequence text, word, decls, name_space
     integer pos, end_pos, junk, calltip_save, style
 
     pos = get_pos()
@@ -1041,10 +1043,10 @@ global procedure view_subroutine_arguments()
     end if
     pos = word[3]
     end_pos = word[4]
-    namespace = word[2]
+    name_space = word[2]
     word = word[1]
 
-    decls = get_subroutine_arguments(parse(text, file_name), word, namespace)
+    decls = get_subroutine_arguments(parse(text, file_name), word, name_space)
     if length(decls) then
         decls = decls[$] -- overloaded?  use the last one
         text = decls[1] & " " & decls[2] & "("
@@ -1068,24 +1070,21 @@ global procedure view_subroutine_arguments()
         return
     end if
     
-    return 
-    -- don't do the following yet, it is annoying for builtins
-    
     -- decl not found, search includes instead
-    decls = suggest_includes(word, namespace)
-    if length(decls) = 0 then return end if
+    decls = suggest_includes(word, name_space)
     text = ""
     for i = 1 to length(decls) by 2 do
 	if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then
 	  if length(text) then
 	    text &= '\n'
 	  end if
-	  text &= decls[i]
+	  text &= sreplace(decls[i], " --", "( --")
 	end if
     end for
     if length(text) then
-      ssm(SCI_GOTOPOS, end_pos)
-      ssm(SCI_AUTOCSHOW, length(word), text)
+      ssm(SCI_GOTOPOS, end_pos+1)
+      ssm(SCI_AUTOCSHOW, length(word)+1, text)
+      puts(1, text)
     end if
 end procedure
 
@@ -1310,41 +1309,39 @@ end procedure
 procedure insert_pair()
     integer pos, style, ch
 
-    pos = insert_pos-1
-    insert_pos = -1
-    
-    -- only insert pairs after char was styled (except ' and ")
-    style = ssm(SCI_GETSTYLEAT, pos)
-    if find(style, {0, SCE_LUA_OPERATOR, SCE_LUA_STRINGEOL, 8}) then
-	-- avoid inside strings and comments
-	if pos != get_line_start_position(-1) then
-	    style = ssm(SCI_GETSTYLEAT, pos-1)
-	    if style = SCE_LUA_COMMENTLINE or style = SCE_LUA_STRING then
-		return
-	    end if
+    pos = get_pos()-1
+
+    -- avoid inside strings and comments
+    if pos != get_line_start_position(-1) then
+	style = ssm(SCI_GETSTYLEAT, pos-1)
+	if style = SCE_LUA_COMMENTLINE or 
+	  (style = SCE_LUA_STRING and 
+	   style = ssm(SCI_GETSTYLEAT, pos+1)) then
+	    return
 	end if
-    
-	for i = pos+1 to get_line_end_position(-1) do
-	    ch = ssm(SCI_GETCHARAT, i)
-	    style = ssm(SCI_GETSTYLEAT, i)
-	    --? {ch, style}
-	    if find(ch, ",)}]\r\n+-*/=!<>\0") or style = SCE_LUA_WORD then
-		exit
-	    elsif ch != ' ' and ch != '\t' then
-		return
-	    end if
-	end for
-        ch = ssm(SCI_GETCHARAT, pos, 0)
-        if ch = '(' then
-            ch = ')'
-        elsif ch = '{' then
-            ch = '}'
-        elsif ch = '[' then
-            ch = ']'
-        end if
-        ssm(SCI_INSERTTEXT, pos+1, {ch})
-        insert_chars &= ch
     end if
+
+    -- avoid inside words or numbers
+    for i = pos+1 to get_line_end_position(-1) do
+	ch = ssm(SCI_GETCHARAT, i)
+	style = ssm(SCI_GETSTYLEAT, i)
+	--? {ch, style}
+	if find(ch, ",)}]\r\n+-*/=!<>#&\0") or style = SCE_LUA_WORD then
+	    exit
+	elsif ch != ' ' and ch != '\t' then
+	    return
+	end if
+    end for
+    ch = ssm(SCI_GETCHARAT, pos, 0)
+    if ch = '(' then
+	ch = ')'
+    elsif ch = '{' then
+	ch = '}'
+    elsif ch = '[' then
+	ch = ']'
+    end if
+    ssm(SCI_INSERTTEXT, pos+1, {ch})
+    insert_chars &= ch
 end procedure
 
 -- remove the characters inserted by insert_pair(), won't work for ' " tho
@@ -1354,7 +1351,9 @@ procedure delete_pair()
     end if
     if insert_chars[$] = last_deleted_char then
 	insert_chars = insert_chars[1..$-1]
-    elsif find(last_deleted_char, "([{") then
+    elsif (last_deleted_char = '(' and insert_chars[$] = ')') or
+          (last_deleted_char = '[' and insert_chars[$] = ']') or 
+          (last_deleted_char = '{' and insert_chars[$] = '}') then
 	ssm(SCI_DELETERANGE, get_pos(), 1)
 	insert_chars = insert_chars[1..$-1]
     end if
@@ -1464,10 +1463,9 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   code = peek4u(notification+NOTIFICATION_CODE)
   if code = SCN_UPDATEUI then
     updated = peek4u(notification+NOTIFICATION_UPDATED)
-    --? {updated, insert_pos, insert_char}
-    if insert_pos != -1 and and_bits(updated, SC_UPDATE_CONTENT) then
-	insert_pair()
-    elsif and_bits(updated, SC_UPDATE_SELECTION+SC_UPDATE_CONTENT) = SC_UPDATE_SELECTION then
+    --? {updated, insert_chars, last_deleted_char}
+    if and_bits(updated, SC_UPDATE_SELECTION+SC_UPDATE_CONTENT) = SC_UPDATE_SELECTION then
+	-- selection moved and content was not changed
 	--? {updated, insert_chars}
 	insert_chars = ""
     elsif last_deleted_char then
@@ -1521,14 +1519,12 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
       auto_indent()
     elsif ch = '(' then
       -- check for displaying subroutine arguments
-      pos = get_pos()
+      insert_pair()
       view_subroutine_arguments()
-      insert_pos = get_pos()
     elsif ch = '{' or ch = '[' then
-      insert_pos = get_pos()
+      insert_pair()
     elsif ch = '"' or ch = '\'' then
-      insert_pos = get_pos()
-      insert_pair() -- this needs to be done before styling
+      insert_pair()
     end if
 
   elsif code = SCN_AUTOCSELECTION then
