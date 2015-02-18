@@ -44,7 +44,6 @@ end ifdef
 
 
 
-constant wee_conf_file = getenv("HOME") & "/.wee_conf"
 constant cmdline = command_line()
 
 wee_init() -- initialize global variables
@@ -52,7 +51,6 @@ wee_init() -- initialize global variables
 x_pos = 100    y_pos = 50
 x_size = 500 y_size = 600
 
-load_wee_conf(wee_conf_file)
 
 
 --------------------------------------------------
@@ -372,6 +370,10 @@ connect(win, "focus-in-event", call_back(routine_id("window_set_focus")))
 set(win, "add accel group", group)
 add(win, panel)
 
+gtk_proc("gtk_window_move", {P,I,I}, {win, x_pos, y_pos-28}) -- something is moving the window 28 pixels down each time
+set(win, "default size", x_size, y_size)
+
+
 constant
   about_dialog = create(GtkAboutDialog)
 set(about_dialog, "transient for", win)
@@ -504,15 +506,32 @@ end function
 
 global procedure ui_update_status(sequence status)
   -- no status label yet
+  -- may not need it with View->Line Numbers now
 end procedure
 
+function file_open_recent(atom handle, integer idx)
+    open_recent(idx)
+    return 0
+end function
+
+sequence filemenu_items = {}
 
 global procedure ui_refresh_file_menu(sequence items)
-    integer count
---    count = gtk:get(filemenu, "")
---    if then
---	create(GtkSeparatorMenuItem),
---    end if
+    atom widget
+    if length(filemenu_items) = 0 then
+	filemenu_items &= create(GtkSeparatorMenuItem)
+	add(filemenu, filemenu_items[1])
+    end if
+    for i = 1 to length(items) do
+        if i + 1 > length(filemenu_items) then
+	    widget = create(GtkMenuItem, items[i])
+	    filemenu_items &= widget
+	    add(filemenu, widget)
+	    connect(widget, "activate", call_back(routine_id("file_open_recent")), i)
+	else
+	    set(filemenu_items[i+1], "label", items[i])
+        end if
+    end for
 end procedure
 
 global procedure ui_select_tab(integer tab)
@@ -627,8 +646,7 @@ global function ui_message_box_yes_no_cancel(sequence title, sequence message)
 end function
 
 global function ui_message_box_error(sequence title, sequence message)
-  integer result
-  result = Error(win, title, "", message, , GTK_BUTTONS_OK)
+  Error(win, title, "", message, , GTK_BUTTONS_OK)
   return 0
 end function
 
@@ -687,15 +705,16 @@ end procedure
 
 
 --------------------------------------------------
+constant wee_conf_file = getenv("HOME") & "/.wee_conf"
+
+load_wee_conf(wee_conf_file)
 
 
-
-gtk_proc("gtk_window_move", {P,I,I}, {win, x_pos, y_pos-28}) -- something is moving the window 28 pixels down each time
---gtk_proc("gtk_window_resize", {P,I,I}, {win, x_size, y_size})
-set(win, "default size", x_size, y_size)
-
+-- open files on command line
 if length(cmdline) > 2 then
-  open_file(cmdline[3], 0)
+  for i = 3 to length(cmdline) do
+    open_file(cmdline[i], 0)      
+  end for
 else
   new_file()
 end if
