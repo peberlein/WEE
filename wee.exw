@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.17"
+  version = "0.18"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -117,6 +117,10 @@ global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
 global integer font_height, line_numbers
 global sequence file_name, run_file_name, ex_err_name, recent_files
+global integer keyword_color, builtin_color, string_color, 
+    comment_color, number_color, normal_color, background_color, 
+    linenumber_color, bracelight_color
+    
 
 -- local variables
 sequence
@@ -148,6 +152,19 @@ function crash_cleanup(object x)
   return 0
 end function
 
+
+constant             -- colors of various syntax classes
+    Black = #000000,
+    Gray = #AAAAAA,
+    DGray = #808080,
+    Green = #00AA00,
+    Yellow = #88FFFF,
+    Magenta = #AA00AA,
+    Cyan = #AAAA00,
+    Red = #0000AA,
+    Blue = #AA0000,
+    LightBlue = #FFFFDD,
+    White = #FFFFFF
 
 global procedure wee_init()
 
@@ -183,6 +200,17 @@ global procedure wee_init()
   calltip_pos = -1
   
   current_tab = 0
+
+  normal_color = Black
+  background_color = White
+  comment_color = DGray
+  number_color = Black
+  keyword_color = Green
+  builtin_color = Magenta
+  string_color = Blue
+  bracelight_color = LightBlue
+  linenumber_color = DGray
+
 end procedure
 
 
@@ -222,6 +250,22 @@ global procedure load_wee_conf(sequence wee_conf_file)
                 end if
             elsif equal(key, "line_numbers") then
                 line_numbers = l[2]
+            elsif equal(key, "normal_color") then
+                normal_color = l[2]
+            elsif equal(key, "background_color") then
+                background_color = l[2]
+            elsif equal(key, "comment_color") then
+                comment_color = l[2]
+            elsif equal(key, "keyword_color") then
+                keyword_color = l[2]
+            elsif equal(key, "builtin_color") then
+                builtin_color = l[2]
+            elsif equal(key, "number_color") then
+                number_color = l[2]
+            elsif equal(key, "linenumber_color") then
+                linenumber_color = l[2]
+            elsif equal(key, "bracelight_color") then
+                bracelight_color = l[2]
             end if
         end if
         l = gets(f)
@@ -241,21 +285,19 @@ global procedure save_wee_conf(sequence wee_conf_file)
     if length(font_name) and font_height != 0 then
       printf(f, "font_name=%s\nfont_height=%d\n", {font_name, font_height})
     end if
+    printf(f, "normal_color=#%06x\n", {normal_color})
+    printf(f, "background_color=#%06x\n", {background_color})
+    printf(f, "keyword_color=#%06x\n", {keyword_color})
+    printf(f, "builtin_color=#%06x\n", {builtin_color})
+    printf(f, "comment_color=#%06x\n", {comment_color})
+    printf(f, "number_color=#%06x\n", {number_color})
+    printf(f, "string_color=#%06x\n", {string_color})
+    printf(f, "linenumber_color=#%06x\n", {linenumber_color})
+    printf(f, "bracelight_color=#%06x\n", {bracelight_color})
     close(f)
 end procedure
 
 
-constant             -- colors of various syntax classes
-    Black = #000000,
-    Gray = #AAAAAA,
-    DGray = #808080,
-    Green = #00AA00,
-    Yellow = #88FFFF,
-    Magenta = #AA00AA,
-    Cyan = #AAAA00,
-    Red = #0000AA,
-    Blue = #AA0000,
-    LightBlue = #FFFFDD
 
 function sreplace(sequence text, sequence what, sequence replacement)
     integer i
@@ -290,6 +332,8 @@ global procedure init_edit(atom edit)
       ssm(SCI_STYLESETITALIC, STYLE_DEFAULT, match(" Italic", font_name))
     end ifdef
     ssm(SCI_STYLESETSIZE, STYLE_DEFAULT, font_height)
+    ssm(SCI_STYLESETFORE, STYLE_DEFAULT, normal_color)
+    ssm(SCI_STYLESETBACK, STYLE_DEFAULT, background_color)
     ssm(SCI_STYLECLEARALL)
 
     ssm(SCI_SETLEXER, SCLEX_LUA)
@@ -302,17 +346,17 @@ global procedure init_edit(atom edit)
      )
     ssm(SCI_SETKEYWORDS, 1, get_builtins())
 
-    ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, DGray)
-    ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, DGray)
-    ssm(SCI_STYLESETFORE, SCE_LUA_NUMBER, Black)
-    ssm(SCI_STYLESETFORE, SCE_LUA_WORD, Green)
-    ssm(SCI_STYLESETFORE, SCE_LUA_WORD2, Magenta)
-    ssm(SCI_STYLESETFORE, SCE_LUA_STRING, Blue)
+    ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, comment_color)
+    ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, comment_color)
+    ssm(SCI_STYLESETFORE, SCE_LUA_NUMBER, number_color)
+    ssm(SCI_STYLESETFORE, SCE_LUA_WORD, keyword_color)
+    ssm(SCI_STYLESETFORE, SCE_LUA_WORD2, builtin_color)
+    ssm(SCI_STYLESETFORE, SCE_LUA_STRING, string_color)
 
-    ssm(SCI_STYLESETBACK, STYLE_BRACELIGHT, LightBlue)
+    ssm(SCI_STYLESETBACK, STYLE_BRACELIGHT, bracelight_color)
     ssm(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1)
     
-    ssm(SCI_STYLESETFORE, STYLE_LINENUMBER, DGray)
+    ssm(SCI_STYLESETFORE, STYLE_LINENUMBER, linenumber_color)
     ssm(SCI_SETMARGINWIDTHN, 0, 48*line_numbers) -- line numbers margin visible
     ssm(SCI_SETMARGINWIDTHN, 1, 0) -- non-folding symbols margin hidden
     
