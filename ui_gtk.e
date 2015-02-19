@@ -58,6 +58,8 @@ load_wee_conf(wee_conf_file)
 
 
 --------------------------------------------------
+-- Find dialog
+
 sequence find_phrase, replace_phrase
 find_phrase = ""
 replace_phrase = ""
@@ -304,10 +306,11 @@ function RunStart()
     
     run_file_name = file_name
     reset_ex_err()
-    
-    system(cmdline[1] & " " & run_file_name)
+    -- TODO: make configurable
+    system("eui " & run_file_name)
+    --system(cmdline[1] & " " & run_file_name)
     check_ex_err()
-    return 0 
+    return 0
 end function
 
 function HelpAbout()
@@ -320,6 +323,9 @@ function HelpTutorial()
   open_tutorial()
   return 0
 end function
+
+--------------------------------------
+-- functions called from window events
 
 -- this gets called when window is moved or resized
 function configure_event(atom w, atom s)
@@ -381,8 +387,11 @@ constant
   about_dialog = sets(create(GtkAboutDialog), {
     "transient for", win,
     "program name", window_title,
+    "comments", "A small editor for Euphoria programming.",
     "version", wee:version,
-    "authors", {author}
+    "authors", {author, "Powered by EuGTK http://sites.google.com/site/euphoriagtk/Home/"},
+    "website", "https://github.com/peberlein/WEE/",
+    "website label", "Wee on GitHub"
   })
 
 constant
