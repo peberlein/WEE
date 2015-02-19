@@ -5,6 +5,7 @@
 --  * focus-in-event for checking modified tabs
 --  * current folder for load and save dialogs
 --  * window placement taking window theme into account 
+--  * file dialog filters
 
 -- Changes:
 -- fix intermittent hang on quit (found it, caused by putting the program in the
@@ -318,7 +319,6 @@ end function
 -- this gets called when window is moved or resized
 function configure_event(atom w, atom s)
   atom left_margin, top_margin -- not used, just for show
-  
   {left_margin, top_margin, x_size, y_size} =
     gtk:get(gtk:get(w, "window"), "geometry")
   {x_pos, y_pos} = gtk:get(w, "position")
@@ -347,8 +347,10 @@ function window_set_focus(atom widget)
     return 0
 end function
 
-function setx(atom handle, sequence property, object p1)
-    set(handle, property, p1)
+function sets(atom handle, sequence property_pairs)
+    for i = 1 to length(property_pairs) by 2 do
+        set(handle, property_pairs[i], property_pairs[i+1])
+    end for
     return handle
 end function
 
@@ -371,11 +373,12 @@ set(win, "default size", x_size, y_size)
 set(win, "move", x_pos, y_pos)
 
 constant
-  about_dialog = create(GtkAboutDialog)
-set(about_dialog, "transient for", win)
-set(about_dialog, "program name", window_title)
-set(about_dialog, "version", wee:version)
-set(about_dialog, "authors", {author})
+  about_dialog = sets(create(GtkAboutDialog), {
+    "transient for", win,
+    "program name", window_title,
+    "version", wee:version,
+    "authors", {author}
+  })
 
 constant
   menubar = create(GtkMenuBar),
@@ -385,12 +388,12 @@ constant
   menuView = create(GtkMenuItem, "_View"),
   menuRun = create(GtkMenuItem, "_Run"),
   menuHelp = create(GtkMenuItem, "_Help"),
-  filemenu = setx(create(GtkMenu), "accel group", group),
-  editmenu = setx(create(GtkMenu), "accel group", group),
-  searchmenu = setx(create(GtkMenu), "accel group", group),
-  viewmenu = setx(create(GtkMenu), "accel group", group),
-  runmenu = setx(create(GtkMenu), "accel group", group),
-  helpmenu = setx(create(GtkMenu), "accel group", group)
+  filemenu = sets(create(GtkMenu), {"accel group", group}),
+  editmenu = sets(create(GtkMenu), {"accel group", group}),
+  searchmenu = sets(create(GtkMenu), {"accel group", group}),
+  viewmenu = sets(create(GtkMenu), {"accel group", group}),
+  runmenu = sets(create(GtkMenu), {"accel group", group}),
+  helpmenu = sets(create(GtkMenu), {"accel group", group})
 
 -- create a menu item with "activate" signal connected to local routine
 -- and add parsed accelerator key 
@@ -573,6 +576,24 @@ global procedure ui_close_tab(integer tab)
     ui_hedits = ui_hedits[1..tab-1] & ui_hedits[tab+1..$]
 end procedure
 
+
+constant filter1 = sets(create(GtkFileFilter), {
+    "name", "Euphoria files",
+    "add pattern", "*.e",
+    "add pattern", "*.ex",
+    "add pattern", "*.exw"
+    })
+
+constant filter2 = sets(create(GtkFileFilter), {
+    "name", "Text files",
+    "add mime type", "text/*"
+    })
+
+constant filter3 = sets(create(GtkFileFilter), {
+    "name", "All files",
+    "add pattern", "*"
+    })
+
 global function ui_get_open_file_name()
   atom dialog
   sequence filename
@@ -584,6 +605,7 @@ global function ui_get_open_file_name()
   set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
   set(dialog, "current folder", pathname(canonical_path(file_name)))
+  add(dialog, {filter1, filter2, filter3})
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
@@ -605,6 +627,7 @@ global function ui_get_save_file_name(sequence filename)
   set(dialog, "filename", filename)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
   set(dialog, "current folder", pathname(canonical_path(file_name)))
+  add(dialog, {filter1, filter2, filter3})
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
