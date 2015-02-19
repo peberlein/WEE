@@ -729,6 +729,95 @@ global procedure open_recent(integer idx)
     end if
 end procedure
 
+global procedure open_tutorial()
+    new_file()
+    ssm(SCI_SETTEXT, 0, `
+----------------------------------------
+-- Welcome to the Wee Euphoria Editor --
+----------------------------------------
+-- Wee offers autocompletion for the following keywords.
+-- Type a space at the end of each keyword to see the 
+-- expansion.  After the expansion, press Enter to jump over 
+-- the "then" or "do" to the next line.
+
+if
+
+while
+
+switch
+
+procedure
+
+function
+
+type
+
+for
+
+-- The "for" keyword also inserts " =  to " but is overtypable,
+-- meaning you can continue typing " = " and it will replace the
+-- existing characters.  Or you can move your cursor using the 
+-- arrow keys.
+
+-- Likewise, pair characters are inserted for typing the following
+-- characters: ( [ { " '
+-- And you can overtype the closing character if you wish.
+-- Pressing "(" results in "()"
+-- Typing "123" results in "(123)"
+-- Pressing ")" results in "(123)"
+-- Try it!
+
+-- If the initial character is deleted using backspace, the
+-- inserted pair will also be removed.
+-- Pressing "(" results in "()"
+-- Pressing backspace results in ""
+
+
+-- Wee also knows about subroutines you've defined.
+-- Press F2 to see a list.  If you've filled in names for the 
+-- subroutine declarations above, they should appear.
+-- Pressing OK or Enter will move the cursor to the subroutine
+-- definition.  If your cursor is on the name of an existing
+-- subroutine, it will be the highlighted entry.
+-- Try it!  Type the name of a subroutine and hit F2.
+
+
+-- Autocompletion for any type of identifier is done with
+-- Control+Space.  The standard library is also searched for 
+-- completions, indicated by "--include" in the list entry, and
+-- when selected, the include statement will be inserted 
+-- automatically near the top of the file.
+
+
+-- Typing ':' after a namespace identifier will show an auto-
+-- complete list for definitions within a specific namespace.
+
+
+-- Pressing Ctrl+F2 while on an identifier will move the cursor
+-- to the definition of that identifier.
+
+
+-- Pressing Shift+F2 while on a subroutine identifier will display
+-- a calltips popup.  The popup shows the types and names of the 
+-- arguments to the subroutine, with default arguments enclosed in
+-- square brackets.
+
+
+-- Typing '(' after a subroutine identifier will show the calltips
+-- popup, and highlight the argument position as you type.
+
+
+-- Pressing F4 will open a dialog showing the most recent ex.err
+-- file, with the error message and a list of either:
+--  the call stack of the subroutines at the point of the crash,
+--  or a list of undefined symbols.
+-- Select an item in the list and press Goto Error to move the 
+-- cursor to that location.
+
+
+-- That's all, have fun!
+`)
+end procedure
 
 
 -------------------------------------------------------------------

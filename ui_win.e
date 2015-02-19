@@ -42,6 +42,7 @@ constant
     Run_Intepreter_EX = 515,
     Options_Font = 601,
     Help_About = 701,
+    Help_Tutorial = 702,
     Select_Tab = 801
 
 constant file_filters = allocate_string(
@@ -887,6 +888,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
+	    elsif wParam = Help_Tutorial then
+		open_tutorial()
+		return rc
             elsif wParam > File_Recent and wParam <= File_Recent + max_recent_files then
                 open_recent(wParam - File_Recent)
             elsif wParam >= Select_Tab and wParam <= Select_Tab + 9 then
@@ -1066,6 +1070,8 @@ procedure WinMain()
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Help_About, alloc_string("&About...")})
+    junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Help_Tutorial, alloc_string("&Tutorial")})
 -- main menu
     hmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 

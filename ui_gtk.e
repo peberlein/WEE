@@ -316,6 +316,11 @@ function HelpAbout()
   return 0
 end function
 
+function HelpTutorial()
+  open_tutorial()
+  return 0
+end function
+
 -- this gets called when window is moved or resized
 function configure_event(atom w, atom s)
   atom left_margin, top_margin -- not used, just for show
@@ -474,7 +479,8 @@ add(runmenu, {
 set(menuRun, "submenu", runmenu)
 
 add(helpmenu, {
-  createmenuitem("About...", "HelpAbout")
+  createmenuitem("About...", "HelpAbout"),
+  createmenuitem("Tutorial", "HelpTutorial")
   })
 set(menuHelp, "submenu", helpmenu)
 
