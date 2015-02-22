@@ -117,8 +117,8 @@ global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
 global integer font_height, line_numbers
 global sequence file_name, run_file_name, ex_err_name, recent_files
-global integer keyword_color, builtin_color, string_color, 
-    comment_color, number_color, normal_color, background_color, 
+global integer keyword_color, builtin_color, string_color,
+    comment_color, number_color, normal_color, background_color,
     linenumber_color, bracelight_color
     
 
@@ -142,8 +142,8 @@ end function
 
 
 function crash_cleanup(object x)
-  ui_message_box_error(window_title, 
-    "Houston, Wee have a problem.\n\n"&
+  ui_message_box_error(window_title,
+    "Houston, Wee have a problem.\n\n" &
     "The editor crashed and is closing now.\n")
   save_modified_tabs()
   if length(wee_conf_filename) then
@@ -942,7 +942,7 @@ global procedure goto_error(sequence err, integer idx)
     item = ""
     if a < c and c < b then
 	-- 'blah' (filename:line) has not been declared
-	file = get_path_directory(ex_err_name) & text[a+1..c-1]
+	file = dirname(ex_err_name) & SLASH & text[a+1..c-1]
         val = value(text[c+1..b-1])
         item = text_between(text, '\'', '\'')
     elsif c then
@@ -1041,7 +1041,7 @@ global procedure reset_ex_err()
     if length(run_file_name) = 0 then
         return
     end if
-    ex_err_name = get_path_directory(run_file_name) & "ex.err"
+    ex_err_name = dirname(run_file_name) & SLASH & "ex.err"
     ex_err_timestamp = get_timestamp(ex_err_name)
 end procedure
 
@@ -1216,7 +1216,6 @@ global procedure view_subroutine_arguments()
     if length(text) then
       ssm(SCI_GOTOPOS, end_pos+1)
       ssm(SCI_AUTOCSHOW, length(word)+1, text)
-      puts(1, text)
     end if
 end procedure
 
@@ -1484,7 +1483,7 @@ procedure delete_pair()
     if insert_chars[$] = last_deleted_char then
 	insert_chars = insert_chars[1..$-1]
     elsif (last_deleted_char = '(' and insert_chars[$] = ')') or
-          (last_deleted_char = '[' and insert_chars[$] = ']') or 
+          (last_deleted_char = '[' and insert_chars[$] = ']') or
           (last_deleted_char = '{' and insert_chars[$] = '}') then
 	ssm(SCI_DELETERANGE, get_pos(), 1)
 	insert_chars = insert_chars[1..$-1]
