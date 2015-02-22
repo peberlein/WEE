@@ -779,23 +779,58 @@ global procedure open_tutorial()
 ----------------------------------------
 -- Welcome to the Wee Euphoria Editor --
 ----------------------------------------
+
+-- Scintilla Keys:
+--
+-- Text Size
+--   Magnify                         Control keypad +
+--   Reduce                          Control keypad -
+--   Normal                          Control keypad /
+--
+-- Cursor Movement
+--   Go to start of document         Control Home
+--   Go to end of document           Control End
+--   Go to start of line             Control Home
+--   Go to end of line               Control End
+--   Go to previous paragraph        Control Up
+--   Go to next paragraph            Control Down
+--   Go to previous word             Control Left
+--   Go to next word                 Control Right
+--   (shift extends selection)
+--
+-- Delete Text
+--    To start of line               Control Shift Backspace
+--    To start of word               Control Backspace
+--    To end of word                 Control Delete
+--
+-- Indent</b><small>
+--    Indent block                Tab
+--    Unindent block              Shift Tab
+
+
 -- Wee offers autocompletion for the following keywords.
--- Type a space at the end of each keyword to see the 
+-- Type a space at the end of each keyword below to see the 
 -- expansion.  After the expansion, press Enter to jump over 
 -- the "then" or "do" to the next line.
 
 if
 
+-------------------------
 while
 
+-------------------------
 switch
 
+-------------------------
 procedure
 
+-------------------------
 function
 
+-------------------------
 type
 
+-------------------------
 for
 
 -- The "for" keyword also inserts " =  to " but is overtypable,
