@@ -803,7 +803,7 @@ global procedure open_tutorial()
 --    To start of word               Control Backspace
 --    To end of word                 Control Delete
 --
--- Indent</b><small>
+-- Indent
 --    Indent block                Tab
 --    Unindent block              Shift Tab
 
@@ -1100,23 +1100,19 @@ end procedure
 -- code syntax routines
 -------------------------------------------------------------------
 
-global procedure view_subroutines()
-    -- TODO: get from ui_win.e
-end procedure
-
 
 global procedure view_declaration()
-    sequence text, decls, word, namespace
+    sequence text, decls, word, name_space
     integer pos, junk
 
     text = get_edit_text()
     pos = get_pos()
     word = word_pos(text, pos)
     if length(word) < 2 then return end if
-    namespace = word[2]
+    name_space = word[2]
     word = word[1]
 
-    decls = get_declarations(parse(text, file_name), pos, namespace)
+    decls = get_declarations(parse(text, file_name), pos, name_space)
     pos = -1
     for i = 1 to length(decls) by 2 do
       if equal(decls[i], word) then
@@ -1136,7 +1132,7 @@ end procedure
 
 
 global procedure view_completions()
-    sequence text, word, decls, namespace, suggestions
+    sequence text, word, decls, name_space, suggestions
     integer pos, junk, style
 
     pos = get_pos()
@@ -1154,19 +1150,20 @@ global procedure view_completions()
     end if
     --printf(1, "word=%s namespace=%s pos=%d end=%d\n", word)
     ssm(SCI_SETSEL, word[4], word[4])
-    namespace = word[2]
+    name_space = word[2]
     word = word[1]
 
-    decls = get_declarations(parse(text, file_name), pos, namespace)
-    suggestions = suggest_includes(word, namespace)
+    decls = get_declarations(parse(text, file_name), pos, name_space)
+    if length(decls) = 0 or length(name_space) = 0 then
+	suggestions = suggest_includes(word, name_space)
 
-    -- try to remove duplicates
-    --for i = 1 to length(suggestions) by 2 do
-    --    if not find(suggestions[i+1], decls) then
-    --        decls &= suggestions[i..i+1]
-    --    end if
-    --end for
-    decls &= suggestions
+	-- filter duplicate suggestions
+	for i = 1 to length(suggestions) by 2 do
+	    if not find(suggestions[i+1], decls) then
+		decls &= suggestions[i..i+1]
+	    end if
+	end for
+    end if
     
     if length(decls) = 0 then
 	return
@@ -1435,11 +1432,19 @@ procedure auto_complete_selection(integer pos, sequence text)
     inc = match(" --include", text)
     if inc then
         ssm(SCI_AUTOCCANCEL, 0, 0)
+
 	len = get_pos() - pos
+
+        arg = text[inc-1] = '('
+        if arg then
+	    -- delete the existing '(' since we are adding another one
+	    len -= 1
+            ssm(SCI_DELETERANGE, pos + len, 1)
+        end if
+        
 	if len+1 <= inc then
 	    ssm(SCI_ADDTEXT, inc-1-len, text[len+1..inc])
         end if
-        arg = text[inc-1] = '('
         text = text[inc+3..$] & "\n"
 	
 	-- search first few lines for include statements

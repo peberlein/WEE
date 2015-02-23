@@ -123,7 +123,7 @@ global constant
   SEQ_LEN = 305, -- {SEQ_LEN}, shorthand for length of enclosing sequence
   ENUM_DECL = 306, -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
                   --             {"name", pos, scope-start, [expr]}...}
-  INCLUDE = 307, -- {INCLUDE, includes-idx, ["namespace"]}
+  INCLUDE = 307, -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
   GLOBAL = 308,    -- {GLOBAL, decl...}
   PUBLIC = 309,    -- {PUBLIC, decl...}
   EXPORT = 310,    -- {EXPORT, decl...}
@@ -151,6 +151,7 @@ sequence cache
 cache = {}
 
 sequence types
+types = {}
 
 sequence keywords
 keywords = {"global", "function", "procedure", "type", "end", "if", "then",
@@ -189,7 +190,7 @@ tok = ""
 integer idx, tok_idx, ifdef_ok
 idx = 1
 tok_idx = 1
-
+ifdef_ok = 1
 
 -- prints an error message indicated at tok_idx
 procedure error(sequence msg)
@@ -469,59 +470,6 @@ end function
 
 
 
-constant 
-  SLASH = '/' + ('\\' - '/') * (platform() = WIN32),
-  DOTDOT = SLASH & ".." & SLASH
-
-global function get_path_directory(sequence path)
-  for i = length(path) to 1 by -1 do
-    if path[i] = '\\' or path[i] = '/' then
-      return path[1..i]
-    end if
-  end for
-  return ""
-end function
-
-global function get_basename(sequence path)
-  for i = length(path)-1 to 1 by -1 do
-    if path[i] = '\\' or path[i] = '/' then
-      return path[i+1..$]
-    end if
-  end for
-  return ""
-end function
-
-
-sequence include_dir
-constant cmd = command_line()
-include_dir = get_path_directory(cmd[1])
-if equal(get_basename(include_dir), "bin" & SLASH) then
-    include_dir = include_dir[1..$-4]
-end if
-include_dir &= "include" & SLASH
-
-function convert_path_separators(sequence filename)
-  integer x
-
-  -- convert path separators
-  for i = 1 to length(filename) do
-    if filename[i] = '/' or filename[i] = '\\' then
-      filename[i] = SLASH
-    end if
-  end for
-  -- remove "dir/../" patterns
-  x = match(DOTDOT, filename)
-  while x do
-      for i = x - 1 to 1 by -1 do
-          if filename[i] = SLASH then
-              filename = filename[1..i] & filename[x+4..$]
-              exit
-          end if
-      end for
-      x = match(DOTDOT, filename)
-  end while
-  return filename
-end function
 
 
 -- returns a unique timestamp for filename, or -1 if doesn't exist
@@ -569,39 +517,41 @@ end function
 -- or positive integer if cache entry exists and is unchanged
 -- or sequence "state" to be passed to end_include
 function include_file(sequence filename)
-  sequence state, tmp
-  integer i
-  atom ts
+  sequence state, tmp, paths
+  integer e
+  atom ts = -1
 
-  filename = convert_path_separators(filename)
-  tmp = get_path_directory(source_filename) & filename
+  tmp = filename
   ts = get_timestamp(tmp)
-  if ts = -1 then
-    -- TODO: get EUDIR environment variable
-    -- tmp = get_env("EUDIR") & filename
-    -- ts = get_timestamp(tmp)
-  end if
-  if ts = -1 then
-    tmp = filename
+  if ts = -1 and not equal(source_filename, "<none>") then
+    tmp = dirname(source_filename) & SLASH & tmp
     ts = get_timestamp(tmp)
   end if
-  if ts = -1 and match(include_dir, filename) = 0 then
-    tmp = include_dir & filename
-    ts = get_timestamp(tmp)
+  --printf(1, "%s %d\n", {tmp, ts})
+  if ts = -1 then
+    paths = include_paths(0)
+    for i = 1 to length(paths) do
+        tmp = paths[i] & SLASH & filename
+        ts = get_timestamp(tmp)
+        --printf(1, "%s %d\n", {tmp, ts})
+        if ts != -1 then
+            exit
+        end if
+    end for
   end if
   if ts = -1 then 
     return -1 -- file not found
   end if
 
-  filename = tmp
-  i = cache_entry(filename)
-  if cache[i][2] = ts then
-     return i -- file unchanged
+  filename = canonical_path(tmp, 0, CORRECT)
+  --printf(1, "%s %d\n", {tmp, ts})
+  e = cache_entry(filename)
+  if cache[e][2] = ts then
+     return e -- file unchanged
   end if
-  cache[i][2] = ts
+  cache[e][2] = ts
 
-  state = {text, source_filename, idx, tok_idx, tok, i}
-  -- TODO: need to check other paths for include files
+  state = {text, source_filename, idx, tok_idx, tok, e}
   source_filename = filename
   text = read_file(filename)
 --printf(1, "including %s, length %d\n", {source_filename, length(text)})
@@ -1266,7 +1216,7 @@ function statements(integer mode, integer sub)
           state = end_include(state, statements(NONE, 0))
           --printf(1, "done parsing %s, state=%d\n  resuming %s\n", {s, state, source_filename})
         end if
-        s = {INCLUDE, state}
+        s = {INCLUDE, state, idx}
       end if
       if prefix = PUBLIC then
         --puts(1, "public include next_token="&tok&"\n")
@@ -1274,8 +1224,11 @@ function statements(integer mode, integer sub)
         prefix = 0
       end if
       if OE4 and token("as") then
-        if not identifier() then error("expected identifier") end if
-        s = append(s, get_token())
+        if identifier() then 
+	  s = append(s, get_token())
+	else 
+	  error("expected identifier")
+	end if
       end if
       if not ifdef_ok then
         s = {}
@@ -1359,6 +1312,7 @@ global function parse(sequence source_text, sequence file_name)
   integer i
   sequence ast
 
+  file_name = canonical_path(file_name, 0, CORRECT)
   i = cache_entry(file_name)
 
   source_filename = file_name
@@ -1399,253 +1353,6 @@ procedure check_cache_timestamp(integer idx)
 end procedure
 
 
-sequence include_ids, include_flags
-constant
-  FILTER_LOCAL = 1,
-  FILTER_GLOBAL = 2,
-  FILTER_PUBLIC = 4,
-  FILTER_EXPORT = 8,
-  FILTER_INCLUDE = 16,
-  FILTER_INCLUDE_AS = 32,
-  FILTER_ALL = 63
-
-
-
-  
-function get_include_filter(sequence s, sequence namespace, integer filter, integer prefix)
-    integer idx, include_filter
-
-    idx = s[2] -- cache[] index
-    if length(namespace) then
-      --if length(s) >= 3 then
-      --    printf(1, "filter=%x namespace=%s include as %s\n", {filter, namespace, s[3]})
-      --end if
-      if and_bits(filter, FILTER_INCLUDE_AS) and length(s) >= 3 and equal(s[3], namespace) then
-        -- top-level and matched "include as"
-        include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
-      elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
-        -- a public include from nested include
-        include_filter = FILTER_GLOBAL + FILTER_PUBLIC
-      elsif length(cache[idx]) >= 3 and 
-            equal(cache[idx][3], {NAMESPACE, namespace}) then
-        -- include has same namespace
-        include_filter = FILTER_GLOBAL + FILTER_PUBLIC * (and_bits(filter, FILTER_LOCAL) != 0)
-      else
-        include_filter = 0
-      end if
-    elsif and_bits(filter, FILTER_INCLUDE_AS) then
-      -- top-level include
-      include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
-    elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
-      -- public sub-include
-      include_filter = FILTER_GLOBAL + FILTER_PUBLIC
-    else
-      -- sub-include
-      include_filter = FILTER_GLOBAL
-    end if
-    idx = find(s[2], include_ids)
-    if idx = 0 then
-      -- new entry
-      include_ids &= s[2]
-      include_flags &= 0
-      idx = length(include_ids)
-    elsif and_bits(include_flags[idx], include_filter) = include_filter then
-      -- avoid adding the same symbols again
-      return -1
-    end if
-
-    include_filter = and_bits(include_filter, not_bits(include_flags[idx]))
-    include_flags[idx] = or_bits(include_flags[idx], include_filter)
-   
-    return include_filter + FILTER_INCLUDE
-end function
-	
-  
--- to prevent recursion, symbols may be included from a file
--- only once for each type of flag: global, public, export
-
--- namespace matches:
---  top-level file has same namespace
---  top-level file has include as same namespace
---  included file has same namespace
---  included file is publicly included by file with same namespace
-
--- get a list of declarations from ast in scope at pos
--- returns {"name1", pos1, "name2", pos2...}
---  pos may be be an integer for the position in the current file,
---  or {pos, "include-path"} for included files.
-
-function get_decls(sequence ast, integer pos, sequence namespace, integer filter)
-  sequence result, s
-  integer x, decl, prefix, include_filter
-
-  if length(namespace) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, namespace})) then
-      filter = and_bits(filter, FILTER_INCLUDE)
-      if filter = 0 then
-         return {}  -- no namespace or mismatch
-      end if
-  end if
-
-  result = {}
-  for i = 3 to length(ast) do
-    s = ast[i]
-
-    prefix = power(2, find(s[1], {GLOBAL, PUBLIC, EXPORT}))
-    if prefix > 1 then
-      s = s[2..$] -- remove prefix
-    end if
-    decl = s[1]
-    if and_bits(prefix, filter) = 0 then
-      -- the scope modifier didn't pass the filter
-      -- but we also need to check the include filter
-      if decl != INCLUDE or and_bits(filter, FILTER_INCLUDE) = 0 then
-        decl = 0
-      end if
-    end if
-
-    if decl = NAMESPACE then
-      -- {NAMESPACE, "namespace"}
-      if and_bits(filter, FILTER_LOCAL) and length(namespace) and 
-         length(s) >= 2 and not equal(namespace, s[2]) then
-         -- namespace doesn't match
-         filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
-         if filter = 0 then
-             return {}
-         end if
-      end if
-    
-    elsif decl = INCLUDE then
-      -- {INCLUDE, includes-index, ["namespace"]}
-      x = s[2]
-      --printf(1, "include %s filter=%x\n", {cache[x][1], filter})
-      if x != -1 then
-        include_filter = get_include_filter(s, namespace, filter, prefix)
-        if include_filter != -1 then
-          check_cache_timestamp(x)
-          s = get_decls(cache[x], 0, namespace, include_filter)
-          --printf(1, "%s: %d\n", {cache[x][1], length(cache[x])})
-          for j = 2 to length(s) by 2 do
-            --printf(1, "%s: %d\n", {s[j-1], s[j]})
-            if not sequence(s[j]) then
-              s[j] = {cache[x][1], s[j]} -- is {filename, pos}
-            end if
-          end for
-          result &= s
-        end if
-      end if
-
-    elsif decl = CONST_DECL then
-      -- {CONST_DECL, {"name", pos, scope-start, expr}... }
-      --printf(1, "constant\n", {})
-      for j = 2 to length(s) do
-        --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
-        if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
-          result &= {s[j][1], s[j][2]}
-        end if
-      end for
-
-    elsif decl = VAR_DECL then
-      -- {VAR_DECL, "type", {"name", pos, scope-start, [expr]}...}
-      --printf(1, s[2] & "\n", {})
-      for j = 3 to length(s) do
-        --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
-        if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
-          result &= {s[j][1], s[j][2]}
-        end if
-      end for
-
-    elsif decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
-      -- {FUNC_DECL, "name", pos,
-      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
-      --    scope-start, scope-end, stmts...}
-      if decl = FUNC_DECL then
-        --printf(1, "function %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
-      elsif decl = PROC_DECL then
-        --printf(1, "procedure %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
-      elsif decl = TYPE_DECL then
-        --printf(1, "type %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
-      end if
-      result &= {s[2], s[3]}
-      if length(s) >= 6 and pos >= s[5] and pos <= s[6] then -- in scope?
-        for j = 1 to length(s[4]) do -- display arguments
-          if length(s[4][j]) >= 4 and pos >= s[4][j][4] then
-            --printf(1, "  %s %s: %d\n", {s[4][j][1], s[4][j][2], s[4][j][3]})
-            result &= {s[4][j][2], s[4][j][3]}
-          end if
-        end for
-        result &= get_decls(s[5..$], pos, namespace, filter)
-      end if
-
-    elsif decl = FOR then
-      -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
-      if length(s) >= 8 and pos >= s[7] and pos <= s[8] then -- in scope?
-        --printf(1, "for %s: %d\n", {s[2], s[3]})
-        result &= {s[2], s[3]}
-        result &= get_decls(s[7..$], pos, namespace, filter)
-      end if
-
-    elsif decl = WHILE then
-      -- {WHILE, expr, scope-start, scope-end, stmts...}
-      if length(s) >= 4 and pos >= s[3] and pos <= s[4] then -- in scope?
-        result &= get_decls(s[3..$], pos, namespace, filter)
-      end if
-
-    elsif decl = IF then
-      -- {IF, expr, {scope-start, scope-end, stmts...}, 
-      --     [expr, {scope-start, scope-end, elsif-stmts...},]... 
-      --     [{scope-start, scope-end, else-stmts...}]}
-      for j = 2 to length(s) by 2 do
-        x = (j != length(s))
-        if length(s[j+x]) >= 2 and pos >= s[j+x][1] and pos <= s[j+x][2] then -- in scope?
-          result &= get_decls(s[j+x], pos, namespace, filter)
-        end if
-      end for
-
-    elsif decl = ENUM_DECL then
-      -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
-      --             {"name", pos, scope-start, [expr]}...}
-      if length(s[2]) then -- has typename
-        result &= {s[2], s[3]}
-      end if
-      for j = 6 to length(s) do
-        if length(s[j]) >= 3 and pos >= s[j][3] then -- in scope?
-          result &= {s[j][1], s[j][2]}
-        end if
-      end for
-
-    end if
-  end for
-  return result
-end function
-
-global function get_declarations(sequence ast, integer pos, sequence namespace)
-  include_ids = {}
-  include_flags = {}
-  return get_decls(ast, pos, namespace, FILTER_ALL)
-end function
-
-global function get_subroutines(sequence ast)
-  sequence result, s
-  integer decl
-
-  result = {}
-  for i = 3 to length(ast) do
-    s = ast[i]
-
-    if find(s[1], {GLOBAL, PUBLIC, EXPORT}) then
-      s = s[2..$] -- remove prefix      
-    end if
-    decl = s[1]
-
-    if decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
-      -- {FUNC_DECL, "name", pos,
-      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
-      --    scope-start, scope-end, stmts...}
-      result &= {s[2], s[3]}
-    end if
-  end for
-  return result
-end function
 
 constant builtins = {
 {"function", "abort", "integer", "errcode", 0},
@@ -1741,21 +1448,85 @@ global function get_builtins()
   sequence s
   s = {}
   for i = 1 to length(builtins) do
-    if i != 1 then s &= ' ' end if
+    if i > 1 then s &= ' ' end if
     s &= builtins[i][2]
   end for
   return s
 end function
 
 
+sequence include_ids, include_flags
+constant
+  FILTER_LOCAL = 1,
+  FILTER_GLOBAL = 2,
+  FILTER_PUBLIC = 4,
+  FILTER_EXPORT = 8,
+  FILTER_INCLUDE = 16,
+  FILTER_INCLUDE_AS = 32,
+  FILTER_ALL = 63
+
+
+
+  
+function get_include_filter(sequence s, sequence name_space, integer filter, integer prefix)
+    integer idx, include_filter
+
+    idx = s[2] -- cache[] index
+    if length(name_space) then
+      --if length(s) >= 3 then
+      --    printf(1, "filter=%x namespace=%s include as %s\n", {filter, name_space, s[3]})
+      --end if
+      if filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT then
+	  -- include as namespace -> include
+          include_filter = FILTER_PUBLIC
+      elsif filter = FILTER_PUBLIC and prefix = FILTER_PUBLIC then
+        -- a public include from nested include
+        include_filter = FILTER_PUBLIC
+      elsif and_bits(filter, FILTER_INCLUDE_AS) and length(cache[idx]) >= 3 and 
+            equal(cache[idx][3], {NAMESPACE, name_space}) then
+        -- include has same namespace
+        include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
+      else
+        include_filter = 0
+      end if
+    elsif and_bits(filter, FILTER_INCLUDE_AS) then
+      -- top-level include
+      include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
+    elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
+      -- public sub-include
+      include_filter = FILTER_GLOBAL + FILTER_PUBLIC
+    else
+      -- sub-include
+      include_filter = FILTER_GLOBAL
+    end if
+    idx = find(s[2], include_ids)
+    if idx = 0 then
+      -- new entry
+      include_ids &= s[2]
+      include_flags &= 0
+      idx = length(include_ids)
+    elsif and_bits(include_flags[idx], include_filter) = include_filter then
+      -- avoid adding the same symbols again
+      return -1
+    end if
+
+    include_filter = and_bits(include_filter, not_bits(include_flags[idx]))
+    include_flags[idx] = or_bits(include_flags[idx], include_filter)
+   
+    return include_filter + FILTER_INCLUDE
+end function
+	
+
 -- returns {{"subroutine-type", "name", ["arg1-type", "arg1-name", is_default]... }... }
-function get_args(sequence ast, sequence word, sequence namespace, integer filter)
+function get_args(sequence ast, sequence word, sequence name_space, integer filter)
   sequence result, s
   integer x, decl, prefix, include_filter
 
-  if and_bits(filter, FILTER_INCLUDE) = 0 and length(namespace) and 
-     length(ast) >= 3 and (ast[3][1] != NAMESPACE or not equal(namespace, ast[3][2])) then
-     return {}  -- no namespace or mismatch
+  if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
+      filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
+      if filter = 0 then
+         return {}  -- no namespace or mismatch
+      end if
   end if
 
   result = {}
@@ -1767,24 +1538,17 @@ function get_args(sequence ast, sequence word, sequence namespace, integer filte
       s = s[2..$] -- remove prefix      
     end if
     decl = s[1]
-    if and_bits(filter, prefix) = 0 and s[1] != INCLUDE then
+    if and_bits(filter, prefix) = 0 and decl != INCLUDE then
       decl = 0
     end if
 
-    if decl = NAMESPACE then
-      -- {NAMESPACE, "namespace"}
-      if and_bits(filter, FILTER_LOCAL) and length(namespace) and 
-         length(s) >= 2 and not equal(namespace, s[2]) then
-        filter = 0  -- namespace doesn't match
-      end if
-    
-    elsif decl = INCLUDE then
-      -- {INCLUDE, includes-index, ["namespace"]}
+    if decl = INCLUDE and and_bits(filter, FILTER_INCLUDE) then
+      -- {INCLUDE, includes-index, scope-start, ["namespace"]}
       x = s[2]
       if x != -1 and and_bits(filter, FILTER_INCLUDE) then
-        include_filter = get_include_filter(s, namespace, filter, prefix)
+        include_filter = get_include_filter(s, name_space, filter, prefix)
         if include_filter != -1 then
-          result &= get_args(cache[x], word, namespace, include_filter)
+          result &= get_args(cache[x], word, name_space, include_filter)
         end if
       end if
 
@@ -1814,6 +1578,188 @@ function get_args(sequence ast, sequence word, sequence namespace, integer filte
           end if
       end for
   end if
+  return result
+end function
+
+
+-- to prevent recursion, symbols may be included from a file
+-- only once for each type of flag: global, public, export
+
+-- namespace matches:
+--  top-level file has same namespace
+--  top-level file has include as same namespace
+--  included file has same namespace
+--  included file is publicly included by file with same namespace
+
+-- get a list of declarations from ast in scope at pos
+-- returns {"name1", pos1, "name2", pos2...}
+--  pos may be be an integer for the position in the current file,
+--  or {pos, "include-path"} for included files.
+
+function get_decls(sequence ast, integer pos, sequence name_space, integer filter)
+  sequence result, s
+  integer x, decl, prefix, include_filter
+
+  if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
+      filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
+      if filter = 0 then
+         return {}  -- no namespace or mismatch
+      end if
+  end if
+
+  result = {}
+  for i = 3 to length(ast) do
+    s = ast[i]
+
+    prefix = power(2, find(s[1], {GLOBAL, PUBLIC, EXPORT}))
+    if prefix > 1 then
+      s = s[2..$] -- remove prefix
+    end if
+    decl = s[1]
+    if and_bits(prefix, filter) = 0 and decl != INCLUDE then
+      -- the scope modifier didn't pass the filter
+      decl = 0
+    end if
+
+    if decl = INCLUDE and and_bits(filter, FILTER_INCLUDE) then
+      -- {INCLUDE, includes-index, scope-start, ["namespace"]}
+      x = s[2]
+      if x != -1 then
+        --printf(1, "include %s filter=%x\n", {cache[x][1], filter})
+        if length(name_space) and and_bits(filter, FILTER_INCLUDE_AS) and 
+          length(s) >= 4 and equal(s[4], name_space) and pos >= s[3] then
+          -- found a matching "include as"
+          filter = 0
+          include_filter = FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT
+          result = {}
+          name_space = {}
+        else  
+          include_filter = get_include_filter(s, name_space, filter, prefix)
+        end if
+        if include_filter != -1 then
+          check_cache_timestamp(x)
+          s = get_decls(cache[x], 0, name_space, include_filter)
+          --printf(1, "%s: %d\n", {cache[x][1], length(cache[x])})
+          for j = 2 to length(s) by 2 do
+            --printf(1, "%s: %d\n", {s[j-1], s[j]})
+            if not sequence(s[j]) then
+              s[j] = {cache[x][1], s[j]} -- is {filename, pos}
+            end if
+          end for
+          result &= s
+        end if
+      end if
+
+    elsif decl = CONST_DECL then
+      -- {CONST_DECL, {"name", pos, scope-start, expr}... }
+      --printf(1, "constant\n", {})
+      for j = 2 to length(s) do
+        --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
+        if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
+          result &= {s[j][1], s[j][2]}
+        end if
+      end for
+
+    elsif decl = VAR_DECL then
+      -- {VAR_DECL, "type", {"name", pos, scope-start, [expr]}...}
+      --printf(1, s[2] & "\n", {})
+      for j = 3 to length(s) do
+        --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
+        if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
+          result &= {s[j][1], s[j][2]}
+        end if
+      end for
+
+    elsif decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
+      -- {FUNC_DECL, "name", pos,
+      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
+      --    scope-start, scope-end, stmts...}
+      if decl = FUNC_DECL then
+        --printf(1, "function %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
+      elsif decl = PROC_DECL then
+        --printf(1, "procedure %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
+      elsif decl = TYPE_DECL then
+        --printf(1, "type %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
+      end if
+      result &= {s[2], s[3]}
+      if length(s) >= 6 and pos >= s[5] and pos <= s[6] then -- in scope?
+        for j = 1 to length(s[4]) do -- display arguments
+          if length(s[4][j]) >= 4 and pos >= s[4][j][4] then
+            --printf(1, "  %s %s: %d\n", {s[4][j][1], s[4][j][2], s[4][j][3]})
+            result &= {s[4][j][2], s[4][j][3]}
+          end if
+        end for
+        result &= get_decls(s[5..$], pos, name_space, filter)
+      end if
+
+    elsif decl = FOR then
+      -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
+      if length(s) >= 8 and pos >= s[7] and pos <= s[8] then -- in scope?
+        --printf(1, "for %s: %d\n", {s[2], s[3]})
+        result &= {s[2], s[3]}
+        result &= get_decls(s[7..$], pos, name_space, filter)
+      end if
+
+    elsif decl = WHILE then
+      -- {WHILE, expr, scope-start, scope-end, stmts...}
+      if length(s) >= 4 and pos >= s[3] and pos <= s[4] then -- in scope?
+        result &= get_decls(s[3..$], pos, name_space, filter)
+      end if
+
+    elsif decl = IF then
+      -- {IF, expr, {scope-start, scope-end, stmts...}, 
+      --     [expr, {scope-start, scope-end, elsif-stmts...},]... 
+      --     [{scope-start, scope-end, else-stmts...}]}
+      for j = 2 to length(s) by 2 do
+        x = (j != length(s))
+        if length(s[j+x]) >= 2 and pos >= s[j+x][1] and pos <= s[j+x][2] then -- in scope?
+          result &= get_decls(s[j+x], pos, name_space, filter)
+        end if
+      end for
+
+    elsif decl = ENUM_DECL then
+      -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
+      --             {"name", pos, scope-start, [expr]}...}
+      if length(s[2]) then -- has typename
+        result &= {s[2], s[3]}
+      end if
+      for j = 6 to length(s) do
+        if length(s[j]) >= 3 and pos >= s[j][3] then -- in scope?
+          result &= {s[j][1], s[j][2]}
+        end if
+      end for
+
+    end if
+  end for
+  return result
+end function
+
+global function get_declarations(sequence ast, integer pos, sequence name_space)
+  include_ids = {}
+  include_flags = {}
+  return get_decls(ast, pos, name_space, FILTER_ALL)
+end function
+
+global function get_subroutines(sequence ast)
+  sequence result, s
+  integer decl
+
+  result = {}
+  for i = 3 to length(ast) do
+    s = ast[i]
+
+    if find(s[1], {GLOBAL, PUBLIC, EXPORT}) then
+      s = s[2..$] -- remove prefix      
+    end if
+    decl = s[1]
+
+    if decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
+      -- {FUNC_DECL, "name", pos,
+      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
+      --    scope-start, scope-end, stmts...}
+      result &= {s[2], s[3]}
+    end if
+  end for
   return result
 end function
 
@@ -1854,7 +1800,7 @@ global function word_pos(sequence text, integer pos)
 end function
 
 
-sequence suggested_includes, suggested_word, suggested_namespace
+sequence suggested_includes, suggested_word, suggested_namespace, suggested_path
 
 function walk_include(sequence path_name, sequence dirent)
     object state
@@ -1865,19 +1811,24 @@ function walk_include(sequence path_name, sequence dirent)
       -- path_name doesn't end with .e or .E
       return 0
     end if
+    --puts(1, path_name&"\n")
     state = include_file(path_name)
     if sequence(state) then
-        state = end_include(state, statements(NONE, 0))
+      state = end_include(state, statements(NONE, 0))
     end if
     if state > 0 then
+      include_ids = {}
+      include_flags = {}
       decls = get_decls(cache[state], 0, suggested_namespace, 
                         FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
       for i = 1 to length(decls) by 2 do
+        --puts(1, "  "&decls[i]&"\n")
         if length(decls[i]) >= length(suggested_word) and 
            equal(decls[i][1..length(suggested_word)], suggested_word) then
           --puts(1, dirent[D_NAME]&" matched!\n")
-          suggested_includes &= {decls[i] & " --include "&path_name[length(include_dir)+1..$], 0}
-                                 -- {decls[i+1], cache[state][1]}} -- this needs work
+          suggested_includes &= {decls[i] & " --include "&
+		path_name[length(suggested_path)+2..$], 
+		{cache[state][1], decls[i+1]}}
         end if
       end for
     end if
@@ -1888,13 +1839,20 @@ end function
 constant walk_include_id = routine_id("walk_include")
 
 -- returns a list of include files which contain a declaration decl
-global function suggest_includes(sequence word, sequence namespace)
+global function suggest_includes(sequence word, sequence name_space)
+  sequence paths
   suggested_includes = {}
   suggested_word = word
-  suggested_namespace = namespace
-  --puts(1, "include_dir="&include_dir&"\n")
-  if walk_dir(include_dir, walk_include_id, 1) then
-  end if
+  suggested_namespace = name_space
+  paths = include_paths(0)
+  for i = 1 to length(paths) do
+    if length(paths[i]) > 8 and equal(paths[i][$-7..$], SLASH & "include") then        
+      suggested_path = paths[i]
+      --puts(1, "include_dir="&paths[i]&"\n")
+      if walk_dir(paths[i], walk_include_id, 1) then
+      end if
+    end if
+  end for
   return suggested_includes
 end function
 
