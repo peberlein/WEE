@@ -1840,16 +1840,20 @@ constant walk_include_id = routine_id("walk_include")
 
 -- returns a list of include files which contain a declaration decl
 global function suggest_includes(sequence word, sequence name_space)
-  sequence paths
+  sequence paths, path
   suggested_includes = {}
   suggested_word = word
   suggested_namespace = name_space
   paths = include_paths(0)
   for i = 1 to length(paths) do
-    if length(paths[i]) > 8 and equal(paths[i][$-7..$], SLASH & "include") then        
-      suggested_path = paths[i]
-      --puts(1, "include_dir="&paths[i]&"\n")
-      if walk_dir(paths[i], walk_include_id, 1) then
+    path = paths[i]
+    --puts(1, "include_dir="&paths[i]&"\n")
+    if path[$] = SLASH then
+      path = path[1..$-1]
+    end if
+    if length(path) > 8 and equal(path[$-7..$], SLASH & "include") then
+      suggested_path = path
+      if walk_dir(path, walk_include_id, 1) then
       end if
     end if
   end for
