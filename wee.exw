@@ -899,6 +899,7 @@ for
 end procedure
 
 
+
 -------------------------------------------------------------------
 -- ex.err file handling routines
 -------------------------------------------------------------------
@@ -1427,7 +1428,7 @@ end procedure
 
 
 procedure auto_complete_selection(integer pos, sequence text)
-    integer inc, len, insert_line
+    integer inc, len, insert_line, arg
     sequence line
     
     -- insert include statement if completion contains it
@@ -1438,6 +1439,7 @@ procedure auto_complete_selection(integer pos, sequence text)
 	if len+1 <= inc then
 	    ssm(SCI_ADDTEXT, inc-1-len, text[len+1..inc])
         end if
+        arg = text[inc-1] = '('
         text = text[inc+3..$] & "\n"
 	
 	-- search first few lines for include statements
@@ -1468,6 +1470,9 @@ procedure auto_complete_selection(integer pos, sequence text)
 	    inc = 0
 	end if
 	ssm(SCI_INSERTTEXT, inc, text)
+	if arg then
+	    view_subroutine_arguments()
+	end if
     end if
 end procedure
 
