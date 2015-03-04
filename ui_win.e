@@ -3,7 +3,7 @@
 include window.ew
 include wee.exw
 include std/text.e
-
+include std/filesys.e
 
 -- MenuItem constants
 constant 
@@ -644,7 +644,7 @@ procedure run_start()
 	hMainWnd, NULL,
 	alloc_string(run_file_name),
 	NULL,
-	NULL,
+	alloc_string(dirname(run_file_name)),
 	1})
     if result < 33 then
 	-- shellexecute failed
