@@ -23,6 +23,7 @@
 
 public include std/machine.e
 public include std/error.e
+include std/regex.e
 include scintilla.e
 include EuGTK/GtkEngine.e
 include wee.exw as wee
@@ -324,6 +325,11 @@ function HelpTutorial()
   return 0
 end function
 
+function HelpHelp()
+  context_help()
+  return 0
+end function
+
 --------------------------------------
 -- functions called from window events
 
@@ -489,7 +495,8 @@ set(menuRun, "submenu", runmenu)
 
 add(helpmenu, {
   createmenuitem("About...", "HelpAbout"),
-  createmenuitem("Tutorial", "HelpTutorial")
+  createmenuitem("Tutorial", "HelpTutorial"),
+  createmenuitem("Help...", "HelpHelp", "F1")
   })
 set(menuHelp, "submenu", helpmenu)
 
@@ -576,7 +583,6 @@ global function ui_new_tab(sequence name)
   gtk_proc("gtk_widget_show", {P}, editor)
 
   set(notebook, "append page", editor, lbl)
---  gtk_proc("gtk_widget_grab_focus", {P}, editor)
 
   connect(editor, "sci-notify", sci_notify_cb, 0)
 
@@ -735,8 +741,62 @@ global procedure ui_view_error()
     hide(dialog)
 end procedure
 
+--------------------------------------------------
+-- help window
 
+constant helpwin = create(GtkWindow)
+    set(helpwin, "transient for", win)
+    set(helpwin,"title","Help")
+    set(helpwin,"default size",400,400)
+    set(helpwin,"border width",10)
+    set(helpwin,"deletable",FALSE) --!
+    set(helpwin,"resizable",FALSE)
+    connect(helpwin, "delete-event", call_back(routine_id("Hide")))
 
+constant helplbl = create(GtkLabel)
+    add(helpwin,helplbl)
+    connect(helplbl, "activate-link", call_back(routine_id("HelpActivateLink")))
+
+function HelpActivateLink(atom handle, atom uri, atom userdata)
+    puts(1, peek_string(uri)&"\n")
+    return 1
+end function
+
+function Hide(atom handle)
+    set(handle,"visible",FALSE)
+    return 1
+end function
+
+function re(sequence txt, sequence rx, sequence rep)
+    return regex:find_replace(regex:new(rx), txt, rep)
+end function
+
+function html_to_markup(sequence html)
+    html = re(html, `<a name="[A-Za-z0-9_]+">([A-Za-z0-9. ]*)</a>`, `\1`)
+    html = re(html, `<p> ?`, ``)
+    html = re(html, `</p>`, ``)
+    html = re(html, `<font`, `<span`)
+    html = re(html, `</font>`, `</span>`)
+    html = re(html, `<pre class="[A-Za-z0-9_]+">`, `<tt>`)
+    html = re(html, `</pre>`, `</tt>`)
+    html = re(html, `<h5>`, `<big>`)
+    html = re(html, `</h5>`, `</big>`)
+    html = re(html, `<ol>`, `\n`)
+    html = re(html, `</ol>`, ``)
+    html = re(html, `<li>`, `  1. `)
+    html = re(html, `</li>`, `\n`)
+    html = re(html, `<ul>`, `\n`)
+    html = re(html, `</ul>`, ``)
+    html = re(html, `\n\n+`, `\n\n`)
+    puts(1, html)
+    return html
+end function
+
+global function ui_show_help(sequence html)
+    set(helplbl,"markup",html_to_markup(html))
+    show_all(helpwin)
+    return 0
+end function
 
 --------------------------------------------------
 
@@ -752,7 +812,10 @@ else
 end if
 
 
+
 show_all(win)
 main()
+
+
 
 

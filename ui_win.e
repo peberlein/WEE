@@ -572,7 +572,9 @@ global procedure ui_view_error()
         0)
 end procedure
 
-
+global procedure ui_show_help(sequence html)
+    
+end procedure
 
 
 sequence find_phrase
