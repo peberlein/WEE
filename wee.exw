@@ -480,6 +480,20 @@ global procedure update_status()
 end procedure
 
 
+global function get_prev_tab()
+    if current_tab <= 1 then
+        return length(tab_hedits)
+    end if
+    return current_tab - 1
+end function
+
+global function get_next_tab()
+    if current_tab >= length(tab_hedits) then
+        return 1
+    end if
+    return current_tab + 1
+end function
+
 global function make_tab_name()
     sequence name
 

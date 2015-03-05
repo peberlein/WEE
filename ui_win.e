@@ -43,7 +43,9 @@ constant
     Options_Font = 601,
     Help_About = 701,
     Help_Tutorial = 702,
-    Select_Tab = 801
+    Select_Tab = 801,
+    Select_Next_Tab = 811,
+    Select_Prev_Tab = 812
 
 constant file_filters = allocate_string(
 	"Euphoria files (*.ex,*.exw,*.e,*.ew)"&0&"*.EX;*.EXW;*.E;*.EW;ex.err"&0&
@@ -897,6 +899,10 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
                 open_recent(wParam - File_Recent)
             elsif wParam >= Select_Tab and wParam <= Select_Tab + 9 then
 		select_tab(wParam - Select_Tab + 1)
+	    elsif wParam = Select_Prev_Tab then
+		select_tab(get_prev_tab())
+	    elsif wParam = Select_Next_Tab then
+	        select_tab(get_next_tab())
 	    else
 	        printf(1, "%d %d\n", {wParam, lParam})
 	    end if
@@ -934,10 +940,15 @@ procedure translate_editor_keys(atom msg)
         poke4(msg, {hMainWnd, WM_COMMAND, View_Completions, 0})
       elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
+      elsif wParam = 23 -- Ctrl-W
+      and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
       end if
     elsif iMsg = WM_KEYUP then
       if wParam = VK_F5 then
         poke4(msg, {hMainWnd, WM_COMMAND, Run_Start, 0})
+      elsif wParam = VK_F4 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
       elsif wParam = VK_F4 then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Error, 0})
       elsif wParam = VK_F3 then
@@ -948,6 +959,12 @@ procedure translate_editor_keys(atom msg)
         poke4(msg, {hMainWnd, WM_COMMAND, View_SubArgs, 0})
       elsif wParam = VK_F2 then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Subs, 0})
+      elsif wParam = #5A and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
+      elsif wParam = VK_PRIOR and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0})
+      elsif wParam = VK_NEXT and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, Select_Next_Tab, 0})
       end if
     elsif iMsg = WM_SYSCHAR then
       if wParam >= '1' and wParam <= '9' then
