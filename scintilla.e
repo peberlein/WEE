@@ -6,10 +6,15 @@
 
 include std/dll.e
 include std/machine.e
+include std/error.e
 
 sequence dll, send_message
 ifdef WINDOWS then
-  dll = "scintilla\\SciLexer.dll"
+  ifdef BITS64 then
+    dll = "scintilla\\SciLexer64.dll"
+  elsedef
+    dll = "scintilla\\SciLexer.dll"
+  end ifdef
   send_message = "Scintilla_DirectFunction"
 elsedef
   ifdef OSX then
@@ -22,7 +27,6 @@ elsedef
   send_message = "scintilla_send_message"
 end ifdef
 
-
 constant
   scintilla = open_dll(dll),
   scintilla_new_ = define_c_func(scintilla, "scintilla_new", {}, C_POINTER),
@@ -31,8 +35,7 @@ constant
 --? {scintilla, scintilla_new_, scintilla_send_message_}
   
 if scintilla = 0 or scintilla_send_message_ = -1 then
-   puts(2, "failed to open scintilla DLL "&dll&"\n")
-   ?1/0
+   crash("failed to open scintilla DLL "&dll&"\n")
 end if
 
 
