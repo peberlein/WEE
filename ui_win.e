@@ -43,6 +43,7 @@ constant
     Options_Font = 601,
     Help_About = 701,
     Help_Tutorial = 702,
+    Help_Context = 703,
     Select_Tab = 801,
     Select_Next_Tab = 811,
     Select_Prev_Tab = 812
@@ -247,7 +248,6 @@ global function ui_message_box_error(sequence title, sequence message)
     free_strings()
     return result
 end function
-
 
 procedure get_window_size()
     atom rect
@@ -578,6 +578,17 @@ global procedure ui_show_help(sequence html)
     
 end procedure
 
+global procedure ui_show_uri(sequence uri)
+    atom result
+    result = c_func(ShellExecute, {
+	hMainWnd, NULL,
+	alloc_string(uri),
+	NULL,
+	NULL,
+	1})
+    
+end procedure
+
 
 sequence find_phrase
 find_phrase = ""
@@ -895,6 +906,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Help_Tutorial then
 		open_tutorial()
 		return rc
+	    elsif wParam = Help_Context then
+		context_help()
+		return rc
             elsif wParam > File_Recent and wParam <= File_Recent + max_recent_files then
                 open_recent(wParam - File_Recent)
             elsif wParam >= Select_Tab and wParam <= Select_Tab + 9 then
@@ -936,13 +950,16 @@ procedure translate_editor_keys(atom msg)
         poke4(msg, {hMainWnd, WM_COMMAND, File_Save, 0})
       elsif wParam = #6 then -- Ctrl-F
         poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
+      elsif wParam = #17 then -- Ctrl-W
+        poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
+      elsif wParam = #F then -- Ctrl-O
+        poke4(msg, {hMainWnd, WM_COMMAND, File_Open, 0})
+      elsif wParam = #E then -- Ctrl-N
+        poke4(msg, {hMainWnd, WM_COMMAND, File_New, 0})
       elsif wParam = VK_SPACE and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Completions, 0})
       elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
-      elsif wParam = 23 -- Ctrl-W
-      and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
       end if
     elsif iMsg = WM_KEYUP then
       if wParam = VK_F5 then
@@ -965,6 +982,8 @@ procedure translate_editor_keys(atom msg)
         poke4(msg, {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0})
       elsif wParam = VK_NEXT and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, Select_Next_Tab, 0})
+      elsif wParam = VK_F1 then
+        poke4(msg, {hMainWnd, WM_COMMAND, Help_Context, 0})
       end if
     elsif iMsg = WM_SYSCHAR then
       if wParam >= '1' and wParam <= '9' then
@@ -1091,6 +1110,8 @@ procedure WinMain()
 	Help_About, alloc_string("&About...")})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Help_Tutorial, alloc_string("&Tutorial")})
+    junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Help_Context, alloc_string("&Context...")})
 -- main menu
     hmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 

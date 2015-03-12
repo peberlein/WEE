@@ -308,6 +308,7 @@ function RunStart()
     run_file_name = file_name
     reset_ex_err()
     -- TODO: make configurable
+    chdir(dirname(run_file_name))
     system("eui " & run_file_name)
     --system(cmdline[1] & " " & run_file_name)
     check_ex_err()
@@ -369,6 +370,15 @@ function sets(atom handle, sequence property_pairs)
         set(handle, property_pairs[i], property_pairs[i+1])
     end for
     return handle
+end function
+
+function accelerator_parse(sequence key)
+  atom x
+  x = allocate(8)
+  gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(key, 1), x, x+4})
+  key = peek4u({x,2})
+  free(x)
+  return key
 end function
 
 -------------------------------------------------------------
@@ -435,11 +445,7 @@ function createmenuitem(sequence text, object r, object key = 0, integer mod = 0
   connect(widget, "activate", r)
 
   if sequence(key) then
-      x = allocate(8)
-      gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(key, 1), x, x+4})
-      key = peek4u(x)
-      mod = peek4u(x+4)
-      free(x)
+    {key, mod} = accelerator_parse(key)
   end if
   if key then
       set(widget, "add accelerator", "activate", group, key, mod, 1)
@@ -451,8 +457,8 @@ add(filemenu, {
   createmenuitem("_New", "FileNew", "<Control>N"),
   createmenuitem("_Open...", "FileOpen", "<Control>O"),
   createmenuitem("_Save", "FileSave", "<Control>S"),
-  createmenuitem("Save _As...", "FileSaveAs"),
-  createmenuitem("_Close", "FileClose"),
+  createmenuitem("Save _As...", "FileSaveAs", "<Control><Shift>S"),
+  createmenuitem("_Close", "FileClose", "<Control>W"),
   create(GtkSeparatorMenuItem),
   createmenuitem("_Quit", "FileQuit", "<Control>Q")
   })
@@ -771,6 +777,7 @@ function re(sequence txt, sequence rx, sequence rep)
     return regex:find_replace(regex:new(rx), txt, rep)
 end function
 
+-- FIXME this doesn't work very well
 function html_to_markup(sequence html)
     html = re(html, `<a name="[A-Za-z0-9_]+">([A-Za-z0-9. ]*)</a>`, `\1`)
     html = re(html, `<p> ?`, ``)
@@ -797,6 +804,10 @@ global function ui_show_help(sequence html)
     show_all(helpwin)
     return 0
 end function
+
+global procedure ui_show_uri(sequence uri)
+    show_uri(uri)
+end procedure
 
 --------------------------------------------------
 

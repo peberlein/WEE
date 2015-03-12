@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.19"
+  version = "0.20"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -793,6 +793,152 @@ global procedure open_recent(integer idx)
     end if
 end procedure
 
+
+--------------------------------------
+-- help routines
+--------------------------------------
+
+sequence help_dir
+
+global procedure show_help(sequence file, sequence anchor)
+    integer ok = 0
+    integer f = open(help_dir & file & ".html", "r")
+    sequence html = ""
+    if f = -1 then
+        return
+    end if
+    object line = gets(f)
+    while sequence(line) do
+	if match("<a name=", line) = 1 then
+	    sequence a = ""
+	    for i = 10 to length(line) do
+	        if line[i] = '"' then
+	            a = line[10..i-1]
+	            exit
+	        end if
+	    end for
+	    --puts(1, a&"\n")
+	    if equal(a, anchor) then
+	        ok = 1
+	    elsif ok = 1 and (
+		match("_comments", a) or
+		match("_example", a) or
+		match("_returns", a) or
+		match("_parameters", a) or
+		match("_platform", a) or
+		match("_seealso", a)
+	    ) then
+		ok = 1
+	    else
+		ok = 0
+	    end if
+	end if
+	if ok then
+	    html &= line
+	end if
+        line = gets(f)
+    end while
+    close(f)
+    ui_show_help(html)
+end procedure
+
+function tr(sequence s, sequence src, sequence dst)
+    for i = 1 to length(s) do
+        integer x = find(s[i], src)
+        if x then
+            s[i] = dst[x]
+        end if
+    end for
+    return s
+end function
+
+global procedure context_help()
+    sequence text, decls, word, name_space, path
+    integer pos, junk
+    object help
+
+    text = get_edit_text()
+    pos = get_pos()
+    word = word_pos(text, pos)
+    if length(word) < 2 then return end if
+    name_space = word[2]
+    word = word[1]
+
+    -- load the search.dat file
+    if length(search_dat) = 0 then
+        sequence paths = include_paths(0)
+        for i = 1 to length(paths) do
+	    path = paths[i]
+	    if path[$] = SLASH then
+	        path = path[1..$-1]
+	    end if
+	    path &= join_path({"..","docs","html"}) & SLASH
+	    --puts(1, path&"\n")
+	    integer f = open(path & "js" & SLASH & "search.js","r")
+	    if f != -1 then
+	        help_dir = canonical_path(path) & SLASH
+	        object line = gets(f)
+	        while sequence(line) do
+	            integer x = find(':', line)
+	            if x and line[1] = '"' then
+			--puts(1, line[2..x-2]&" "&line[x+1..$]&"\n")
+	                search_idx = append(search_idx, line[2..x-2])
+	                line = tr(line[x+1..$-1], "[]", "{}")
+	                line = value(line)
+	                search_dat = append(search_dat, line[2])
+	            end if
+	            line = gets(f)
+	        end while
+	        close(f)
+	        exit
+	    end if
+        end for
+	if length(search_dat) = 0 then
+	    ui_message_box_error(window_title, "File not found: euphoria/docs/html/js/search.js")
+	    return
+	end if
+    end if
+    
+    -- search search.dat for matching entry
+    help = {}
+    for i = 1 to length(search_idx) do
+        if equal(search_idx[i], word) then
+            help = search_dat[i]
+            exit
+        end if
+    end for
+    if atom(help) or length(help) = 0 then
+	return
+    end if
+
+    if length(help) > 1 then
+	-- multiple help entries
+	path = ""
+	decls = get_declarations(parse(text, file_name), pos, name_space)
+	for j = 1 to length(decls) by 2 do
+	  if equal(decls[j], word) then
+	    if atom(decls[j+1]) then
+	      path = file_name
+	    else
+	      path = decls[j+1][1]
+	    end if
+	    
+	    for i = 1 to length(help) do
+		if match(sreplace(help[i][1],"_",{SLASH})&".e", path) then
+		    --show_help(help[i][1], help[i][2])
+		    ui_show_uri("file://" & help_dir & help[i][1] & ".html#" & help[i][2])
+		    return
+		end if
+	    end for
+	  end if
+	end for
+    end if
+
+    -- only one help entry, just show it
+    --show_help(help[1][1], help[1][2])
+    ui_show_uri("file://" & help_dir & help[1][1] & ".html#" & help[1][2])
+end procedure
+
 global procedure open_tutorial()
     new_file()
     ssm(SCI_SETTEXT, 0, `
@@ -1119,127 +1265,6 @@ end procedure
 -------------------------------------------------------------------
 -- code syntax routines
 -------------------------------------------------------------------
-
-sequence help_dir
-
-global procedure show_help(sequence file, sequence anchor)
-    integer ok = 0
-    integer f = open(help_dir & file & ".html", "r")
-    sequence html = ""
-    if f = -1 then
-        return
-    end if
-    object line = gets(f)
-    while sequence(line) do
-	if match("<a name=", line) = 1 then
-	    sequence a = ""
-	    for i = 10 to length(line) do
-	        if line[i] = '"' then
-	            a = line[10..i-1]
-	            exit
-	        end if
-	    end for
-	    --puts(1, a&"\n")
-	    if equal(a, anchor) then
-	        ok = 1
-	    elsif ok = 1 and (
-		match("_comments", a) or
-		match("_example", a) or
-		match("_returns", a) or
-		match("_parameters", a) or
-		match("_platform", a) or
-		match("_seealso", a)
-	    ) then
-		ok = 1
-	    else
-		ok = 0
-	    end if
-	end if
-	if ok then
-	    html &= line
-	end if
-        line = gets(f)
-    end while
-    close(f)
-    ui_show_help(html)
-end procedure
-
-global procedure context_help()
-    sequence text, decls, word, name_space, path
-    integer pos, junk
-    object help
-
-    text = get_edit_text()
-    pos = get_pos()
-    word = word_pos(text, pos)
-    if length(word) < 2 then return end if
-    name_space = word[2]
-    word = word[1]
-
-    -- load the search.dat file
-    if length(search_dat) = 0 then
-        sequence paths = include_paths(0)
-        for i = 1 to length(paths) do
-	    integer f = open(paths[i] & "/../docs/html/search.dat","r")
-	    if f != -1 then
-	        help_dir = canonical_path(paths[i] & "/../docs/html/")
-	        object line = gets(f)
-	        while sequence(line) do
-	            integer x = find('=', line)
-	            if x and find(' ', line) = x-1 then
-			--puts(1, line[4..x-5]&" "&line[x+2..$]&"\n")
-	                search_idx = append(search_idx, line[4..x-5])
-	                line = value(sreplace(line[x+2..$], "\\-", "-"))
-	                search_dat = append(search_dat, line[2])
-	            end if
-	            line = gets(f)
-	        end while
-	        close(f)
-	        exit
-	    end if
-        end for
-    end if
-    
-    -- search search.dat for matching entry
-    help = {}
-    for i = 1 to length(search_idx) do
-        if equal(search_idx[i], word) then
-            help = search_dat[i]
-            exit
-        end if
-    end for
-    if atom(help) or length(help) = 0 then
-	return
-    end if
-    if length(help) = 1 then
-	-- only one help entry, just show it
-	show_help(help[1][1], help[1][2])
-	return
-    end if
-
-    -- multiple help entries
-    path = ""
-    decls = get_declarations(parse(text, file_name), pos, name_space)
-    for i = 1 to length(decls) by 2 do
-      if equal(decls[i], word) then
-	if atom(decls[i+1]) then
-	  path = file_name
-	else
-	  path = decls[i+1][1]
-	end if
-	exit
-      end if
-    end for
-
-    for i = 1 to length(help) do
-	if match(sreplace(help[i][1],"_",{SLASH})&".e", path) then
-	    show_help(help[i][1], help[i][2])
-	    return
-	end if
-    end for
-
-end procedure
-
 
 global procedure view_declaration()
     sequence text, decls, word, name_space
