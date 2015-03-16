@@ -2,7 +2,7 @@
 -------------
 namespace gtk 
 -------------
-
+ 
 ------------------------------------------------------------------------
 -- This library is free software; you can redistribute it 
 -- and/or modify it under the terms of the GNU Lesser General 
@@ -21,32 +21,71 @@ namespace gtk
 ------------------------------------------------------------------------
 
 export constant 
-    version = "4.8.6",
-    release = "Dec 15, 2014",
-    copyright = "2014 by Irv Mullins"
+    version = "4.9.0",
+    release = "Mar 15, 2015",
+    copyright = "2015 by Irv Mullins"
 
 public include GtkEnums.e -- enums includes most of Eu std libraries
-    if not equal(gtk:version,enums:version) then
-        crash("Version mismatch: GtkEnums should be version %s",{version})
-   end if
+
+if not equal(gtk:version,enums:version) then 
+    crash("Version mismatch: GtkEnums should be version %s",{version})
+end if
 
 include std/datetime.e 
+include std/math.e
 
 public constant -- 'shorthand' identifiers save space in method prototypes;
   P = C_POINTER, I = C_INT,   S = E_OBJECT,  B = C_BYTE,
   D = C_DOUBLE,  F = C_FLOAT, A = E_SEQUENCE
-
-ifdef OSX then
-  constant libgtk = "/opt/local/lib/libgtk-3.dylib"
-elsedef
-  constant libgtk = "libgtk-3.so.0"
+  
+object LIBS
+  
+ifdef OSX then -- thanks to Pete Eberlein for testing with OSX!
+  LIBS =  {open_dll("/opt/local/lib/libgtk-3.dylib" )}
 end ifdef
 
-export constant GTK = open_dll(libgtk)
-    if GTK = 0 then
-        crash("Fatal Error: no "&libgtk&" found!")
-    end if
-    
+ifdef LINUX then 
+  LIBS = {open_dll("libgtk-3.so.0" )}
+end ifdef 
+
+ifdef WINDOWS then
+	LIBS = {
+	"libgtk-3-0.dll",
+	"libgdk-3-0.dll",
+	"libglib-2.0-0.dll",
+	"libgobject-2.0-0.dll",
+	"libgdk_pixbuf-2.0-0.dll",
+	"libpango-1.0-0.dll",
+	"libcairo-2.dll",
+	"libpangocairo-1.0-0.dll",
+	"libpng15-15.dll",
+	"librsvg-2-2.dll",
+	"libgio-2.0-0.dll"
+	}
+    atom x
+	chdir(canonical_path("~\\demos\\gtk3\\bin"))
+	for i = 1 to length(LIBS) do
+	   LIBS[i] = canonical_path("~\\demos\\gtk3\\bin\\"&LIBS[i])
+	    x = open_dll(LIBS[i])
+	    	    if x = 0 then
+	        display("Error loading []",{LIBS[i]})
+	    else
+		LIBS[i] = x
+	    end if
+	end for
+	
+end ifdef
+ 
+ if not object(LIBS) then
+	crash("GTK Libraries not found!")
+ end if
+ 
+ for i = 1 to length(LIBS)  do
+     if LIBS[i] = 0 then
+         crash("GTK Libraries not found!")
+     end if
+ end for
+ 
 constant cmd = command_line() -- used only to get program name 
 
 if not gtk_func("gtk_init_check",{P,P},{0,0}) then -- initialize the GTK library;
@@ -67,14 +106,13 @@ include euphoria/info.e
    
 constant os_info = os:uname()
 
-public constant 
+export constant 
     major_version = gtk_func("gtk_get_major_version"),
     minor_version = gtk_func("gtk_get_minor_version"),
     micro_version = gtk_func("gtk_get_micro_version"),
     user_name = gtk_str_func("g_get_user_name"),
     real_name = gtk_str_func("g_get_real_name"),
     host_name = gtk_str_func("g_get_host_name"),
-    host_addr = inet_address(),
     home_dir = gtk_str_func("g_get_home_dir"),
     temp_dir = gtk_str_func("g_get_tmp_dir"),
     curr_dir = gtk_str_func("g_get_current_dir"),
@@ -88,108 +126,61 @@ public constant
     os_name = os_info[1], -- e.g: Linux
     os_distro = os_info[2], -- e.g: Mint17
     os_version = os_info[3], -- e.g: 3.13.0-24-generic
-    os_compiled = os_info[4],-- #46-Ubuntu SMP Thu Apr 10 19:11:08 UTC 2014
+    os_compiled = os_info[4] -- #46-Ubuntu SMP Thu Apr 10 19:11:08 UTC 2014
+ ifdef LINUX then
+ export constant 
+    host_addr = inet_address(),
     os_architecture = os_info[5], -- e.g: x86_64
     os_shell = getenv("SHELL") -- e.g: /bin/bash
-
+end ifdef
+ifdef WINDOWS then
+export constant
+    host_addr = "localhost",
+    os_architecture = "unknown",
+    os_shell = "cmd.com"
+ end ifdef
+ 
 object os_term = getenv("TERM")
     if atom(os_term) then os_term = "none" end if
 
 export constant info = { -- above in key/value form, sometimes more useful
-    "version=" & version,
-    "release=" & release,
+    "version="   & version,
+    "release="   & release,
     "copyright=" & copyright,
-    sprintf("major=%d",major_version),
-    sprintf("minor=%d",minor_version),
-    sprintf("micro=%d",micro_version),
+    "major=" & to_string(major_version),
+    "minor=" & to_string(minor_version),
+    "micro=" & to_string(micro_version),
     "user_name=" & user_name,
     "real_name=" & real_name,
     "host_name=" & host_name,
     "host_addr=" & host_addr,
-    "home_dir=" & home_dir,
-    "temp_dir=" & temp_dir,
-    "curr_dir=" & curr_dir,
-    "data_dir=" & data_dir,
-    "conf_dir=" & conf_dir,
-    "init_dir=" & init_dir,
-    "runt_dir=" & runt_dir,
-    "app_name=" & app_name,
-    "prg_name=" & prg_name,
-    sprintf("os_pid=%g",os:get_pid()),
+    "home_dir="  & home_dir,
+    "temp_dir="  & temp_dir,
+    "curr_dir="  & curr_dir,
+    "data_dir="  & data_dir,
+    "conf_dir="  & conf_dir,
+    "init_dir="  & init_dir,
+    "runt_dir="  & runt_dir,
+    "app_name="  & app_name,
+    "prg_name="  & prg_name,
+    "os_pid=" & to_string(os:get_pid()),
     "os_name=" & os_info[1],
     "os_distro=" & os_info[2],
     "os_version=" & os_info[3],
     "os_compiled=" & os_info[4],
-    "os_architecture=" & os_info[5],
+    "os_architecture=" & os_architecture,
     "os_term=" & os_term,
     "os_shell=" & os_shell,
     "eu_version=" & version_string_short(),
-    sprintf("eu_revision=%g",{version_revision()}),
+    "eu_revision=" & to_string(version_revision()),
     "eu_date=" & version_date()
     } 
+    
+ ifdef WINDOWS then
+    chdir(init_dir)
+end ifdef
 
-------------------------------------------------------------------------
--- Following 3 functions simplify method calls; used mostly internally,
--- but can also be called by the programmer to execute any GTK, GDK or
--- GLib function which has not been implemented in EuGTK.
--------------------------------------------------------------------------
-export function gtk_func(object name, object params={}, object values={})
--------------------------------------------------------------------------
--- syntax: result = gtk_func("gtk_*_*",{formal params},{values})
--- where formal params might be {P,P,I} (function expects Ptr, Ptr, and Int)
--- and values are the values to be inserted into the formal params before
--- the function named is called;
-    for i = 1 to length(params) do
-        if string(values[i]) then
-            values[i] = allocate_string(values[i])
-        end if
-    end for 
-atom fn = define_c_func(GTK,name,params,P)
-if fn > 0 then
-return c_func(fn,values)
-else return -1
-end if
-end function
-
------------------------------------------------------------------------------
-export function gtk_str_func(object name, object params={}, object values={})
------------------------------------------------------------------------------
--- syntax: same as above, except a string result is returned, so no 
--- conversion from a pointer is needed;
-    for i = 1 to length(params) do
-        if string(values[i]) then
-            values[i] = allocate_string(values[i])
-        end if
-    end for
-    object result = gtk_func(name,params,values)
-    if result > 0 then
-        return peek_string(result)
-    else
-        return -1
-    end if
-end function
-
---------------------------------------------------------------------------
-export procedure gtk_proc(object name, object params={}, object values={})
---------------------------------------------------------------------------
--- syntax: same as above, but no value is returned, used to call GTK procs
-    if string(values) then values = {values} end if
-    for i = 1 to length(params) do
-        if not atom(values) and string(values[i]) then 
-            values[i] = allocate_string(values[i]) 
-        end if
-    end for
-    if length(params) = 0 then
-        c_proc(define_c_proc(GTK,name,{}))
-    else
-        if atom(values) then values = {values} end if
-        c_proc(define_c_proc(GTK,name,params),values)
-    end if
-end procedure
-   
- 
 enum NAME,PARAMS,RETVAL,VECTOR,CLASS
-
 ------------------------------------------------------------------------
 public function create(integer class, 
         object p1=0, object p2=0, object p3=0, object p4=0,
@@ -211,20 +202,23 @@ public function create(integer class,
 
     object method = lookup("new",vslice(widget[class],1),widget[class],0)
     if method[VECTOR] = -1 then -- if a 'new' method name not found,
+        puts(1,repeat('*',60))
+	printf(1,"\nERROR: %s not implemented in this version of GTK!\n",widget[class])
+	puts(1,repeat('*',60))
         Error(0,,widget[class][$], -- issue an error message and die.
             sprintf("not implemented in GTK vers. %d.%d.%d",
                 {major_version,minor_version,micro_version}),,2) 
-        crash("\nFatal Error: %s\n************ not implemented in this GTK library version",
-            {widget[class][$]})
+         return 0
     end if
 
     atom handle = 0
     object params = method[PARAMS]
     object args = {p1,p2,p3,p4,p5,p6,p7,p8}
 
-    args = args[1..length(params)]
+	args = args[1..length(params)]
     
     ifdef PARAMS then display(params) end ifdef -- debug
+    
     for i = 1 to length(params) do
         switch params[i] do
             case S then -- convert string to pointer to cstring;
@@ -235,11 +229,9 @@ public function create(integer class,
     end for
 
     ifdef CREATE then -- debug
-        display(decode_method("Create",class,method),0) 
+        display(decode_method("Create",class,method)) 
         display("\tArgs: []",decode_args(method,args))
-        ifdef METHOD then
-            display(method)
-        end ifdef
+        ifdef METHOD then display(method) end ifdef 
     end ifdef
 
     if method[RETVAL] > 0 then -- it's a GTK function (routine_id is positive)
@@ -261,7 +253,7 @@ public function create(integer class,
         case GtkRadioButton then connect(handle,"toggled",p3,p4)
         case GtkRadioToolButton then connect(handle,"toggled",p3,p4)
         case GtkRadioMenuItem then connect(handle,"toggled",p3,p4)
-        case GtkMenuItem then connect(handle,"select",p3,p4)
+        case GtkMenuItem then connect(handle,"activate",p2,p3)
         case GtkImageMenuItem then connect(handle,"activate",p3,p4)
         case GtkCheckMenuItem then connect(handle,"toggled",p2,p3)
         case GtkFontButton then connect(handle,"font-set",p2,p3)
@@ -276,6 +268,7 @@ public function create(integer class,
     end ifdef
     
     register(handle,class)
+
     return handle -- a pointer to the newly created instance
     
 end function  /*create*/
@@ -291,50 +284,25 @@ public function set(object handle, sequence property,
 -- Property is a string, p1...p8 are [optional] parameters.
 -- Any parameter not supplied is set to null;
 ------------------------------------------------------------------------
-integer class, x
+integer class=-1, x
 object obj, name, nick, path
     
     if string(handle) then
-        ifdef GLADE then
-            handle = gtk_func("gtk_builder_get_object",{P,P},{builder,allocate_string(handle)})
-            name = gtk_str_func("gtk_widget_get_name",{P},{handle})
-        end ifdef
-        nick = gtk_str_func("gtk_buildable_get_name",{P},{handle})
-        path = gtk_func("gtk_widget_get_path",{P},{handle})
-        x = gtk_func("gtk_widget_path_length",{P},{path})
-        path = gtk_str_func("gtk_widget_path_to_string",{P},{path})
-        path = split(path,' ')
-        path = path[x]
-        x = find('.',path)
-        if x then
-            path = head(path,x-1)
-        end if
-        x = find('(',path)
-        if x then
-            name = head(path,x-1)
-            nick = path[x..find(')',path)]
-        end if
-        ifdef SET then
-            display("String handle [] name [] nick []",{handle,name,nick})
-            display(path)
-        end ifdef
-     
-        class = find(name,class_name_index)
-        if class = 0 then
-        
-        end if
-        ifdef SET then display("Class []",class) end ifdef
-        if not initialized[class] then
-            init(class)
-        end if
-    else    
-        class = vlookup(handle,registry,1,2,-1) -- get widget's class;
+		name = handle
+        handle = vlookup(name,registry,4,1,-1)
+		if handle = -1 then
+			Error(,,"Cannot find object named ",name)
+			crash("Error - invalid object name %s",{name})
+			abort(1)
+		end if
+		class = vlookup(name,registry,4,2,-1)
+    else
+		class = vlookup(handle,registry,1,2,-1) -- get widget's class;
     end if
     
     if class = -1 then
-        Error(,,"Cannot find property ",
-            sprintf("%s for %s",{property,handle}))
-        crash("Error - invalid handle")
+        Error(,,"Cannot find class",sprintf("for %d",handle))
+        crash("Error - invalid handle %d",handle)
     end if
     
     property = "set_" & lower(join(split(property,' '),'_')) -- conform;
@@ -344,6 +312,8 @@ object obj, name, nick, path
     
     object method = lookup_method(class,property)
   
+	ifdef METHOD then display(method) end ifdef
+	
     if atom(method) then -- method not defined, try fallback to generic Object;
         if not setProperty(handle,property[5..$],p1) then
             ifdef SET then --debug
@@ -374,6 +344,9 @@ object obj, name, nick, path
                         args[i] = allocate_string(args[i]) 
                     end if
                 case I then -- apply patches for zero-based indexes;
+					if string(args[i]) then
+						args[i] = to_number(args[i])
+					end if
                     switch method[1] do
                         case "add_attribute",
                         "set_active",
@@ -385,7 +358,7 @@ object obj, name, nick, path
                     end switch
             end switch
         end for
-
+   
         ifdef SET then -- debug
             display(decode_method("Set",class,method))  
             puts(1,"\tArgs: ") display(decode_args(method,args),
@@ -426,7 +399,7 @@ export function get(object handle, sequence property,
 -- This routine gets one or more values for a given property name.
 -- Property name is always a string, handle is usually an atom,
 -- but may sometimes be a string in order to work with Glade. 
---[optional] parameters p1...p4
+-- [optional] parameters p1...p4
 -- are not often used when calling get, but are intended to store return
 -- values from the GTK function. For example, get(win,"default size")
 -- will return with the window width in p1, height in p2.
@@ -435,42 +408,23 @@ integer class, x
 object obj, name, nick, path
     
     if string(handle) then
-        ifdef GLADE then
-            handle = gtk_func("gtk_builder_get_object",{P,P},{builder,allocate_string(handle)})
-            nick = gtk_str_func("gtk_buildable_get_name",{P},{handle})
-        end ifdef
-        name = gtk_str_func("gtk_widget_get_name",{P},{handle})
-        path = gtk_func("gtk_widget_get_path",{P},{handle})
-        x = gtk_func("gtk_widget_path_length",{P},{path})
-        path = gtk_str_func("gtk_widget_path_to_string",{P},{path})
-        path = split(path,' ')
-        path = path[x]
-        x = find('.',path)
-        if x then
-            path = head(path,x-1)
-        end if
-        x = find('(',path)
-        if x then
-            name = head(path,x-1)
-            nick = path[x..find(')',path)]
-        end if
-        ifdef GET then
-            display("String handle [] name [] nick [] ",{handle,name,nick})
-            display(path)
-        end ifdef
-        
-        class = find(name,class_name_index)
-        if class = 0 then
-        
-        end if
-        ifdef SET then display("Class []",class) end ifdef
-        if not initialized[class] then
-            init(class)
-        end if
-    else  
-        class = vlookup(handle,registry,1,2,-1)
+		name = handle
+        handle = vlookup(name,registry,4,1,-1)
+		if handle = -1 then
+			Error(,,"Cannot find object named ",name)
+			crash("Error - invalid object name %s",{name})
+		end if
+		class = vlookup(name,registry,4,2,-1)
+    else
+		class = vlookup(handle,registry,1,2,-1) -- get widget's class;
     end if
-
+    
+    
+    if class = -1 then
+        Error(,,"Cannot find class",sprintf("for %d",handle))
+        crash("Error - invalid handle %d",handle)
+    end if
+    
     property = "get_" & lower(join(split(property,' '),'_'))
 
     object method = lookup_method(class,property)
@@ -565,13 +519,27 @@ object obj, name, nick, path
 end function /*get*/
 
 ------------------------------------------------------------------------
-public function add(atom parent, object child)
+public function add(object parent, object child, object space = 0)
 ------------------------------------------------------------------------
 -- add a child or a {list} of child widgets to parent container
+object name, class, handle
 
     if classid(child) = GdkPixbuf then -- issue a warning;
         return Warn(,,"Cannot add a pixbuf to a container",
             "Create an image from it first,\nthen add the image,\nor save it for later use!")
+    end if
+    
+    if classid(parent) = GtkBuilder then 
+        load_builder(parent,child,space) 
+        return 1
+    end if
+    
+    if string(parent) then
+		parent = vlookup(parent,registry,4,1,-1)
+	end if
+    
+    if string(child) then
+		child = vlookup(child,registry,4,1,-1)
     end if
     
     -- Switch below implements an easier-to-remember 'add' syntax 
@@ -618,27 +586,17 @@ public function add(atom parent, object child)
             end if
             return child
             
-        case GtkBuilder then
-            atom err = allocate(64) err = 0
-            if file_exists(canonical_path(child)) then
-                set(parent,"add from file",canonical_path(child),err)
-                set(parent,"connect")
-                return 1
-            end if
-            if string(child) then
-                set(parent,"add from string",child,err)
-                set(parent,"connect")
-                return 1
-            end if
-            
         case else 
+        
             if atom(child) then
                 gtk_proc("gtk_container_add",{P,P},{parent,child})
             else 
                 for i = 1 to length(child) do
                     gtk_proc("gtk_container_add",{P,P},{parent,child[i]})
             end for
+            
         end if
+        
         return child
         
     end switch
@@ -679,9 +637,15 @@ public procedure show(object x)
 end procedure
 
 ------------------------------------------------------------------------
-public procedure show_all(atom x)
+public procedure show_all(object x)
 ------------------------------------------------------------------------
-    set(x,"show all") -- show container x and all children contained
+	if atom(x) then
+		set(x,"show all") -- show container x and all children
+	else
+		for i = 1 to length(x) do
+			set(x[i],"show all")
+		end for
+	end if
 end procedure
 
 ------------------------------------------------------------------------
@@ -759,95 +723,139 @@ end function
 ------------------------------------------------------------------------
 -- Following are 4 pre-built, easy to use popup dialogs 
 -- which save you the trouble of writing tons of code!
--- Refer to documentation/dialogs.html for details
+-- Refer to documentation/dialogs.html for details.
+-- Rewritten for 4.8.8 to preserve images on dialog buttons despite
+-- GTK developers' bland, boring preferences :P
 ------------------------------------------------------------------------
-public function Info(object parent=0, object title="Info", 
-    object pri_txt="", object sec_txt="",
-    object flags=0, object btns=GTK_BUTTONS_OK, 
-    object image=0, object size=GTK_ICON_SIZE_DIALOG,
-    object icon=0, integer pos=GTK_WIN_POS_MOUSE)
-    object p = 0
-    atom dlg = create(GtkMessageDialog,parent,2,flags,btns)
-    set(dlg,"transient for",parent)
-    set(dlg,"destroy with parent",TRUE)
-    set(dlg,"default response",MB_OK)
-    set(dlg,"icon",icon)
-return run_dlg(dlg,title,pri_txt,sec_txt,image,size)
+integer retval = 0
+
+public function Info(object parent=0, object title="Info",
+	object pri_txt="", object sec_txt="",
+	object btns=GTK_BUTTONS_OK,
+	object image="dialog-information", 
+	object icon="dialog-information")
+	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+end function
+
+public function Warn(object parent=0, object title="Warning",
+	object pri_txt="", object sec_txt="",
+	object btns=GTK_BUTTONS_CLOSE,
+	object image="dialog-warning", 
+	object icon="dialog-warning")
+	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+end function
+
+public function Error(object parent=0, object title="Error",
+	object pri_txt="", object sec_txt="",
+	object btns=GTK_BUTTONS_OK_CANCEL,
+	object image="dialog-error", 
+	object icon="dialog-error")
+	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+end function
+
+public function Question(object parent=0, object title="Question",
+	object pri_txt="", object sec_txt="",
+	object btns=GTK_BUTTONS_YES_NO,
+	object image="dialog-question", 
+	object icon="dialog-question")
+	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
 end function
 
 ------------------------------------------------------------------------
-public function Question(atom parent=0, object title="Question", 
+public function dialog(object parent=0, object title="dialog", 
     object pri_txt="", object sec_txt="",
-    object flags=2, object btns=GTK_BUTTONS_YES_NO, 
-    object image=0, object size=GTK_ICON_SIZE_DIALOG,
-    object icon=0, integer pos=GTK_WIN_POS_MOUSE)
-    atom dlg = create(GtkMessageDialog,parent,2,flags,btns)
-    set(dlg,"transient for",parent)
-    set(dlg,"destroy with parent",TRUE)
-    set(dlg,"default response",MB_YES)
-    set(dlg,"icon",icon)
-return run_dlg(dlg,title,pri_txt,sec_txt,image,size)
-end function
-
+    object btns=GTK_BUTTONS_OK, 
+    object image=0,
+    object icon=0)
 ------------------------------------------------------------------------
-public function Warn(atom parent=0, object title="Warning", 
-    object pri_txt="", object sec_txt="",
-    object flags=1, object btns=GTK_BUTTONS_CANCEL, 
-    object image=0, object size=GTK_ICON_SIZE_DIALOG,
-    object icon=0, integer pos=GTK_WIN_POS_MOUSE)
-    atom dlg = create(GtkMessageDialog,parent,2,flags,btns)
+    atom dlg = create(GtkDialog)
+    if string(parent) then
+		parent = get(builder,"object",parent)
+	end if
     set(dlg,"transient for",parent)
-    set(dlg,"destroy with parent",TRUE)
-    set(dlg,"default response",MB_CANCEL)
-    set(dlg,"icon",icon)
-return run_dlg(dlg,title,pri_txt,sec_txt,image,size)
-end function
-
-------------------------------------------------------------------------
-public function Error(atom parent=0, object title="Error", 
-    object pri_txt="", object sec_txt="",
-    object flags=3, object btns=GTK_BUTTONS_OK_CANCEL, 
-    object image=0, object size=GTK_ICON_SIZE_DIALOG,
-    object icon=0, integer pos=GTK_WIN_POS_MOUSE)
-    atom dlg = create(GtkMessageDialog,parent,2,flags,btns)
-    set(dlg,"transient for",parent)
-    set(dlg,"destroy with parent",TRUE)
-    set(dlg,"default response",MB_OK)
-    set(dlg,"icon",icon)
-return run_dlg(dlg,title,pri_txt,sec_txt,image,size)
-end function
-
-constant runDlg = define_c_func(GTK,"gtk_dialog_run",{P},I)
-------------------------------------------------------------------------
-function run_dlg(atom dlg, object title, 
-    object pri_txt, object sec_txt, object img=0, object size=6)
     set(dlg,"title",title)
-    set(dlg,"markup",sprintf("<b>%s</b>",{pri_txt}))
-    set(dlg,"format secondary markup",sec_txt)
+    set(dlg,"border width",10)
     set(dlg,"position",GTK_WIN_POS_MOUSE)
-    
-    if atom(img) and img = 0 then 
-        goto "done"  
-    end if 
 
-    if classid(img) = GdkPixbuf then
-        img = create(GtkImage,img)
-    end if
-    
-    if string(img) then
-        img = create(GtkImage,img,size)
-    end if
-    
-    if img > 0 then
-        set(dlg,"image",img) gtk_proc("gtk_widget_show",{P},{img})
-    end if
-    
- label "done"
-    integer result = c_func(runDlg,{dlg})
-    deregister(dlg)
-    gtk_proc("gtk_widget_destroy",{P},{dlg})
-    
-return result
+    if atom(icon) and icon = 0 and parent > 0 then 
+			icon = get(parent,"icon name")
+	end if
+	
+	if atom(icon) and icon > 0 then 
+		set(dlg,"icon",icon)
+	end if
+	
+	if string(icon) then 
+		set(dlg,"icon",icon)
+	end if
+	
+    object ca = get(dlg,"content area")
+    object panel = create(GtkBox,HORIZONTAL,10)
+    add(ca,panel)
+    object left = create(GtkBox,VERTICAL,5)
+	object right = create(GtkBox,VERTICAL,5)
+	add(panel,{left,right})
+	
+	if string(image) then 
+		add(left,create(GtkImage,image))
+	elsif image > 0 then
+		if classid(image) = GdkPixbuf then
+			image = create(GtkImage,image)
+		end if
+		add(left,image)
+	end if
+	
+	object lbl1 = create(GtkLabel)
+	set(lbl1,"markup",text:format("<b>[]</b>\n[]",{pri_txt,sec_txt}))
+	set(lbl1,"halign",0)
+	
+	add(right,lbl1)
+	
+	show_all(panel)
+	
+	object btn = repeat(0,2)
+	
+	switch btns do	
+		case GTK_BUTTONS_NONE then -- do nothing
+		
+		case GTK_BUTTONS_OK then
+			btn[1] = create(GtkButton,"gtk-ok#_OK")
+			set(dlg,"add action widget",btn[1],MB_OK)
+			show(btn[1])
+			
+		case GTK_BUTTONS_OK_CANCEL then
+			btn[1] = create(GtkButton,"gtk-cancel#_Cancel")
+			btn[2] = create(GtkButton,"gtk-ok#_OK")
+			set(dlg,"add action widget",btn[1],MB_CANCEL)
+			set(dlg,"add action widget",btn[2],MB_OK)
+			show(btn[1])
+			show(btn[2])
+			
+		case GTK_BUTTONS_CLOSE then
+			btn[1] = create(GtkButton,"gtk-close#_Close")
+			set(btn[1],"can default",TRUE)
+			set(dlg,"add action widget",btn[1],MB_CLOSE)
+			set(dlg,"default response",MB_CLOSE)
+			show(btn[1])
+
+		case GTK_BUTTONS_YES_NO then
+			btn[1] = create(GtkButton,"gtk-no#_No")
+			btn[2] = create(GtkButton,"gtk-yes#_Yes")
+			set(dlg,"add action widget",btn[1],MB_NO)
+			set(dlg,"add action widget",btn[2],MB_YES)
+			show(btn[1])
+			show(btn[2])
+			
+		case else btn[1] = create(GtkButton,"gtk-ok#_OK")
+			set(btn[1],"can default",TRUE)
+			show(btn[1])
+			set(dlg,"add action widget",btn[1],MB_OK)
+			set(dlg,"default response",MB_OK)
+	end switch
+
+	atom result = get(dlg,"run")
+	set(dlg,"destroy")
+	return result
 end function
 
 ------------------------------------------------------------------------
@@ -855,7 +863,7 @@ end function
 ------------------------------------------------------------------------
 -- A class is initialized the first time a widget of that class is created.
 -- This means the widget's method vectors are filled in with Eu routine_ids 
--- generated by define_c_func or define_c_proc as appropriate.
+-- generated by define_c_func or eu_define_c_proc as appropriate.
 
 -- When a subsequent call is made to a widget method, that vector is 
 -- used by calling c_func, c_proc, or call_func.
@@ -869,7 +877,7 @@ end function
 -- would likely not be used in any given program.
 
 ------------------------------------------------------------------------
-procedure init(integer class)
+global procedure init(integer class)
 ------------------------------------------------------------------------
 object name, params, retval
 
@@ -877,6 +885,8 @@ object name, params, retval
         display("\nInit class:[] []",{class,widget[class][$]}) 
     end ifdef
 
+	if initialized[class] then return end if
+	
     for method = 3 to length(widget[class])-1 do
 
         name = sprintf("%s_%s",{widget[class][NAME],widget[class][method][NAME]})
@@ -902,12 +912,12 @@ object name, params, retval
         end for
     
         if widget[class][method][RETVAL] = 0 then -- it's a GTK proc
-            widget[class][method][VECTOR] = define_c_proc(GTK,name,params)
+            widget[class][method][VECTOR] = define_proc(name,params)
             goto "init"
         end if
 
         if widget[class][method][RETVAL] > 0 then -- it's a GTK func
-            widget[class][method][VECTOR] = define_c_func(GTK,name,params,retval)
+            widget[class][method][VECTOR] = define_func(name,params,retval)
             goto "init"
         end if
 
@@ -915,7 +925,7 @@ object name, params, retval
             widget[class][method][VECTOR] = widget[class][method][RETVAL]
         end if
 
-        label "init"
+   label "init"
         
         initialized[class] = TRUE
 
@@ -942,24 +952,28 @@ export object registry = {}
 -- can go directly to the correct set of functions stored in the
 -- widget{} structure.
 ---------------------------------------------------------------------------------------------
-function register(atom handle, integer class, object name="-nil-", object nick = 0)
+global function register(atom handle, integer class, object name="-nil-", object v=math:MINF)
 ---------------------------------------------------------------------------------------------
 integer x = find(handle,vslice(registry,1))
 
     if x > 0 then -- handle already exists, 
     -- update it in case handle has been recycled.
-        registry[x] = {handle,class,widget[class][$],name,nick}
+		ifdef REG_DUP then
+			display("Note: [] [] handle [] already  registered to []",
+				{name,widget[class][$],handle,registry[x][3]})
+		end ifdef
+        registry[x] = {handle,class,widget[class][$],name,v}
         return 1
     end if 
     
     -- else, add the widget to the registry;
-    registry = append(registry,{handle,class,widget[class][$],name,nick})
+    registry = append(registry,{handle,class,widget[class][$],name,v})
       
     -- initialize class if this is the first use of that class;
     if not initialized[class] then init(class) end if
 
     ifdef REG then 
-        printf(1,text:format("Registry + [3:16]\thandle: [1:12>]\tname: [4]\tnick: []\n\n",registry[$])) 
+        printf(1,text:format("Registry + [3:20]\thandle: [1:10>]\tname: [4] [5]\n",registry[$])) 
     end ifdef
     
 return 1
@@ -999,6 +1013,13 @@ end function
 public function objectname(atom handle)
 ------------------------------------------------------------------------
     return vlookup(handle,registry,1,4,"?")
+end function
+
+-- returns handle (pointer) to object given name or namespace:name:
+------------------------------------------------------------------------
+public function pointer(object name)
+------------------------------------------------------------------------
+	return vlookup(name,registry,4,1,0)
 end function
 
 ------------------------------------------------------------------------
@@ -1052,14 +1073,8 @@ public function connect(object ctl, object sig, object fn=0, object data=0,
 -- whenever that control receives signal 'sig'
 
     if atom(fn) and fn = 0 then
-        return 0 -- can't connect a null func!
-    end if 
-
-    ifdef GLADE then
-    if string(ctl) then
-        ctl = gtk_func("gtk_builder_get_object",{P,P},{builder,allocate_string(ctl)})
+         return 0
     end if
-    end ifdef
     
     if string(fn) then
     
@@ -1172,11 +1187,12 @@ integer n
 return text:format("\n[]\n\tCall: []->[]\n\tParams: []\n\tReturn type: []\n\tVector: []",z)
 end function
 
+------------------------------------------------------------------------
 -- "helper" routine to get icon images from various sources;
 ------------------------------------------------------------------------
 function get_icon_image(object icon, integer size=6)
 ------------------------------------------------------------------------
-atom img = 0, default_theme
+atom img = 0, ani = 0, default_theme
 
 -- first, see if it's a stock icon; GtkImage
     if string(icon) then
@@ -1201,7 +1217,15 @@ atom img = 0, default_theme
     img = 0
     icon = canonical_path(icon)
     if file_exists(icon) then
-        img = gtk_func("gtk_image_new_from_file",{P},{icon})
+		size *= 6 -- e.g. 30 pixels
+		img = create(GtkImage)
+		ani = create(GdkPixbufAnimation,icon)
+		if gtk_func("gdk_pixbuf_animation_is_static_image",{P},{ani}) then
+			ani = create(GdkPixbuf,icon,size,size)
+			set(img,"from pixbuf",ani)
+        else
+			set(img,"from animation",ani)
+		end if
         return img
     end if
     
@@ -1324,7 +1348,7 @@ widget[GObject] = {"g_object",
 "GObject"} -- human-readable name
 
     constant 
-        fn1 = define_c_proc(GTK,"g_object_get",{P,S,P,P}),
+        fn1 = define_proc("g_object_get",{P,S,P,P}),
         doubles = {"angle","climb-rate","fraction","max-value","min-value",
         "scale","value","pulse-step","scale","size-points","text-xalign",
         "text-yalign","xalign","yalign"}
@@ -1612,6 +1636,8 @@ widget[GtkWidget] = {"gtk_widget",
     {"get_automated_child",{P,I,S},P,0,GObject},
     {"get_clip",{P,P}}, -- 3.14
     {"set_clip",{P},P}, -- 3.14
+    {"get_action_group",{P,S},P,0,GActionGroup}, -- 3.16
+    {"list_action_prefixes",{P},A}, -- 3.16
 "GtkWidget"}
 
  -- This allows specifying a font name, e.g. "Courier bold 12", instead of 
@@ -1663,6 +1689,10 @@ widget[GtkAccessible] = {"gtk_accessible",
     {"set_widget",{P,P}},
     {"get_widget",{P},P,0,GtkWidget},
 "GtkAccessible"}
+
+widget[GActionGroup] = {"g_action_group",
+{0},
+"GActionGroup"}
 
 widget[GtkContainer] =  {"gtk_container",
 {GtkWidget,GtkBuildable,GObject},
@@ -1717,6 +1747,11 @@ widget[GtkBin] = {"gtk_bin",
     {"get_child",{P},P},
 "GtkBin"}
 
+widget[GtkModelButton] = {"gtk_model_button", -- new in 3.16
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GObject},
+	{"new",{},P},
+"GtkModelButton"}
+
 widget[GtkButton] = {"gtk_button",
 {GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{P},-routine_id("newBtn")},
@@ -1743,34 +1778,69 @@ widget[GtkButton] = {"gtk_button",
     ---------------------------------------------------------------
     -- handles creation of buttons with icons from various sources;
     -- this function modified greatly from earlier versions
-    
-    atom btn = 0, img = 0
+    ---------------------------------------------------------------
+    Button btn = gtk_func("gtk_button_new")
+    Container box = gtk_func("gtk_box_new",{I,I},{0,5})
+    object img = 0
+    Label lbl = gtk_func("gtk_label_new",{P},{0})
+    gtk_proc("gtk_container_add",{P,P},{btn,box})
 
-    if sequence(cap) then
-        if begins("gtk-",cap) then
-            btn = gtk_func("gtk_button_new_from_stock",{P},{cap})
-        else 
-            btn = gtk_func("gtk_button_new_with_mnemonic",{P},{cap})
-        end if
-    else
-        btn = gtk_func("gtk_button_new")
-    end if
-
-    object icon, title, tmp
-    
+	object tmp, icon, title
+	
     if string(cap) then
+		
+		if match("gtk-",cap) = 1 then
+		
+			if match("#",cap) then
+				tmp = split(cap,'#')
+				cap = tmp[1]
+				title = tmp[2]
+				btn = gtk_func("gtk_button_new_with_mnemonic",{P},
+					{allocate_string(title)})
+			else
+				title = proper(cap[5..$])
+				if not match("_",title) then
+					title = "_" & title
+				end if
+				btn = gtk_func("gtk_button_new_with_mnemonic",{P},
+					{allocate_string(title)})
+			end if
+			
+			img = get_icon_image(cap,GTK_ICON_SIZE_BUTTON)
+			if img > 0 then
+				gtk_proc("gtk_button_set_image",{P,P},{btn,img})
+				set(btn,"property","always-show-image",TRUE)
+			end if
+			
+			return btn
+			
+		end if --gtk-
+		
         if match("#",cap) then
             tmp = split(cap,'#') 
-            icon = tmp[1]
+            icon = tmp[1] 
+            if to_number(icon) > 0 then 
+				icon = to_number(icon)
+				icon = gtk_func("gdk_pixbuf_scale_simple",{P,I,I,I},{icon,30,30,GDK_INTERP_BILINEAR})
+				img = create(GtkImage)
+				set(img,"from pixbuf",icon)
+			else
+				--ifdef LINUX then
+					img = get_icon_image(icon,GTK_ICON_SIZE_BUTTON)
+				--end ifdef
+			end if
             title = tmp[2]
-            img = get_icon_image(icon,GTK_ICON_SIZE_BUTTON) 
+            set(lbl,"markup with mnemonic",title)
             if img > 0 then
-                gtk_proc("gtk_button_set_image",{P,P},{btn,img})
+				gtk_proc("gtk_container_add",{P,P},{box,img})
             end if
-            gtk_proc("gtk_button_set_label",{P,P},{btn,allocate_string(title)})
-        end if
+            gtk_proc("gtk_container_add",{P,P},{box,lbl})
+        else
+			set(lbl,"markup with mnemonic",cap)
+			gtk_proc("gtk_box_pack_end",{P,P,B,B,I},{box,lbl,1,1,0})
+        end if 
     end if
-    
+   
     return btn      
     end function
 
@@ -2030,28 +2100,38 @@ widget[GtkImage] = {"gtk_image",
     {"get_icon_size",{P},-routine_id("getIconSize")},
 "GtkImage"}
 
- -- create an image from a variety of source formats
-    function newImage(object icon=0, integer size=6, integer h, integer w)
+export function valid_icon(object list)
+	IconTheme theme = create(GtkIconTheme)
+	for i = 1 to length(list) do
+		if get(theme,"has icon",list[i]) then
+			return list[i]
+		end if
+	end for
+	return "missing"
+	end function
+	
+	-- create an image from a variety of source formats
+   function newImage(object icon=0, integer size=6, integer h, integer w)
     -------------------------------------------------------------
-    atom img = 0, theme
+    atom img = 0
+    IconTheme theme = create(GtkIconTheme)
     atom err = allocate(32) 
     err = 0
     
     if atom(icon) and icon = 0 then -- blank image
         return gtk_func("gtk_image_new")
     end if
-        
+	
     if size = 0 then size = 6 end if
     if size > 6 then -- load icon from theme, sized
-            theme = gtk_func("gtk_icon_theme_get_default")
             img = gtk_func("gtk_icon_theme_load_icon",{P,S,I,I,P},
                 {theme,icon,size,GTK_ICON_LOOKUP_USE_BUILTIN,err})
             return gtk_func("gtk_image_new_from_pixbuf",{P},{img})
     end if
         
-    if string(icon) then --
+    if string(icon) then 
         if begins("gtk-",icon) then -- from stock (deprecated)
-            return gtk_func("gtk_image_new_from_stock",{P,I},
+            return gtk_func("gtk_image_new_from_icon_name",{P,I},
                 {allocate_string(icon),size})
         end if
         
@@ -2082,7 +2162,8 @@ widget[GtkImage] = {"gtk_image",
     return img
     end function
 
-    constant fnImageInfo  = define_c_proc(GTK,"gtk_image_get_icon_name",{P,P,P})
+
+    constant fnImageInfo  = define_proc("gtk_image_get_icon_name",{P,P,P})
     
     function getIconName(atom img)
     ------------------------------
@@ -2406,6 +2487,7 @@ widget[GtkEntry] = {"gtk_entry",
     {"get_max_width_chars",{P},I}, -- 3.12
     {"set_max_width_chars",{P,I}}, -- 3.12
     {"im_context_filter_keypress",{P,I},B},
+    {"grab_focus_without_selecting",{P}}, --3.16
 "GtkEntry"}
 
 widget[GtkSpinButton] = {"gtk_spin_button",
@@ -2434,8 +2516,8 @@ widget[GtkSpinButton] = {"gtk_spin_button",
 "GtkSpinButton"}
 
     constant
-        newsb1 = define_c_func(GTK,"gtk_spin_button_new",{P,D,I},P),
-        newsb2 = define_c_func(GTK,"gtk_spin_button_new_with_range",{D,D,D},P)
+        newsb1 = define_func("gtk_spin_button_new",{P,D,I},P),
+        newsb2 = define_func("gtk_spin_button_new_with_range",{D,D,D},P)
         
  -- create a spin button from an ajustment object or from a range of values
     function newSpinBtn(atom a, atom b, atom c)
@@ -2863,8 +2945,10 @@ widget[GtkCssProvider] = {"gtk_css_provider",
     {"get_default",{},P,0,GtkCssProvider},
     {"get_named",{S,S},P,0,GtkCssProvider},
     {"load_from_data",{P,S,I,P},B},
+    {"load_from_string",{P,P},-routine_id("addCssfromString")},
     {"load_from_file",{P,P,P},B},
     {"load_from_path",{P,S,P},B},
+    {"load_from_resource",{P,S}}, -- 3.16
     {"to_string",{P},S},
 "GtkCssProvider"}
 
@@ -2877,6 +2961,7 @@ widget[GtkCssProvider] = {"gtk_css_provider",
     atom err = allocate(64) err = 0
     register(provider,GtkCssProvider)
     if atom(name) then
+		set(style,"add provider for screen",screen,provider,800)
         return provider
     end if
     if get(provider,"load from path",canonical_path(name),err) then
@@ -2885,6 +2970,12 @@ widget[GtkCssProvider] = {"gtk_css_provider",
         printf(1,"Error finding or parsing css %s \n",{name})
     end if
     return provider
+    end function
+    
+    function addCssfromString(atom provider, object str)
+    display("Pro [] str []",{provider,str})
+	return gtk_func("gtk_css_provider_load_from_data",{P,P,I,P},
+		{provider,allocate_string(str),length(str),0})
     end function
     
 widget[GtkCssSection] = {"gtk_css_section",
@@ -2935,7 +3026,7 @@ widget[GtkStatusIcon] = {"gtk_status_icon", -- Deprecated 3.14
     {"position_menu",{P,P,I,I,B},-routine_id("StatIconPosMenu")},
 "GtkStatusIcon"}
 
-    constant sipm = define_c_proc(GTK,"gtk_status_icon_position_menu",{P,I,I,I,P})
+    constant sipm = define_proc("gtk_status_icon_position_menu",{P,I,I,I,P})
 
     function StatIconPosMenu(atom stat, atom menu, integer x, integer y, integer p)
     display("Stat [] Menu []",{stat,menu})
@@ -3008,7 +3099,7 @@ widget[GtkComboBoxText] = {"gtk_combo_box_text",
 {GtkComboBox,GtkBin,GtkContainer,GtkWidget,GtkCellLayout,GtkBuildable,GObject},
     {"new",{},P},
     {"new_with_entry",{},P},
-    {"append",{P,S,S}},
+    {"append",{P,P},-routine_id("appComboBoxText")},
     {"prepend",{P,S,S}},
     {"insert",{P,I,S,S}},
     {"append_text",{P,S}},
@@ -3019,6 +3110,20 @@ widget[GtkComboBoxText] = {"gtk_combo_box_text",
     {"get_active_text",{P},S},
 "GtkComboBoxText"}
 
+	constant cbtadd = define_proc("gtk_combo_box_text_append",{P,P,P})
+	
+	function appComboBoxText(object box, object txt)
+	if string(txt[1]) then
+		for i = 1 to length(txt) do
+			txt[i] = allocate_string(txt[i])
+			c_proc(cbtadd,{box,txt[i],txt[i]})
+		end for
+	else
+			c_proc(cbtadd,{box,allocate_string(txt)})
+	end if
+	return 1
+	end function
+	
 widget[GtkComboBoxEntry] = {"gtk_combo_box_text",
 {GtkComboBoxText,GtkComboBox,GtkBin,GtkContainer,GtkWidget,GObject},
     {"new",{},-routine_id("newComboBoxEntry")},
@@ -3339,7 +3444,7 @@ widget[GtkMenuButton] = {"gtk_menu_button", --3.6
 
 widget[GtkMenuItem] = {"gtk_menu_item",
 {GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{P},-routine_id("newMenuItem")},
+    {"new",{P,P,P,P},-routine_id("newMenuItem")},
     {"new_with_label",{S},P},
     {"new_with_mnemonic",{S},P},
     {"set_label",{P,S},P},
@@ -3358,34 +3463,69 @@ widget[GtkMenuItem] = {"gtk_menu_item",
     {"get_reserve_indicator",{P},B},
 "GtkMenuItem"}
 
-    function newMenuItem(object x=0)
-    --------------------------------
-    if string(x) then
-        return gtk_func("gtk_menu_item_new_with_mnemonic",{P},{x})
-    elsif x > 0 then
-        return gtk_func("gtk_menu_item_new_with_mnemonic",{P},{x})
-    else
-        return gtk_func("gtk_menu_item_new",{},{})
-    end if
-    end function
+	-----------------------------------------------------------------------------
+    function newMenuItem(object stk=0, object fn=0, atom data=0, object accels=0)
+    -----------------------------------------------------------------------------
+	MenuItem item
+	AccelLabel child 
+	atom icon, lbl
+	atom x = allocate(8)
 
+	if sequence(accels) then
+		if length(accels) < 3 then 
+			accels &= 0 
+		end if
+		if string(accels[2])then 
+			gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(accels[2], 1), x, x+4})
+			accels[2] = peek4u(x)
+			accels[3] = peek4u(x+4)
+		end if
+	end if
+
+	if match("#",stk) then
+		stk = split(stk,'#')
+		icon = create(GtkImage,stk[1],GTK_ICON_SIZE_MENU)
+		item = gtk_func("gtk_menu_item_new")
+		atom box = create(GtkBox,HORIZONTAL,5)
+		if sequence(accels) then
+			lbl = create(GtkAccelLabel,"")
+			set(lbl,"markup",stk[2])
+			set(lbl,"accel",accels[2],accels[3])
+		end if
+		add(box,{icon,lbl})
+		add(item,box)
+	
+	else
+	
+	-- string caption with or without accels;	
+		item = gtk_func("gtk_menu_item_new_with_mnemonic",{P},{allocate_string(stk)})
+		child = get(item,"child")
+
+		if sequence(accels) and accels[2] > 0 then
+			set(child,"accel",accels[2],accels[3])
+			set(item,"add accelerator","activate",accels[1],accels[2],accels[3],GTK_ACCEL_VISIBLE)
+		end if
+		
+	end if
+	free(x)
+	return item
+    end function
+    
 widget[GtkImageMenuItem] = {"gtk_image_menu_item", -- warning: deprecated in 3.10
 {GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{P,I,P,P},-routine_id("newImageMenuItem")},
     {"set_image",{P,P}},
     {"get_image",{P},P},
-    {"set_use_stock",{P,B}},
-    {"get_use_stock",{P},B},
     {"set_always_show_image",{P,B}},
     {"get_always_show_image",{P},B},
     {"set_accel_group",{P,P}},
 "GtkImageMenuItem"}
 
- -- creates image menu item, with image from a variety of sources,
- -- and user-defined title with/without hot keys
+	-----------------------------------------------------------------------------
     function newImageMenuItem(object stk, atom accel=0, object fn=0, atom data=0)
     -----------------------------------------------------------------------------
-    object item=0, img=0, tmp, title=0, default_theme
+    MenuItem item
+    object img=0, tmp, title=0, default_theme
     stk = split(stk,'#')
 
     if length(stk) = 2 then 
@@ -3400,11 +3540,10 @@ widget[GtkImageMenuItem] = {"gtk_image_menu_item", -- warning: deprecated in 3.1
     
         if begins("gtk-",stk) then
             item = gtk_func("gtk_image_menu_item_new_from_stock",{S,I},{stk,accel})
-            if atom(title) then
-                return item
-            end if
+            return item
         end if
     
+		ifdef LINUX then
         -- see if there's an icon;
         default_theme = gtk_func("gtk_icon_theme_get_default",{})
         tmp = allocate_string(stk) 
@@ -3418,7 +3557,8 @@ widget[GtkImageMenuItem] = {"gtk_image_menu_item", -- warning: deprecated in 3.1
                 gtk_proc("gtk_image_menu_item_set_image",{P,P},{item,img})
                 return item
         end if
-
+		end ifdef
+		
         -- no, maybe it's an image from a file;
         if img = 0 then
             tmp = canonical_path(stk)  
@@ -3440,7 +3580,7 @@ widget[GtkImageMenuItem] = {"gtk_image_menu_item", -- warning: deprecated in 3.1
     
     return item
     end function
-
+    
 widget[GtkNumerableIcon] = {"gtk_numerable_icon", -- Deprecated 3.14
 {GIcon,GEmblemedIcon,GObject},
     {"new",{P},P,0,GIcon},
@@ -3547,10 +3687,13 @@ widget[GtkToolButton] = {"gtk_tool_button",
     function newTB(object icn=0, object lbl=0)
     --------------------------------------------------
     if string(icn) then
-        icn = create(GtkImage,icn,1)
+	if match("gtk-",icn) = 1 then
+	    return gtk_func("gtk_tool_button_new_from_stock",{P},{allocate_string(icn)})
+	end if
+        icn = create(GtkImage,icn)
     end if
     if string(lbl) then
-        lbl = allocate_string(lbl,1)
+        lbl = allocate_string(lbl)
     end if
     atom btn = gtk_func("gtk_tool_button_new",{P,P},{icn,lbl})
     return btn
@@ -3570,7 +3713,7 @@ widget[GtkMenuToolButton] = {"gtk_menu_tool_button",
         icn = create(GtkImage,icn,1)
     end if
     if string(lbl) then
-        lbl = allocate_string(lbl,1)
+        lbl = allocate_string(lbl)
     end if
     atom btn = gtk_func("gtk_menu_tool_button_new",{P,P},{icn,lbl})
     return btn
@@ -3627,6 +3770,7 @@ widget[GtkScrollable] = {"gtk_scrollable",
     {"get_hscroll_policy",{P},I},
     {"set_vscroll_policy",{P,I}},
     {"get_vscroll_policy",{P},I},
+    {"get_border",{P,P},B}, -- 3.16
 "GtkScrollable"}
 
 widget[GtkScrolledWindow] = {"gtk_scrolled_window",
@@ -3679,6 +3823,7 @@ widget[GtkTextBuffer] = {"gtk_text_buffer",
     {"insert_range_interactive",{P,P,P,P,B},B},
     {"insert_with_tags",{P,P,S,I,P,P}},
     {"insert_with_tags_by_name",{P,P,S,I,S}},
+    {"insert_markup",{P,P,S,I}}, -- 3.16
     {"delete",{P,P,P}},
     {"delete_interactive",{P,P,P,B},B},
     {"backspace",{P,P,B,B},B},
@@ -3744,13 +3889,13 @@ widget[GtkTextBuffer] = {"gtk_text_buffer",
 "GtkTextBuffer"}
 
     constant 
-        fnBufStart = define_c_proc(GTK,"gtk_text_buffer_get_start_iter",{P,P}),
-        fnBufEnd = define_c_proc(GTK,"gtk_text_buffer_get_end_iter",{P,P}),
-        fnBufGet = define_c_func(GTK,"gtk_text_buffer_get_text",{P,P,P,B},S),
-        fnBufSet = define_c_proc(GTK,"gtk_text_buffer_set_text",{P,S,I}),
-        fnBufIns = define_c_func(GTK,"gtk_text_buffer_get_insert",{P},P),
-        fnBufIter = define_c_proc(GTK,"gtk_text_buffer_get_iter_at_mark",{P,P,P}),
-        fnBufBounds = define_c_func(GTK,"gtk_text_buffer_get_selection_bounds",{P,P,P},B)
+        fnBufStart = define_proc("gtk_text_buffer_get_start_iter",{P,P}),
+        fnBufEnd = define_proc("gtk_text_buffer_get_end_iter",{P,P}),
+        fnBufGet = define_func("gtk_text_buffer_get_text",{P,P,P,B},S),
+        fnBufSet = define_proc("gtk_text_buffer_set_text",{P,S,I}),
+        fnBufIns = define_func("gtk_text_buffer_get_insert",{P},P),
+        fnBufIter = define_proc("gtk_text_buffer_get_iter_at_mark",{P,P,P}),
+        fnBufBounds = define_func("gtk_text_buffer_get_selection_bounds",{P,P,P},B)
 
     function getBufferText(object buf)
     ----------------------------------
@@ -4062,25 +4207,25 @@ widget[GtkListStore] = {"gtk_list_store", -- HEAVILY-MODIFIED 4.8.2
 -- because the GTK versions are just too complex and tedious to set up,
 -- making them impractical to use.
 constant 
-    TM1 = define_c_func(GTK,"gtk_tree_model_get_iter_first",{P,P},I),
-    TM2 = define_c_func(GTK,"gtk_tree_model_iter_next",{P,P},I),
-    TM3 = define_c_func(GTK,"gtk_tree_model_get_iter_from_string",{P,P,P},P),
-    TM4 = define_c_proc(GTK,"gtk_tree_model_get",{P,P,I,P,I}),
-    TM5 = define_c_func(GTK,"gtk_tree_model_get_column_type",{P,I},I),
-    LS0 = define_c_proc(GTK,"gtk_list_store_clear",{P}),
-    LS1 = define_c_proc(GTK,"gtk_list_store_insert",{P,P,I}),
-    LS2 = define_c_proc(GTK,"gtk_list_store_append",{P,P}),
-    LS3 = define_c_proc(GTK,"gtk_list_store_swap",{P,P,P}),
-    LS4 = define_c_proc(GTK,"gtk_list_store_move_before",{P,P,P}),
-    LS5 = define_c_proc(GTK,"gtk_list_store_move_after",{P,P,P}),
-    LS6 = define_c_func(GTK,"gtk_list_store_iter_is_valid",{P,P},B),
+    TM1 = define_func("gtk_tree_model_get_iter_first",{P,P},I),
+    TM2 = define_func("gtk_tree_model_iter_next",{P,P},I),
+    TM3 = define_func("gtk_tree_model_get_iter_from_string",{P,P,P},P),
+    TM4 = define_proc("gtk_tree_model_get",{P,P,I,P,I}),
+    TM5 = define_func("gtk_tree_model_get_column_type",{P,I},I),
+    LS0 = define_proc("gtk_list_store_clear",{P}),
+    LS1 = define_proc("gtk_list_store_insert",{P,P,I}),
+    LS2 = define_proc("gtk_list_store_append",{P,P}),
+    LS3 = define_proc("gtk_list_store_swap",{P,P,P}),
+    LS4 = define_proc("gtk_list_store_move_before",{P,P,P}),
+    LS5 = define_proc("gtk_list_store_move_after",{P,P,P}),
+    LS6 = define_func("gtk_list_store_iter_is_valid",{P,P},B),
     $
 
     function newListStore(object params)
     ------------------------------------
     object proto = I & repeat(P,length(params))
     params = length(params) & params -- must build func params 'on the fly'
-    atom fn = define_c_func(GTK,"gtk_list_store_new",proto,P)
+    atom fn = define_func("gtk_list_store_new",proto,P)
     return c_func(fn,params)
     end function
 
@@ -4100,6 +4245,9 @@ constant
     integer len = length(data)
     for row = 1 to len do
         c_proc(LS1,{store,iter,len}) -- new row
+        if gtk_func("gtk_list_store_iter_is_valid",{P,P},{store,iter}) = 0 
+			then display("Error in setlistdata []",data[row]) abort(0)
+		end if
         if string(data[row]) then
             setListRowData(store,row,{data[row]})
         else
@@ -4136,20 +4284,17 @@ constant
     integer col_type = c_func(TM5,{store,col-1})
     
     switch col_type do
+		case gSTR then prototype = {P,P,I,S,I}
         case gDBL then prototype = {P,P,I,D,I}
         case gFLT then prototype = {P,P,I,D,I}
         case gPIX then prototype = {P,P,I,P,I} 
         case gINT then prototype = {P,P,I,I,I}
         case gBOOL then prototype = {P,P,I,I,I}
+        case else display("Error in setlistcoldata 5 []",col_type) abort(0) 
     end switch
     
-    ifdef LISTSTORE then
-        display("Setting row [] col [] data []",{row,col,data})
-    end ifdef
-   
     if string(data) then data = allocate_string(data) end if
-
-    atom fn = define_c_proc(GTK,"gtk_list_store_set",prototype)
+    atom fn = define_proc("gtk_list_store_set",prototype)
     object params = {store,iter,col-1,data,-1}
     c_proc(fn,params)
     
@@ -4181,9 +4326,12 @@ constant
     function getListColData(atom store, integer row, integer col)
     -----------------------------------------------------------
     atom x  = allocate(64)
+    object result 
     
     ifdef LISTSTORE then
+		if col = 2 then
         display("Get Col Data ~ row [] col []",{row,col})
+        end if
     end ifdef
     
     integer col_type = c_func(TM5,{store,col-1})
@@ -4193,30 +4341,46 @@ constant
         poke4(x,col_type) 
     end ifdef
 
-    atom iter = allocate(64)
+    atom iter = allocate(32)
+    
     c_func(TM3,{store,iter,allocate_string(sprintf("%d",row-1))})
+    	if gtk_func("gtk_list_store_iter_is_valid",{P,P},{store,iter}) = 0 then
+		display("Error in getlistcoldata 2 ") abort(0) end if
+		
     c_proc(TM4,{store,iter,col-1,x,-1})
-
+	if gtk_func("gtk_list_store_iter_is_valid",{P,P},{store,iter}) = 0 then
+		display("Error in getlistcoldata 3") abort(0) end if
+		
     switch col_type do
         case gSTR then 
-            if peek4u(x) > 0 then return peek_string(peek4u(x))
-            else return 0 end if
-        case gINT then return peek4u(x)
-        case gBOOL then return peek(x)
-        case gDBL then return float64_to_atom(peek({x,8}))
-        case gFLT then return float32_to_atom(peek({x,4}))
-        case gPIX then return peek4u(x)
+            if peek4u(x) > 0 then result = peek_string(peek4u(x))
+            else result = peek4u(x)
+				
+            end if
+        case gINT then result = peek4u(x)
+        case gBOOL then result = peek(x)
+        case gDBL then result = float64_to_atom(peek({x,8}))
+        case gFLT then result = float32_to_atom(peek({x,4}))
+        case gPIX then result = peek4u(x)
+        case else display("Error in getlistcoldata 4") abort(0) 
     end switch
-
-    return 1
+	ifdef LISTSTORE then
+		if col = 2 then
+		display("Result [] getListColData",{result})
+		end if
+	end ifdef
+    return result
     end function
         
     function getListColDatafromIter(atom store, atom iter, integer col)
     -------------------------------------------------------------------
-    atom x  = allocate(64)
-
+    atom x  = allocate(32)
+	object result
+	
     ifdef LISTSTORE then
-        display("Get Col Data from Iter ~ store [] iter [] col []",{store,iter,col})
+		if col = 2 then
+        display("Get Col Data from Iter ~ store [] iter [] col []\n",{store,iter,col})
+        end if
     end ifdef
     
     integer col_type = c_func(TM5,{store,col-1})
@@ -4225,21 +4389,31 @@ constant
     elsedef
         poke4(x,col_type) 
     end ifdef
- 
+    
+     	if gtk_func("gtk_list_store_iter_is_valid",{P,P},{store,iter}) = 0 then
+		display("Error in getlistcoldatafromiter 1 ") abort(0) end if
+		
     c_proc(TM4,{store,iter,col-1,x,-1})
-   
+       	if gtk_func("gtk_list_store_iter_is_valid",{P,P},{store,iter}) = 0 then
+		display("Error in getlistcoldatafromiter 2 ") abort(0) end if
+		
     switch col_type do
         case gSTR then 
-            if peek4u(x) > 0 then return peek_string(peek4u(x))
-            else return 0 end if
-        case gINT then return peek4u(x)
-        case gBOOL then return peek(x)
-        case gDBL then return float64_to_atom(peek({x,8}))
-        case gFLT then return float32_to_atom(peek({x,4}))
-        case gPIX then return peek4u(x)
+            if peek4u(x) > 0 then result = peek_string(peek4u(x))
+            else result = "err 1" end if
+        case gINT then result = peek4u(x)
+        case gBOOL then result = peek(x)
+        case gDBL then result = float64_to_atom(peek({x,8}))
+        case gFLT then result = float32_to_atom(peek({x,4}))
+        case gPIX then result = peek4u(x)
+        case else display("Error in getlistcoldatafromiter 3") abort(0) 
     end switch
-
-    return 1
+	ifdef LISTSTORE then
+		if col = 2 then
+		display("Result [] getListColDataFromIter",{result})
+		end if
+	end ifdef
+    return result
     end function
            
     function insertListRow(object store, object data, integer pos)
@@ -4348,14 +4522,14 @@ widget[GtkTreeStore] = {"gtk_tree_store",
     {"move_after",{P,P,P}},
 "GtkTreeStore"}
 
-    constant TSA = define_c_proc(GTK,"gtk_tree_store_append",{P,P,P})
-    constant TSX = define_c_proc(GTK,"gtk_tree_store_insert",{P,P,P,I}) 
-    
+    constant TSA = define_proc("gtk_tree_store_append",{P,P,P})
+    constant TSX = define_proc("gtk_tree_store_insert",{P,P,P,I}) 
+
     function newTreeStore(object params)
     ------------------------------------
     object proto = I & repeat(P,length(params))
     params = length(params) & params -- must build func params 'on the fly'
-    atom fn = define_c_func(GTK,"gtk_tree_store_new",proto,P)
+    atom fn = define_func("gtk_tree_store_new",proto,P)
     return c_func(fn,params)
     end function
     
@@ -4446,7 +4620,7 @@ widget[GtkTreeStore] = {"gtk_tree_store",
     if string(item[1]) then item = item[1] end if
     if string(item) then item = allocate_string(item) end if
 
-    atom fn = define_c_proc(GTK,"gtk_tree_store_set",prototype)
+    atom fn = define_proc("gtk_tree_store_set",prototype)
     object params = {store,iter,col-1,item,-1}
     c_proc(fn,params)
         
@@ -4588,10 +4762,10 @@ widget[GtkTreeModel] = {"gtk_tree_model",
 "GtkTreeModel"}
 
     constant 
-        tmstriter = define_c_func(GTK,"gtk_tree_model_get_string_from_iter",{P,P},P),
-        tmiterstr = define_c_func(GTK,"gtk_tree_model_get_iter_from_string",{P,S,P},P),
-        tmcolset = define_c_proc(GTK,"gtk_list_store_set",{P,P,I,P,I}),
-        tmnrows = define_c_func(GTK,"gtk_tree_model_iter_n_children",{P,P},I)
+        tmstriter = define_func("gtk_tree_model_get_string_from_iter",{P,P},P),
+        tmiterstr = define_func("gtk_tree_model_get_iter_from_string",{P,S,P},P),
+        tmcolset = define_proc("gtk_list_store_set",{P,P,I,P,I}),
+        tmnrows = define_func("gtk_tree_model_iter_n_children",{P,P},I)
         
     function getTMnRows(atom model)
     return c_func(tmnrows,{model,0})
@@ -4622,14 +4796,14 @@ widget[GtkTreeModel] = {"gtk_tree_model",
     end function
 
     constant 
-        fntmget = define_c_proc(GTK,"gtk_tree_model_get_value",{P,P,I,P}),
-        fncoltype = define_c_func(GTK,"gtk_tree_model_get_column_type",{P,I},I),
-        gtvfn = define_c_proc(GTK,"gtk_tree_model_get",{P,P,I,P,I}),
-        tmncol = define_c_func(GTK,"gtk_tree_model_get_n_columns",{P},I)
+        fntmget = define_proc("gtk_tree_model_get_value",{P,P,I,P}),
+        fncoltype = define_func("gtk_tree_model_get_column_type",{P,I},I),
+        gtvfn = define_proc("gtk_tree_model_get",{P,P,I,P,I}),
+        tmncol = define_func("gtk_tree_model_get_n_columns",{P},I)
 
     function getTMVal(atom mdl, atom iter, integer col)
     ---------------------------------------------------
-    atom x  = allocate(32)
+    atom x  = allocate(64)
     integer ct = c_func(fncoltype,{mdl,col-1})
     ifdef BITS64 then 
         poke8(x,ct) 
@@ -4638,13 +4812,17 @@ widget[GtkTreeModel] = {"gtk_tree_model",
     end ifdef
     c_proc(gtvfn,{mdl,iter,col-1,x,-1}) 
     switch ct do
-        case gSTR then if peek4u(x)> 0 then return peek_string(peek4u(x)) end if
+        case gSTR then 
+            if peek4u(x) != 0 then return peek_string(peek4u(x))
+            else return sprintf("%d",peek4u(x))
+            end if 
         case gINT then return peek4u(x)
         case gBOOL then return peek4u(x)
         case gFLT then return float32_to_atom(peek({x,4}))
         case gPIX then return peek4u(x)
-        case else return x
+        case else return sprintf("%d",x)
     end switch
+    return sprintf("Oops %d",ct)
     end function
 
     function tmRowVals(atom mdl, atom iter)
@@ -4695,7 +4873,7 @@ widget[GtkTreeSortable] = {"gtk_tree_sortable",
     {"has_default_sort_func",{P},B},
 "GtkTreeSortable"}
 
-    constant TS1 = define_c_func(GTK,"gtk_tree_sortable_get_sort_column_id",{P,P,P},B)
+    constant TS1 = define_func("gtk_tree_sortable_get_sort_column_id",{P,P,P},B)
     
     function TSisSorted(atom mdl)
     -----------------------------
@@ -4711,7 +4889,7 @@ widget[GtkTreeSortable] = {"gtk_tree_sortable",
     function TSgetSortColID(atom mdl)
     ---------------------------------
     boolean success = FALSE
-    integer col = allocate(16), order = allocate(16)
+    integer col = allocate(32), order = allocate(32)
     if c_func(TS1,{mdl,col,order}) then
         return peek4u(col)+1
     else
@@ -4722,7 +4900,7 @@ widget[GtkTreeSortable] = {"gtk_tree_sortable",
     function TSgetSortOrder(atom mdl)
     ---------------------------------
     boolean success = FALSE
-    integer col = allocate(16), order = allocate(16)
+    integer col = allocate(32), order = allocate(32)
     if c_func(TS1,{mdl,col,order}) then
         return peek4u(order)
     else
@@ -4776,8 +4954,8 @@ widget[GtkColorChooser] = {"gtk_color_chooser",
 "GtkColorChooser"}
 
     constant 
-        fngetccrgba = define_c_proc(GTK,"gtk_color_chooser_get_rgba",{P,P}),
-        fngetccalpha = define_c_func(GTK,"gtk_color_chooser_get_use_alpha",{P},B)
+        fngetccrgba = define_proc("gtk_color_chooser_get_rgba",{P,P}),
+        fngetccalpha = define_func("gtk_color_chooser_get_use_alpha",{P},B)
         
     function setccRGBA(atom x, object c)
     ------------------------------------
@@ -4827,8 +5005,8 @@ widget[GtkColorSelection] =  {"gtk_color_selection", -- Deprecated
 -- converting automatically between various color notations
 ------------------------------------------------------------------------
     constant 
-        fngetCurCol = define_c_proc(GTK,"gtk_color_selection_get_current_rgba",{P,P}),
-        fngetPrevCol = define_c_proc(GTK,"gtk_color_selection_get_previous_rgba",{P,P})
+        fngetCurCol = define_proc("gtk_color_selection_get_current_rgba",{P,P}),
+        fngetPrevCol = define_proc("gtk_color_selection_get_previous_rgba",{P,P})
 
     function setCurrentRGBA(atom x, object c)
     -----------------------------------------
@@ -4847,8 +5025,9 @@ widget[GtkColorSelection] =  {"gtk_color_selection", -- Deprecated
     function getCurrentRGBA(atom x, integer fmt=0)
     ----------------------------------------------
     atom rgba = allocate(32) 
+    atom fn = define_func("gdk_rgba_to_string",{P},P)
     c_proc(fngetCurCol,{x,rgba}) 
-    object c = gtk_str_func("gdk_rgba_to_string",{P},{rgba}) 
+    object c = c_func(fn,{rgba})
     return fmt_color(c,fmt)
     end function
 
@@ -5085,8 +5264,8 @@ widget[GtkPaned] = {"gtk_paned",
     {"set_position",{P,I}},
     {"get_position",{P},I},
     {"get_handle_window",{P},P,0,GdkWindow},
-    {"get_wide_handle",{P},B},
-    {"set_wide_handle",{P,B}},
+    {"get_wide_handle",{P},B}, -- 3.16
+    {"set_wide_handle",{P,B}}, -- 3.16
 "GtkPaned"}
 
 widget[GtkIconInfo] = {"gtk_icon_info",
@@ -5308,8 +5487,13 @@ widget[GtkRecentInfo] = {"gtk_recent_info",
 
 widget[GtkSettings] = {"gtk_settings",
 {GtkStyleProvider,GObject},
+	{"new",{},-routine_id("getDefaultSettings")},
 "GtkSettings"}
 
+	function getDefaultSettings()
+	return gtk_func("gtk_settings_get_default",{})
+	end function 
+	
 widget[GtkSizeGroup] = {"gtk_size_group",
 {GtkBuildable,GObject},
     {"new",{I},P},
@@ -5770,16 +5954,52 @@ widget[GtkTreeView] = {"gtk_tree_view",
     {"get_tooltip_column",{P},I},
     {"get_tooltip_context",{P,I,I,B,P,P,P},B},
     {"select_row",{P,P,D,D},-routine_id("tvSelectRow")},
+    {"get_selected_row_data",{P,P},-routine_id("getSelectedRowData")},
+    {"get_selected_col_data",{P,P,I},-routine_id("getSelectedColData")},
 "GtkTreeView"}
 
-    constant scrl2cell = define_c_proc(GTK,"gtk_tree_view_scroll_to_cell",{P,P,P,I,F,F})
+	constant sfn1 = define_func("gtk_tree_view_get_model",{P},P)
+	constant sfn2 = define_func("gtk_tree_model_get_n_columns",{P},I)
+	constant sfn3 = define_func("gtk_tree_model_get_iter",{P,P,P},B)
+	constant sfn4 = define_func("gtk_tree_model_get_column_type",{P,I},I)
+	constant sp1 = define_proc("gtk_tree_model_get",{P,P,I,P,I})
+	 
+	function getSelectedColData(atom view, atom path, integer col)
+	object data = getSelectedRowData(view,path)
+	return data[col]
+	end function
+	
+	function getSelectedRowData(atom view, atom path)
+	  atom mdl = c_func(sfn1,{view})
+	  integer ncols = c_func(sfn2,{mdl})
+	  object data = repeat(0,ncols)
+	  object types = repeat(0,ncols)
+	  atom iter = allocate(32)
+	  if c_func(sfn3,{mdl,iter,path}) then
+		for i = 1 to length(data) do
+		 data[i] =  allocate(32)
+		 types[i] = c_func(sfn4,{mdl,i-1}) 
+		 c_proc(sp1,{mdl,iter,i-1,data[i],-1})
+		 end for
+	  end if
+	  for i = 1 to length(data) do
+	  ? types[i]
+		switch types[i] do
+			case gSTR then data[i] = peek_string(peek4u(data[i]))
+			case else data[i] = peek4u(data[i])
+		end switch
+	  end for
+	return data
+	end function
+
+    constant scrl2cell = define_proc("gtk_tree_view_scroll_to_cell",{P,P,P,I,F,F})
     
-    function tvScrol2Cel(atom v, atom p, atom c, integer align, atom row, atom col)
+    function tvScrol2Cel(atom v, atom p, atom c=0, integer align=0, atom row=0, atom col=0)
     c_proc(scrl2cell,{v,p,c,align,row,col})
     return 1
     end function
     
-    constant appcol = define_c_func(GTK,"gtk_tree_view_append_column",{P,P},I)
+    constant appcol = define_func("gtk_tree_view_append_column",{P,P},I)
     function tvAppendCols(atom store, object cols)
     ---------------------------------------------------------------------------
     if atom(cols) then
@@ -5871,9 +6091,17 @@ widget[GtkTreeSelection] = {"gtk_tree_selection",
     {"unselect_all",{P}},
     {"select_range",{P,P,P}},
     {"unselect_range",{P,P,P}},
-    {"get_selected_rows",{P,P},-routine_id("getSelRows")},
     {"get_selected_row",{P,P},-routine_id("getSelRow")},
+    {"get_selected_rows",{P,P},-routine_id("getSelRows")},
+    {"get_selected_row_data",{P},-routine_id("getSelRowData")},
+    {"get_selected_row_col",{P,I},-routine_id("getSelRowCol")},
 "GtkTreeSelection"}
+
+	constant 
+		treeselection_fn1 = define_func("gtk_tree_selection_get_selected",{P,P,P},I),
+		treeselection_fn2 = define_func("gtk_tree_model_get_n_columns",{P},I),
+		treeselection_fn3 = define_func("gtk_tree_model_get_column_type",{P,I},I),
+		treeselection_p1 = define_proc("gtk_tree_model_get",{P,P,I,P,I})
 
     function getSelRows(atom selection, atom model)
     -------------------------------------------------
@@ -5881,18 +6109,53 @@ widget[GtkTreeSelection] = {"gtk_tree_selection",
     list = to_sequence(list,3)
     return list +1
     end function
-
+    
     function getSelRow(atom selection, atom model)
-    -------------------------------------------------
-    object list = gtk_func("gtk_tree_selection_get_selected_rows",{P,P},{selection,model})
-    list = to_sequence(list,3)
-    if length(list) = 0 then
-        return -1
+    -------------------------------------------------    
+    object result = getSelRows(selection,model) 
+    if equal({},result) then
+    return 0
     else
-        return list[1] +1
+    return result[1]
     end if
     end function
+    
+    function getSelRowData(atom selection)
+    -------------------------------------------------
+    atom mdl = allocate(32), iter = allocate(32)
+    integer n
+    object x,t, val
+    if c_func(treeselection_fn1,{selection,mdl,iter}) then
+		mdl = peek4u(mdl)
+		n = c_func(treeselection_fn2,{mdl})
+		x = repeat(0,n) t = x
+		for i = 1 to n do
+			val = allocate(32)
+			c_proc(treeselection_p1,{mdl,iter,i-1,val,-1})
+			t[i] = c_func(treeselection_fn3,{mdl,i-1})
+			x[i] = val
+		end for
+		for i = 1 to length(x) do
+			switch t[i] do
+				case gSTR then 
+					if peek4u(x[i]) > 0 then
+						x[i] = peek_string(peek4u(x[i]))
+					end if
+				case gFLT then x[i] = float32_to_atom(peek({x[i],4}))
+				case gDBL then x[i] = float64_to_atom(peek({x[i],8}))
+				case else x[i] = peek4u(x[i])
+			end switch
+		end for
+		return x
+    end if
+    return -1
+    end function
 
+	function getSelRowCol(atom selection, integer col)
+	object x = getSelRowData(selection)
+	return x[col]
+	end function
+	
 widget[GtkActionBar] = {"gtk_action_bar", -- GTK 3.12
 {GtkBox,GtkWidget,GtkBuildable,GObject}, 
     {"new",{},P},
@@ -5906,6 +6169,7 @@ widget[GtkAccelLabel] = {"gtk_accel_label",
 {GtkLabel,GtkMisc,GtkWidget,GtkBuildable,GObject},
     {"new",{S},P},
     {"get_accel",{P,I,I}}, -- 3.14
+    {"set_accel",{P,I,I}},
     {"set_accel_closure",{P,P}},
     {"set_accel_widget",{P,P}},
     {"get_accel_widget",{P},P,0,GtkWidget},
@@ -5974,7 +6238,7 @@ widget[GtkCalendar] = {"gtk_calendar",
 -- getting the date. See std/datetime.e for the formats available.
 ------------------------------------------------------------------------
 
-    constant get_date = define_c_proc(GTK,"gtk_calendar_get_date",{P,I,I,I})
+    constant get_date = define_proc("gtk_calendar_get_date",{P,I,I,I})
 
     ------------------------------------------------------------------------
     function selectCalendarMonth(atom handle, integer mo, integer yr=0)
@@ -6222,7 +6486,7 @@ widget[PangoFont] = {"pango_font",
 
 widget[PangoFontDescription] = {"pango_font_description",
 {PangoFont},
-    {"new",{S},-routine_id("newPangoFontDescription")},
+    {"new",{P},-routine_id("newPangoFontDescription")},
     {"set_family",{P,S}},
     {"get_family",{P},S},
     {"set_style",{P,P}},
@@ -6243,8 +6507,11 @@ widget[PangoFontDescription] = {"pango_font_description",
     {"to_filename",{P},S},
 "PangoFontDescription"}
 
-    function newPangoFontDescription(object name)
+    function newPangoFontDescription(object name=0)
     ---------------------------------------------
+    if atom(name) then
+		return gtk_func("pango_font_description_new")
+    end if
     return gtk_func("pango_font_description_from_string",{S},{name})
     end function
 
@@ -6339,7 +6606,7 @@ widget[GtkAboutDialog] = {"gtk_about_dialog",
 
 widget[GtkAppChooserDialog] = {"gtk_app_chooser_dialog",
 {GtkAppChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{P,I,S},-routine_id("newforURI")},
+    {"new",{P,I,P},-routine_id("newforURI")},
     {"new_for_uri",{P,I,S},-routine_id("newforURI")},
     {"new_for_file",{P,I,P},-routine_id("newforFIL")},
     {"new_for_content_type",{P,I,S},P},
@@ -6350,7 +6617,7 @@ widget[GtkAppChooserDialog] = {"gtk_app_chooser_dialog",
 
     function newforURI(atom parent, integer flags, object uri)
     ----------------------------------------------------------
-    return gtk_func("gtk_app_chooser_dialog_new_for_content_type",{P,I,S},
+    return gtk_func("gtk_app_chooser_dialog_new_for_content_type",{P,I,P},
         {parent,flags,uri})
     end function
 
@@ -6536,7 +6803,7 @@ widget[PangoFontFamily] = {"pango_font_family",
 widget[PangoLayout] = {"pango_layout",
 {GObject},
     {"new",{P},P},
-    {"set_text",{P,S,I}},
+    {"set_text",{P,P},-routine_id("plSetTxt")},
     {"get_text",{P},S},
     {"set_markup",{P,S,I}},
     {"set_font_description",{P,P}},
@@ -6589,6 +6856,11 @@ widget[PangoLayout] = {"pango_layout",
     {"get_iter",{P},P,0,PangoLayoutIter},
 "PangoLayout"}
 
+	function plSetTxt(atom layout, object txt)
+	gtk_proc("pango_layout_set_text",{P,P,I},{layout,allocate_string(txt),length(txt)})
+	return 1
+	end function
+	
 widget[PangoLayoutLine] = {"pango_layout_line",
 {0},
     {"ref",{P},P},
@@ -6784,7 +7056,6 @@ widget[Cairo_t] = {"cairo",
     {"font_extents",{P,P}},
     {"text_extents",{P,S,P}},
     {"glyph_extents",{P,P,I,P}},
-    {"select_font_face",{P,S,I,I}},
     {"toy_font_face_create",{S,I,I},P},
     {"toy_font_face_get_slant",{P},I},
     {"toy_font_face_get_weight",{P},I},
@@ -7204,7 +7475,7 @@ widget[GtkPopover] = {"gtk_popover", -- new in GTK 3.12
     {"get_modal",{P},B},
 "GtkPopover"}
 
-widget[GtkPopoverMenu] = {"gtk_popover_menu", -- 3.12
+widget[GtkPopoverMenu] = {"gtk_popover_menu", -- 3.16
 {GtkPopover,GtkBin,GtkContainer,GtkWidget,GObject},
     {"new",{},P},
     {"open_submenu",{P,S}},
@@ -7485,6 +7756,10 @@ widget[GtkGestureMultiPress] = {"gtk_gesture_multi_press",
     {"set_area",{P,P}},
 "GtkGestureMultiPress"}
 
+widget[GdkGLProfile] = {"gdk_gl_profile",
+ {},
+"GdkGLProfile"}
+
 widget[GtkGLArea] = {"gtk_gl_area", -- GTK 3.16
 {GtkWidget,GObject},
     {"new",{},P},
@@ -7492,8 +7767,17 @@ widget[GtkGLArea] = {"gtk_gl_area", -- GTK 3.16
     {"set_has_alpha",{P,B}},
     {"get_has_alpha",{P},B},
     {"set_has_depth_buffer",{P,B}},
-    {"gete_has_depth_buffer",{P},B},
+    {"get_has_depth_buffer",{P},B},
     {"make_current",{P}},
+    {"get_auto_render",{P},B},
+    {"set_auto_render",{P,B}},
+    {"get_error",{P},P},
+    {"set_error",{P,P}},
+    {"queue_render",{P}},
+    {"set_profile",{P,P}},
+    {"get_profile",{P},P,0,GdkGLProfile},
+    {"get_has_stencil_buffer",{P},B},
+    {"set_has_stencil_buffer",{P,B}},
 "GtkGLArea"}
 
 widget[GdkFrameClock] = {"gdk_frame_clock",
@@ -7603,6 +7887,34 @@ widget[GdkGLContext] = {"gdk_gl_context",
     return c_func("gdk_gl_context_get_current")
     end function
 
+widget[GtkBindingSet] = {"gtk_binding_set",
+{GObject},
+	{"new",{S},P},
+	{"by_class",{P},P},
+	{"find",{S},P},
+	{"activate",{P,I,I,P},B},
+	{"add_path",{P,P,S,I}},
+"GtkBindingSet"}
+
+widget[GtkBindingEntry] = {"gtk_binding_entry",
+{GtkBindingSet},
+	{"add_signal",{P,I,I,S,P}},
+	{"add_signal_from_string",{P,S},I},
+	{"skip",{P,I,I}},
+	{"remove",{P,I,I}},
+"GtkBindingEntry"}
+
+widget[GdkPixbufAnimation] = {"gdk_pixbuf_animation",
+{GdkPixbuf,GObject},
+	{"new",{P},-routine_id("newPixbufAni")},
+"GdkPixbufAnimation"}
+
+	function newPixbufAni(object name)
+	atom err = allocate(32) err = 0
+	return gtk_func("gdk_pixbuf_animation_new_from_file",{P,P},
+		{allocate_string(name),err})
+	end function
+
 --WIP: these are not yet implemented;
 widget[CairoFontOptions] = {0,{0},"CairoFontOptions"}
 widget[CairoContent_t] = {0,{0},"CairoContent_t"}
@@ -7610,84 +7922,7 @@ widget[CairoStatus_t] = {0,{0},"CairoStatus_t"}
 widget[CairoSurfaceType_t] = {0,{0},"CairoSurfaceType_t"}
 widget[GtkPrintOperationPreview] = {0,{0},"GtkPrintOperationPreview"}
 widget[GtkPageRange] = {0,{0},"GtkPageRange"}
-widget[GdkPixbufAnimation] = {0,{0},"GdkPixbufAnimation"}
 widget[GdkPixbufAnimationIter] = {0,{0},"GdkPixbufAnimationIter"}
-
-------------------------------------------------------------------------
--- Low-level hardware functions.
-------------------------------------------------------------------------
-export function event_id(atom event)
-return peek4u(event)
-end function
-
-export function event_button(atom event) -- get mouse button clicked;
----------------------------------------------------------------------
-    ifdef BITS64 then
-        return peek(event+52)
-    end ifdef
-return peek(event+40)
-end function
-
-export function mouse_button(atom event) -- alias for above;
-return event_button(event)
-end function
-
-export function event_type(atom event)
-return peek(event)
-end function
-
-export function event_window(atom event)
-return peek(event+4)
-end function
-
-export function event_state(atom event)
-    ifdef BITS64 then
-        return peek(event+24)
-    end ifdef
-return peek(event+12)
-end function
-
-export function event_hwcode(atom event)
-    ifdef BITS64 then
-        return peek(event+44)
-    end ifdef
-return peek(event+32)
-end function
-
-export function event_key(atom event) -- get key pressed;
-    ifdef BITS64 then
-        return peek(event+28)
-    end ifdef
-return peek(event+20)
-end function
-
-export function keypressed(atom event) -- alias for above;
-return event_key(event)
-end function
-
-export function event_clicks(atom event)
-atom ct = allocate(64)
-object result
-    if gtk_func("gdk_event_get_click_count",{P,I},{event,ct}) then
-        result = peek4u(ct)
-    else
-        result = -1
-    end if
-    free(ct)
-return result
-end function
-
-export function event_scroll_dir(atom event)
-atom dir = allocate(64)
-object result
-    if gtk_func("gdk_event_get_scroll_direction",{P,I},{event,dir}) then
-        result = peek4u(dir)
-    else
-        result = -1
-    end if
-    free(dir)
-return result
-end function
 
 ------------------------------------------------------------------------
 -- Internet conveniences
@@ -7711,14 +7946,14 @@ end if
 
 atom err = allocate(100) err = 0 
 object result = gtk_func("gtk_show_uri",{P,P,P,P},
-        {0,allocate_string(uri,1),0,err})
+        {0,allocate_string(uri),0,err})
     free(err)
     
 return result
 end function
 
 --------------------------------
-export function inet_address()
+export function inet_address() -- only works on linux;
 --------------------------------
 object ip
 sequence tmp = temp_file(,"MYIP-")
@@ -7730,6 +7965,7 @@ if system_exec(sprintf("ifconfig |  grep 'inet addr:' | grep -v '127.0.0.1' | cu
         return ip[1]
     end if
 end if
+return -1
 end function
 
 ---------------------------------
@@ -7738,10 +7974,7 @@ export function inet_connected()
 return not equal("127.0.0.1",inet_address())
 end function
 
-------------------------------------------------------------------------
 -- Icon functions
-------------------------------------------------------------------------
-
 ----------------------------
 export function list_icons()
 ----------------------------
@@ -7779,7 +8012,7 @@ return results
 end function
     
 ------------------------------------------------------------------------
--- BUILDABLE   (WIP)
+-- BUILDABLE  
 ------------------------------------------------------------------------
 widget[GtkBuildable] = {"gtk_buildable",
 {GObject},
@@ -7806,257 +8039,315 @@ widget[GtkBuilder] = {"gtk_builder",
     {"get_objects",{P},P,0,GSList},
     {"set_application",{P,P}}, -- 3.10
     {"get_application",{P},P}, -- 3.10
-    {"connect",{P},-routine_id("BuilderConnect")},
+    {"connect",{P},-routine_id("builder_connect")},
 "GtkBuilder"}
 
-    constant bad_from_file = define_c_func(GTK,"gtk_builder_add_from_file",{P,S,P},I)
-    constant bad_from_string = define_c_func(GTK,"gtk_builder_add_from_string",{P,P,I,P},I)
+export constant builder = create(GtkBuilder)
+object current_builder_file = ""
+
+export sequence class_name_index = repeat(0,GtkFinal)
+    for i = 1 to GtkFinal-1 do
+        class_name_index[i] = widget[i][$]
+    end for
+
+    constant bad_from_file = define_func("gtk_builder_add_from_file",{P,P,P},I)
+    constant bad_from_string = define_func("gtk_builder_add_from_string",{P,P,I,P},I)
    
  -- add objects from Glade XML file;  
     function addBuilderObjects(atom bld, object fname)
-    atom err = allocate(64) err = 0
+    current_builder_file = fname
+    atom err = allocate(32) err = 0
     integer result = c_func(bad_from_file,{bld,fname,err})
     if result = 0 then
-        printf(1,"Error loading Builder from file!\n\n")
-        printf(1,"Possible GTK version mismatch ")
-        printf(1,"or other error in file\n %s\n\n",{peek_string(fname)})
-        abort(0)
+        printf(1,"Error loading Builder from file: %s \n",{current_builder_file})
+        printf(1,"Possible GTK version mismatch or other error in Glade.\n\n")
+        ? 1/0
     end if
     return result 
     end function
 
- -- add object from inline string;
+ -- add object from string or include-file contents;
     function addBuilderObjectsStr(atom bld, object str)
-    atom err = allocate(64) err = 0
+    current_builder_file = str
+    atom err = allocate(32) err = 0
     integer len = length(str)
     str = allocate_string(str)
     integer result = c_func(bad_from_string,{bld,str,len,err})
     if result = 0 then
-        printf(1,"Error loading Builder from string!\n\n")
-        printf(1,"Possible GTK version mismatch ")
-        printf(1,"or other error in Glade.\n\n")
-        abort(0)
+        printf(1,"Error %d loading Builder from string or include: %s!\n",
+			{err,current_builder_file})
+        printf(1,"\tGTK version mismatch or other error in Glade.\n\n")
     end if
     return result
     end function
     
+    
  -- link signals defined in Glade
-    function BuilderConnect(atom bld)
+    function builder_connect(atom bld)
     ---------------------------------
     gtk_func("gtk_builder_connect_signals_full",{P,P,P},{bld,builder_connect_func,0})
     return 1
     end function
 
-    constant builder_connect_func =  call_back(routine_id("BuilderConnectFunc"))
+    constant builder_connect_func =  call_back(routine_id("builder_connect_function"))
 
  -- links Glade controls to user-written or Eu functions 
-    function BuilderConnectFunc(atom bld, atom obj, object sig, object handlr, object data=0)
+    function builder_connect_function(atom bld, atom obj, object sig, object hdlr, atom cxo, atom flags, atom data)
     -----------------------------------------------------------------------------------------
-    handlr = peek_string(handlr)
+    hdlr = peek_string(hdlr)
     sig = peek_string(sig)
+    if atom(current_builder_file) and (current_builder_file > 0) then
+		current_builder_file = peek_string(current_builder_file)
+	end if
 
-    object name = gtk_str_func("gtk_buildable_get_name",{P},{obj})   
-    object path = gtk_func("gtk_widget_get_path",{P},{obj})
-    object nick = gtk_str_func("gtk_widget_get_name",{P},{obj})
-    integer len = gtk_func("gtk_widget_path_length",{P},{path})
-    path = gtk_str_func("gtk_widget_path_to_string",{P},{path})
-
-    atom rid = routine_id(handlr) 
-        if rid = -1 then 
-            printf(1,"Error: function not found => %s",{handlr})
-            if match("Gtk",nick) then nick = nick[4..$] end if 
-            show_template(handlr)
+    atom rid = routine_id(hdlr) 
+        if rid = -1 then
+            printf(1,"---------------------------------------------------------------------\n")
+            printf(1,"-- Undeclared function in %s\n",{current_builder_file})
+            printf(1,"---------------------------------------------------------------------\n")
+            show_template(hdlr)
             abort(1)
-        end if
-        rid = call_back(rid) 
-
-    integer flag = 0
-    for n = 1 to length(path) do
-        if path[n] = '(' then flag = 1
-        elsif path[n] = ')' then flag = 0
-        end if
-        if flag and path[n] = ' ' then path[n] = '_' end if
-    end for
-    
-    path = split(path,' ')
-    object class = path[$]
-    len = find('.',class)
-    if len then
-        class = head(class,len-1)
-    end if
-    len = find('(',class)
-    if len then
-        class = head(class,len-1)
-    end if
-    len = find('[',class)
-    if len then
-        class = head(class,len-1)
-    end if
-    integer id = find(class,class_name_index)
-
-    ifdef CONNECT then
-        display("Class [] [] ID []  Handle [] Nick [] Data []\n",
-            {id,class,name,obj,nick,data})
-    end ifdef
-    
-    register(obj,id,name,nick)
-    connect(obj,sig,rid,data)
-
+        else
+			rid = call_back(rid) 
+			connect(obj,sig,rid,cxo)
+		end if
+		
     return 1
     end function
+
+--------------------------------------------------------------------
+procedure load_builder(object parent, object child, object prefix=0)
+--------------------------------------------------------------------
+object name, class
+object x, tree
+integer c,n
+atom err = allocate(32) 
+
+    if file_exists(canonical_path(child)) then
+        set(parent,"add from file",canonical_path(child),err)
+		set(parent,"connect")
+		prefix = filebase(child)
+		if match(prefix,filebase(prg_name)) then
+			prefix = 0 -- do not prefix main file objects
+		end if
+		x = read_lines(canonical_path(child))
+		
+    elsif string(child) then
+        set(parent,"add from string",child,err)
+		set(parent,"connect")
+		x = split(child,'\n')
+    end if
+
+for i = 1 to length(x) do
+
+	if string(x[i]) and match("<object class",x[i]) then
+		c = match("class=",x[i]) + 7
+		n = match("id=",x[i]) + 4
+
+		class = x[i][c..$]
+		class = split(class," ")
+		class = class[1]
+		if class[$] = '"' then class = class[1..$-1] end if
+	
+		name = x[i][n..$]
+		n = find('"',name)
+		name = name[1..n-1]
+
+		n = get(builder,"object",name)
+		if string(prefix) then
+			name = sprintf("%s:%s",{prefix,name})
+		end if
+		ifdef BUILDER then 
+			display("[:25] [:36] [:10>]",{class,name,n}) 
+		end ifdef
+		class = find(class,class_name_index)
+		if not initialized[class] then init(class) end if
+		tree = widget[class][2]
+		for z = 1 to length(tree) do
+			init(tree[z])
+		end for
+		register(n,class,name)	
+	end if
+end for
+
+end procedure
+
+function FilterFn(object a, object f)
+return match(f,a[4])
+end function
+constant filterfn = routine_id("FilterFn")
+	
+-----------------------------------------------------------------------
+global function update_settings(atom self) 
+-----------------------------------------------------------------------
+object name = get(self,"name")
+name = split(name,':')
+name = name[1]
+object tmp = filter(registry,filterfn,name)
+object index = vslice(registry,1)
+object handles = vslice(tmp,1)
+atom x =-1
+for i = 1 to length(tmp) do
+		x = find(tmp[i][1],index)
+		if x >  0 then
+		switch tmp[i][2] do
+			case GtkCheckButton,GtkRadioButton,
+				 GtkToggleButton,GtkSwitch,GtkComboBoxText then
+				registry[x][5] = {"active","integer",get(tmp[i][4],"active")}
+			case GtkFontButton then
+				registry[x][5] = {"font name","string",get(tmp[i][4],"font")}
+			case GtkAdjustment,GtkSpinButton then
+				registry[x][5] = {"value","atom",get(tmp[i][4],"value")}
+			case GtkEntryCompletion then
+				registry[x][5] = {"model","atom",get(tmp[i][4],"model")}
+			case GtkSearchEntry then
+				registry[x][5] = {"text","string",get(tmp[i][4],"text")}
+			case GtkColorButton then
+				registry[x][5] = {"rgba","string",get(tmp[i][4],"rgba")}
+		end switch
+	end if
+end for
+object txt = {}
+index = vslice(registry,1)
+for i = 1 to length(handles) do
+	x = find(handles[i],index) 
+	if x > 0 then
+		if atom(registry[x][5]) and registry[x][5] = MINF then
+		-- skip
+		else
+			txt &= text:format("[4][5]\n",registry[x])
+		end if
+	end if
+end for
+return txt
+end function
 
 ------------------------------------------------------------------------------------------
 procedure show_template(object handlr)
 ------------------------------------------------------------------------------------------
-puts(1,"\nYou may copy and paste the following code:\n\n")
-printf(1,`
+printf(1,"""
+________
 
------------------------------------------------------------------------
-global function %s() 
------------------------------------------------------------------------
+        -----------------------------------------------------------------------
+        global function %s() 
+        -----------------------------------------------------------------------
   
-return 1
-end function
+        return 1
+        end function
 
-
-`,{handlr})
+""",{handlr})
 
 end procedure
 
-ifdef GLADE then
 
-    global constant builder = create(GtkBuilder)
-    
-end ifdef
-  
-sequence class_name_index = repeat(0,GtkFinal)
-    for i = 1 to GtkFinal-1 do
-        class_name_index[i] = widget[i][$]
-    end for
-
-function _(atom x, integer t)
-init(t) register(x,t)
-return 1
+------------------------------------------------------------------------
+-- Following 3 functions simplify method calls; used mostly internally,
+-- but can also be called by the programmer to execute any GTK, GDK or
+-- GLib function which has not been implemented in EuGTK.
+-------------------------------------------------------------------------
+export function gtk_func(object name, object params={}, object values={})
+-------------------------------------------------------------------------
+-- syntax: result = gtk_func("gtk_*_*",{formal params},{values})
+-- where formal params might be {P,P,I} (function expects Ptr, Ptr, and Int)
+-- and values are the values to be inserted into the formal params before
+-- the function named is called;
+    for i = 1 to length(params) do
+        if string(values[i]) then
+            values[i] = allocate_string(values[i])
+        end if
+    end for 
+atom fn = define_func(name,params,P)
+if fn > 0 then
+return c_func(fn,values)
+else return -1
+end if
 end function
 
-export type Object(atom x)return _(x,GObject)end type
-export type Window(atom x)return _(x,GtkWindow)end type
-export type Dialog(atom x)return _(x,GtkDialog)end type
-export type AboutDialog(atom x)return _(x,GtkAboutDialog)end type
-export type Assistant(atom x)return _(x,GtkAssistant)end type
-export type Box(atom x)return _(x,GtkBox)end type
-export type Grid(atom x)return _(x,GtkGrid)end type
-export type Revealer(atom x)return _(x,GtkRevealer)end type
-export type ListBox(atom x)return _(x,GtkListBox)end type
-export type FlowBox(atom x)return _(x,GtkFlowBox)end type
-export type Stack(atom x)return _(x,GtkStack)end type
-export type StackSwitcher(atom x)return _(x,GtkStackSwitcher)end type
-export type Sidebar(atom x)return _(x,GtkSidebar)end type
-export type ActionBar(atom x)return _(x,GtkActionBar)end type
-export type HeaderBar(atom x)return _(x,GtkHeaderBar)end type
-export type Overlay(atom x)return _(x,GtkOverlay)end type
-export type ButtonBox(atom x)return _(x,GtkButtonBox)end type
-export type Paned(atom x)return _(x,GtkPaned)end type
-export type Layout(atom x)return _(x,GtkLayout)end type
-export type Notebook(atom x)return _(x,GtkNotebook)end type
-export type Expander(atom x)return _(x,GtkExpander)end type
-export type AspectFrame(atom x)return _(x,GtkAspectFrame)end type
-export type Label(atom x)return _(x,GtkLabel)end type
-export type Image(atom x)return _(x,GtkImage)end type
-export type Spinner(atom x)return _(x,GtkSpinner)end type
-export type InfoBar(atom x)return _(x,GtkInfoBar)end type
-export type ProgressBar(atom x)return _(x,GtkProgressBar)end type
-export type LevelBar(atom x)return _(x,GtkLevelBar)end type
-export type Statusbar(atom x)return _(x,GtkStatusbar)end type
-export type AccelLabel(atom x)return _(x,GtkAccelLabel)end type
-export type Button(atom x)return _(x,GtkButton)end type
-export type CheckButton(atom x)return _(x,GtkCheckButton)end type
-export type RadioButton(atom x)return _(x,GtkRadioButton)end type
-export type ToggleButton(atom x)return _(x,GtkToggleButton)end type
-export type LinkButton(atom x)return _(x,GtkLinkButton)end type
-export type MenuButton(atom x)return _(x,GtkMenuButton)end type
-export type Switch(atom x)return _(x,GtkSwitch)end type
-export type ScaleButton(atom x)return _(x,GtkScaleButton)end type
-export type VolumeButton(atom x)return _(x,GtkVolumeButton)end type
-export type LockButton(atom x)return _(x,GtkLockButton)end type
-export type Entry(atom x)return _(x,GtkEntry)end type
-export type EntryBuffer(atom x)return _(x,GtkEntryBuffer)end type
-export type EntryCompletion(atom x)return _(x,GtkEntryCompletion)end type
-export type Scale(atom x)return _(x,GtkScale)end type
-export type SpinButton(atom x)return _(x,GtkSpinButton)end type
-export type SearchEntry(atom x)return _(x,GtkSearchEntry)end type
-export type SearchBar(atom x)return _(x,GtkSearchBar)end type
-export type Editable(atom x)return _(x,GtkEditable)end type
-export type TextMark(atom x)return _(x,GtkTextMark)end type
-export type TextBuffer(atom x)return _(x,GtkTextBuffer)end type
-export type TextTag(atom x)return _(x,GtkTextTag)end type
-export type TextTagTable(atom x)return _(x,GtkTextTagTable)end type
-export type TextView(atom x)return _(x,GtkTextView)end type
-export type TreeModel(atom x)return _(x,GtkTreeModel)end type
-export type TreeSelection(atom x)return _(x,GtkTreeSelection)end type
-export type TreeViewColumn(atom x)return _(x,GtkTreeViewColumn)end type
-export type TreeView(atom x)return _(x,GtkTreeView)end type
-export type IconView(atom x)return _(x,GtkIconView)end type
-export type CellRendererText(atom x)return _(x,GtkCellRendererText)end type
-export type CellRendererAccel(atom x)return _(x,GtkCellRendererAccel)end type
-export type CellRendererCombo(atom x)return _(x,GtkCellRendererCombo)end type
-export type CellRendererPixbuf(atom x)return _(x,GtkCellRendererPixbuf)end type
-export type CellRendererProgress(atom x)return _(x,GtkCellRendererProgress)end type
-export type CellRendererSpin(atom x)return _(x,GtkCellRendererSpin)end type
-export type CellRendererToggle(atom x)return _(x,GtkCellRendererToggle)end type
-export type CellRendererSpinner(atom x)return _(x,GtkCellRendererSpinner)end type
-export type ListStore(atom x)return _(x,GtkListStore)end type
-export type TreeStore(atom x)return _(x,GtkTreeStore)end type
-export type ComboBox(atom x)return _(x,GtkComboBox)end type
-export type ComboBoxText(atom x)return _(x,GtkComboBoxText)end type
-export type Menu(atom x)return _(x,GtkMenu)end type
-export type MenuBar(atom x)return _(x,GtkMenuBar)end type
-export type MenuItem(atom x)return _(x,GtkMenuItem)end type
-export type RadioMenuItem(atom x)return _(x,GtkRadioMenuItem)end type
-export type CheckMenuItem(atom x)return _(x,GtkCheckMenuItem)end type
-export type SeparatorMenuItem(atom x)return _(x,GtkSeparatorMenuItem)end type
-export type Toolbar(atom x)return _(x,GtkToolbar)end type
-export type ToolItem(atom x)return _(x,GtkToolItem)end type
-export type ToolPalette(atom x)return _(x,GtkToolPalette)end type
-export type ToolButton(atom x)return _(x,GtkToolButton)end type
-export type MenuToolButton(atom x)return _(x,GtkMenuToolButton)end type
-export type ToggleToolButton(atom x)return _(x,GtkToggleToolButton)end type
-export type RadioToolButton(atom x)return _(x,GtkRadioToolButton)end type
-export type Popover(atom x)return _(x,GtkPopover)end type
-export type PopoverMenu(atom x)return _(x,GtkPopoverMenu)end type
-export type ColorChooser(atom x)return _(x,GtkColorChooser)end type
-export type ColorButton(atom x)return _(x,GtkColorButton)end type
-export type ColorChooserWidget(atom x)return _(x,GtkColorChooserWidget)end type
-export type ColorChooserDialog(atom x)return _(x,GtkColorChooserDialog)end type
-export type FileChooser(atom x)return _(x,GtkFileChooser)end type
-export type FileChooserButton(atom x)return _(x,GtkFileChooserButton)end type
-export type FileChooserDialog(atom x)return _(x,GtkFileChooserDialog)end type
-export type FileChooserWidget(atom x)return _(x,GtkFileChooserWidget)end type
-export type FileFilter(atom x)return _(x,GtkFileFilter)end type
-export type FontChooser(atom x)return _(x,GtkFontChooser)end type
-export type FontButton(atom x)return _(x,GtkFontButton)end type
-export type FontChooserWidget(atom x)return _(x,GtkFontChooserWidget)end type
-export type FontChooserDialog(atom x)return _(x,GtkFontChooserDialog)end type
-export type PlacesSidebar(atom x)return _(x,GtkPlacesSidebar)end type
-export type Frame(atom x)return _(x,GtkFrame)end type
-export type Scrollbar(atom x)return _(x,GtkScrollbar)end type
-export type ScrolledWindow(atom x)return _(x,GtkScrolledWindow)end type
-export type Adjustment(atom x)return _(x,GtkAdjustment)end type
-export type Calendar(atom x)return _(x,GtkCalendar)end type
-export type GLArea(atom x)return _(x,GtkGLArea)end type
-export type Tooltip(atom x)return _(x,GtkTooltip)end type
-export type Viewport(atom x)return _(x,GtkViewport)end type
-export type Widget(atom x)return _(x,GtkWidget)end type
-export type Container(atom x)return _(x,GtkContainer)end type
-export type Bin(atom x)return _(x,GtkBin)end type
-export type Range(atom x)return _(x,GtkRange)end type
-export type PrintContext(atom x)return _(x,GtkPrintContext)end type
-export type ListBoxRow(atom x)return _(x,GtkListBoxRow)end type
-export type FontFamily(atom x)return _(x,PangoFontFamily)end type
-export type FontDescription(atom x)return _(x,PangoFontDescription)end type
-export type AppChooserDialog(atom x)return _(x,GtkAppChooserDialog)end type
-export type PaperSize(atom x)return _(x,GtkPaperSize)end type
+-----------------------------------------------------------------------------
+export function gtk_str_func(object name, object params={}, object values={})
+-----------------------------------------------------------------------------
+-- syntax: same as above, except a string result is returned, so no 
+-- conversion from a pointer is needed;
+    for i = 1 to length(params) do
+        if string(values[i]) then
+            values[i] = allocate_string(values[i])
+        end if
+    end for
+    atom fn = define_func(name,params,P)
+    object result
+    if fn > 0 then
+		if length(params) > 0 then
+		    result = c_func(fn,values)
+		else
+		    result = c_func(fn,{})
+		end if
+		if result > 0 then
+			return peek_string(result)
+		end if
+	end if
+    return "unknown"
+end function
 
-----------------------
+--------------------------------------------------------------------------
+export procedure gtk_proc(object name, object params={}, object values={})
+--------------------------------------------------------------------------
+-- syntax: same as above, but no value is returned, used to call GTK procs
+atom fn
+    if string(values) then values = {values} end if
+    for i = 1 to length(params) do
+        if not atom(values) and string(values[i]) then 
+            values[i] = allocate_string(values[i]) 
+        end if
+    end for
+   
+    if length(params) = 0 then
+	fn = define_proc(name)
+	if fn > 0 then
+	    c_proc(fn,{})
+	end if
+    else
+	fn = define_proc(name,params)
+	if fn > 0 then
+	    if atom(values) then values = {values} end if
+	    c_proc(fn,values)
+	end if
+    end if
+
+end procedure
+   
+export function define_proc(object name, object params={})
+atom x
+	ifdef WINDOWS then
+		for i = 1 to length(LIBS) do
+			x = define_c_proc(LIBS[i],name,params)
+			if x > 0 then
+			    return x end if
+		end for
+		ifdef GTK_ERR then
+		    display("? Proc []",{name})
+		end ifdef
+		return -1
+	end ifdef
+	return define_c_proc(LIBS[1],name,params)
+end function
+
+export function define_func(object name, object params={}, object values=P)
+atom x
+	ifdef WINDOWS then
+		for i = 1 to length(LIBS) do
+			x = define_c_func(LIBS[i],name,params,values)
+			if x > 0  then 
+			  --  display("Func [] []",{name,LIBS[i]})
+			    return x end if
+		end for
+		ifdef GTK_ERR then
+		    display("? Func []",{name})
+		end ifdef
+		return -1
+	end ifdef
+	return define_c_func(LIBS[1],name,params,values)
+end function
+
+-------------------------
 -- © 2015 by Irv Mullins
 -------------------------

@@ -1,7 +1,7 @@
 ------------------
 namespace printer
 ------------------
-constant version = "4.8.5"
+constant version = "4.8.8"
 
 include GtkEngine.e
 include std/datetime.e
@@ -16,7 +16,7 @@ include std/datetime.e
 -- The following exported variables can be modified before calling the 
 -- print routines;
 
-public object header = "<b><u>[1]</u></b>\n\n"
+public object header = "[1]\n"
 
 public object subheader = 0
 
@@ -32,11 +32,11 @@ export integer
     units = GTK_UNIT_INCH,
     use_line_numbers = TRUE,
     use_color = TRUE, -- print eu comments in red if true
-    lines_per_page = 58,
+    lines_per_page = 60,
     wrap_at = 0,
     track_status = TRUE, 
     show_progress = TRUE, -- enable the built-in progressbar
-    embed_page_setup = TRUE,
+    embed_page_setup = FALSE,
     orientation = 0,
     order = 0, 
     confirm = FALSE,
@@ -66,7 +66,7 @@ export atom
 
 export object
     name = 0,
-    font = "Courier 8",
+    font = "Courier New 8",
     jobname = 0,
     settings_file = 0,
     setup_file = 0,
@@ -108,7 +108,13 @@ export atom
 
 -- use date and time formats in std/datetime.e;
 export sequence date_format = "%A, %B %d %Y %l:%M %p"
-export sequence user = proper(getenv("USER"))
+
+sequence user
+ifdef WINDOWS then
+    user = "User"
+elsedef
+    user = proper(getenv("USER"))
+end ifdef
 
 -- for local use;
 atom fontdesc
@@ -125,7 +131,7 @@ if string(f) and string(x) then
     page_title = f
     file_name = canonical_path(x)
     text = read_file(file_name)
---    text = process_text(text)
+    text = process_text(text)
     timestamp = file_timestamp(file_name)
     filesize = file_length(file_name)
     short_name = filebase(file_name)
@@ -141,7 +147,7 @@ if string(f) and atom(x) and x = 0 then
     short_name = filebase(f)
     page_title = filename(f)
     text = read_file(f)
- --   text = process_text(text)
+    text = process_text(text)
     setup_printer()
     return 1
 end if
@@ -151,14 +157,14 @@ if string(f) and atom(x) and x < 100 then
     short_name = f
     file_name = f
     text = read_file(x)
- --   text = process_text(text)
+    text = process_text(text)
     setup_printer()
     return 1
 end if
 
 if atom(f) and atom(x) and x < 101 then 
     text = read_file(x)
---    text = process_text(text)
+    text = process_text(text)
     if atom(file_name) then
         file_name = ""
     end if
@@ -179,7 +185,7 @@ if atom(f) and atom(x) then
     short_name = filebase(x)
     page_title = filename(x)
     text = read_file(x)
---    text = process_text(text)
+    text = process_text(text)
     setup_printer()
     return 1
 end if
@@ -193,10 +199,16 @@ export function PrintText(object f=0, object x=0)
 ------------------------------------------------------------------------
 
 if string(f) and string(x) then
-    page_title = f
---    text = process_text(x)
+    page_title = f 
+    text = process_text(x) 
     setup_printer()
     return 1
+end if
+
+if atom(f) and string(x) then
+	text = process_text(x)
+	setup_printer()
+	return 1
 end if
 
 if atom(f) and  atom(x) then
@@ -204,7 +216,7 @@ if atom(f) and  atom(x) then
         page_title = ""
     end if
     text = unpack(x)
---    text = process_text(text)
+    text = process_text(text)
     setup_printer()
     return 1
 end if
@@ -220,8 +232,8 @@ sequence status_string
 export function show_status(atom op)
 -----------------------------------------------
 atom 
-    fn1 = define_c_func(GTK,"gtk_print_operation_get_status",{P},I),
-    fn2 = define_c_func(GTK,"gtk_print_operation_get_status_string",{P},S)
+    fn1 = define_func("gtk_print_operation_get_status",{P},I),
+    fn2 = define_func("gtk_print_operation_get_status_string",{P},S)
 
 status_code = c_func(fn1,{op}) 
 status_string = peek_string(c_func(fn2,{op}))
@@ -240,12 +252,9 @@ end function
 ------------------------------------------------------
 export function begin_print(atom op, atom context)
 ------------------------------------------------------
+ifdef PRINT then display("Begin printing [] pages ",length(text)) end ifdef
 
-ifdef PRINT then 
-    display("Printer font []\n",{font})
-    display("Begin printing [] pages ",length(text)) 
-end ifdef
-
+fontdesc = create(PangoFontDescription,font)
 -- Some settings may have been changed by the user in the
 -- setup dialog, so we should retrieve any we are interested
 -- in at this point, before printing starts;
@@ -270,7 +279,7 @@ end function
 ----------------------------------------------------------------------------
 export function draw_page(atom op, atom context, integer pg, atom data)
 ----------------------------------------------------------------------------
-atom fn6 = define_c_func(GTK,"gtk_print_context_get_cairo_context",{P},P)
+atom fn6 = define_func("gtk_print_context_get_cairo_context",{P},P)
 
 atom cr = c_func(fn6,{context})
 atom pl = create(PangoCairoLayout,cr)
@@ -296,6 +305,9 @@ object details = {
     }
 
 object page
+
+if atom(header) then header = "<b><u>[1]</u> page [5] of [6]</b>\n\n" end if
+
 if pg = 1 or atom(subheader) then
     page = text:format(header,details) 
     & flatten(text[pg])
@@ -350,13 +362,7 @@ for i = 1 to length(txt) do -- replace chars which will confuse markup
 
 end for
 
-fontdesc = create(PangoFontDescription,font)
-atom s = gtk_func("pango_font_description_get_size",{P},{fontdesc})
-integer x = gtk_func("pango_font_description_get_size_is_absolute",{P},{fontdesc})
-display("Font [] Size [] []",{font,s,x})
-
 txt = breakup(txt,lines_per_page)
-
 if n_pages = 0 then -- no selection
     n_pages = length(txt)
 end if
@@ -376,11 +382,11 @@ end function
 export function setup_printer()
 ---------------------------------------------------------------
 atom _size = create(GtkPaperSize,paper_name)
-atom err = allocate(8) err = 0
+atom err = allocate(16) err = 0
 object results = 0
 
-atom fn7 = define_c_func(GTK,"gtk_print_operation_run",{P,I,P,P},I)
-atom fn8 = define_c_func(GTK,"gtk_print_run_page_setup_dialog",{P,P,P},P)
+atom fn7 = define_func("gtk_print_operation_run",{P,I,P,P},I)
+atom fn8 = define_func("gtk_print_run_page_setup_dialog",{P,P,P},P)
 
     set(settings,"paper size",_size,units)
     set(settings,"n copies",n_copies)
@@ -438,11 +444,6 @@ atom printop = create(GtkPrintOperation)
     connect(printop,"ready",signal_ready)
     connect(printop,"got-page-size",signal_got_page_size)
 
-    PaperSize x = get(setup,"paper size")
-    display("Paper []",{get(x,"name")})
-
-text = process_text(text)
-
     c_func(fn7,{printop,action,parent,err}) -- start the print process;
     
     if string(settings_file) then
@@ -453,18 +454,19 @@ text = process_text(text)
     end if
 
 object jobname = get(printop,"job name")
-
     if confirm then 
         if action =  GTK_PRINT_OPERATION_ACTION_EXPORT then
-            Info(0,"PDF Written",
+            if Question(0,"PDF Written",
                 sprintf("%s\n<small>Folder: %s</small>",
                     {filename(export_file),pathname(export_file)}),
-                sprintf("%s\nStatus: %d\n%s",{jobname,status_code,status_string})
-                ,,,,,"cups")
+                sprintf("%s\nStatus: %d\n%s\nClick Yes to view",{jobname,status_code,status_string})
+                ,,,"cups") then
+            show_uri(export_file)
+            end if
         else
             Info(0,"Print Job",jobname,
                 sprintf("Status: %d %s",{status_code,status_string})
-                ,,,,,"cups")
+                ,,"cups")
         end if
     end if
 
@@ -476,6 +478,8 @@ object jobname = get(printop,"job name")
 return 1
 end function
 
+header = "<b><u>[1]</u></b>\n\n"
+
 -------------------------
--- © 2014 by Irv Mullins
+-- © 2015 by Irv Mullins
 -------------------------

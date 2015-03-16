@@ -1,7 +1,7 @@
 ----------------
 namespace enums
 ----------------
-export constant version = "4.8.6"
+export constant version = "4.9.0"
 
 public include std/io.e
 public include std/os.e
@@ -17,7 +17,6 @@ public include std/filesys.e
 public include std/machine.e
 public include std/sequence.e
 public include std/serialize.e
---public include std/net/url.e
 
 public constant LGPL = read_file(canonical_path("~/demos/license.txt"))
 
@@ -26,34 +25,35 @@ public constant LGPL = read_file(canonical_path("~/demos/license.txt"))
 -- GtkListStores or GtkTreeStores
 ---------------------------------------------------------------------------------
 public enum
-    gINT   = 24, gDBL = 60, gFLT = 56,
+    gCHAR = 12, gUCHAR = 16, gINT   = 24, gUINT = 28, 
+    gLONG = 32, gULONG = 36, gINT64 = 40, gUINT64 = 44, 
+    gDBL = 60, gFLT = 56,
     gSTR   = 64, gPTR = 68, gBOOL= 20 
 -- plus gPIX and gCOMBO, which must be defined at run-time 
 -- by GtkEngine.e ... don't ask me why!
 
--- here's a complete list of GObject types;
-public enum
+-- here's a list of GObject types;
+public enum type OBJECT by 4
     void = 4,
-    GInterface = 8,
-    gchar = 12,
-    guchar = 16,
-    gboolean = 20,
-    gint = 24,
-    guint = 28,
-    glong = 32,
-    gulong = 36,
-    gint64 = 40,
-    guint64 = 44,
-    GEnum = 48,
-    GFlags = 52,
-    gfloat = 56,
-    gdouble = 60,
-    gchararray = 64,
-    gpointer = 68,
-    GBoxed = 72,
-    GParam = 76,
-    --GObject = 80,
-    GVariant = 84
+    GInterface,
+    gchar,
+    guchar,
+    gboolean,
+    gint,
+    guint,
+    glong,
+    gulong,
+    gint64,
+    guint64,
+    GEnum,
+    GFlags,
+    gfloat,
+    gdouble,
+    gchararray,
+    gpointer,
+    GBoxed,
+    GParam
+end type
 
 ------------------------------------------------------------------------
 -- These are the widget names used to create GTK widgets;
@@ -63,6 +63,7 @@ public enum
 ------------------------------------------------------------------------
 public enum type WIDGET
     GObject,
+    GActionGroup,
     GAppInfo,
     GEmblem,
     GEmblemedIcon,
@@ -99,6 +100,7 @@ public enum type WIDGET
     GdkFrameClock,
     GdkFrameTimings,
     GdkGLContext,
+    GdkGLProfile,
     GdkKeymap,
     GdkKeyval,
     GdkPixbuf,
@@ -128,6 +130,8 @@ public enum type WIDGET
     GtkAspectFrame,
     GtkAssistant,
     GtkBin,
+    GtkBindingEntry,
+    GtkBindingSet,
     GtkBox,
     GtkBuildable,
     GtkBuilder,
@@ -203,7 +207,7 @@ public enum type WIDGET
     GtkIconTheme,
     GtkIconView,
     GtkImage,
-    GtkImageMenuItem,
+	GtkImageMenuItem,
     GtkInfoBar,
     GtkInvisible,
     GtkLabel,
@@ -222,6 +226,7 @@ public enum type WIDGET
     GtkMenuToolButton,
     GtkMessageDialog,
     GtkMisc,
+    GtkModelButton,
     GtkMountOperation,
     GtkNotebook,
     GtkNumerableIcon,
@@ -443,7 +448,7 @@ public enum by 2 -- Cursors:
   GDK_CURSOR_IS_PIXMAP = -1
   
 public enum 
--- Licenses
+
   GTK_LICENSE_UNKNOWN = 0,
   GTK_LICENSE_CUSTOM,
   GTK_LICENSE_GPL_2_0,
@@ -454,12 +459,10 @@ public enum
   GTK_LICENSE_MIT_X11,
   GTK_LICENSE_ARTISTIC,
   
--- Accels
   GTK_ACCEL_VISIBLE = 1,
   GTK_ACCEL_LOCKED  = 2,
   GTK_ACCEL_MASK    = 7,
 
--- Alignment
   GTK_ALIGN_FILL = 0,
   GTK_ALIGN_START,
   GTK_ALIGN_END,
@@ -482,7 +485,7 @@ public enum
   GTK_ANCHOR_SE,
   GTK_ANCHOR_W,
   GTK_ANCHOR_E,
-    
+   
   GTK_APPLICATION_INHIBIT_LOGOUT = 1,
   GTK_APPLICATION_INHIBIT_SWITCH = 2,
   GTK_APPLICATION_INHIBIT_SUSPEND = 4,
@@ -496,7 +499,7 @@ public enum
   G_APPLICATION_SEND_ENVIRONMENT = 16,
   G_APPLICATION_NON_UNIQUE = 32,
  
--- arrows (deprecated)  
+-- arrows are deprecated  
   GTK_ARROWS_BOTH = 0,
   GTK_ARROWS_START,
   GTK_ARROWS_END,
@@ -521,7 +524,7 @@ public enum
   GTK_BASELINE_POSITION_TOP = 0,
   GTK_BASELINE_POSITION_CENTER,
   GTK_BASELINE_POSITION_BOTTOM,
-  
+
   GTK_BORDER_STYLE_NONE = 0,
   GTK_BORDER_STYLE_SOLID,
   GTK_BORDER_STYLE_INSET,
@@ -533,6 +536,10 @@ public enum
   GTK_BORDER_STYLE_GROOVE,
   GTK_BORDER_STYLE_RIDGE,
 
+  GTK_BUTTON_ROLE_NORMAL = 0,
+  GTK_BUTTON_ROLE_CHECK,
+  GTK_BUTTON_ROLE_RADIO,
+  
   GTK_BUTTONS_NONE = 0,
   GTK_BUTTONS_OK,
   GTK_BUTTONS_CLOSE,
@@ -610,8 +617,7 @@ public enum
   GTK_ICON_LOOKUP_USE_BUILTIN      =  4,
   GTK_ICON_LOOKUP_GENERIC_FALLBACK =  8,
   GTK_ICON_LOOKUP_FORCE_SIZE       = 16,
-  
--- GtkImageTypes
+
   GTK_IMAGE_EMPTY = 0,
   GTK_IMAGE_PIXBUF,
   GTK_IMAGE_STOCK,
@@ -717,31 +723,47 @@ public enum
   LEFT = 0, --aliases;
   RIGHT,
   TOP,
-  BOTTOM,
-
+  BOTTOM
+  
+public enum by * 2
   GTK_PRINT_CAPABILITY_PAGE_SET = 0,
   GTK_PRINT_CAPABILITY_COPIES   = 2,
-  GTK_PRINT_CAPABILITY_COLLATE  = 4,
-  GTK_PRINT_CAPABILITY_REVERSE  = 8,
-  GTK_PRINT_CAPABILITY_SCALE    = 16,
-  GTK_PRINT_CAPABILITY_GENERATE_PDF = 32,
-  GTK_PRINT_CAPABILITY_GENERATE_PS  = 64,
-  GTK_PRINT_CAPABILITY_PREVIEW      = 128,
-  GTK_PRINT_CAPABILITY_NUMBER_UP    = 256,
-  GTK_PRINT_CAPABILITY_NUMBER_UP_LAYOUT = 512,
+  GTK_PRINT_CAPABILITY_COLLATE,
+  GTK_PRINT_CAPABILITY_REVERSE,
+  GTK_PRINT_CAPABILITY_SCALE,
+  GTK_PRINT_CAPABILITY_GENERATE_PDF,
+  GTK_PRINT_CAPABILITY_GENERATE_PS,
+  GTK_PRINT_CAPABILITY_PREVIEW,
+  GTK_PRINT_CAPABILITY_NUMBER_UP,
+  GTK_PRINT_CAPABILITY_NUMBER_UP_LAYOUT,
   
+  GTK_REGION_EVEN   = 0,
+  GTK_REGION_ODD    = 1,
+  GTK_REGION_FIRST,
+  GTK_REGION_LAST,
+  GTK_REGION_ONLY,
+  GTK_REGION_SORTED,
+  
+  GTK_STATE_FLAG_NORMAL = 0,
+  GTK_STATE_FLAG_ACTIVE = 1,
+  GTK_STATE_FLAG_PRELIGHT,
+  GTK_STATE_FLAG_SELECTED,
+  GTK_STATE_FLAG_INSENSITIVE,
+  GTK_STATE_FLAG_INCONSISTENT,
+  GTK_STATE_FLAG_FOCUSED,
+  GTK_STATE_FLAG_BACKDROP,
+  GTK_STATE_FLAG_DIR_LTR ,
+  GTK_STATE_FLAG_DIR_RTL,
+  GTK_STATE_FLAG_LINK,
+  GTK_STATE_FLAG_VISITED,
+  GTK_STATE_FLAG_CHECKED 
+  
+public enum  
   GTK_PROGRESS_LEFT_TO_RIGHT = 0,
   GTK_PROGRESS_RIGHT_TO_LEFT,
   GTK_PROGRESS_BOTTOM_TO_TOP,
   GTK_PROGRESS_TOP_TO_BOTTOM,
-  
-  GTK_REGION_EVEN   = 0,
-  GTK_REGION_ODD    = 1,
-  GTK_REGION_FIRST  = 2,
-  GTK_REGION_LAST   = 4,
-  GTK_REGION_ONLY   = 8,
-  GTK_REGION_SORTED = 16,
-  
+
   GTK_RELIEF_NORMAL = 0,
   GTK_RELIEF_HALF,
   GTK_RELIEF_NONE,
@@ -799,21 +821,6 @@ public enum
   GTK_STATE_INSENSITIVE,
   GTK_STATE_INCONSISTENT,
   GTK_STATE_FOCUSED,
-
-  GTK_STATE_FLAG_NORMAL = 0,
-  GTK_STATE_FLAG_ACTIVE = 1,
-  GTK_STATE_FLAG_PRELIGHT = 2,
-  GTK_STATE_FLAG_SELECTED = 4,
-  GTK_STATE_FLAG_INSENSITIVE = 8,
-  GTK_STATE_FLAG_INCONSISTENT = 16,
-  GTK_STATE_FLAG_FOCUSED = 32,
-  GTK_STATE_FLAG_BACKDROP = 64,
-  GTK_STATE_FLAG_DIR_LTR = 128,
-  GTK_STATE_FLAG_DIR_RTL = 256,
-  GTK_STATE_FLAG_LINK = 512,
-  GTK_STATE_FLAG_VISITED = 1024,
-  GTK_STATE_FLAG_CHECKED = 2048,
-  
   GTK_STATE_PRESSED = 1,
   GTK_STATE_MOUSEOVER,
 
@@ -1277,7 +1284,148 @@ public enum ICON_PIXBUF = 1,
      ICON_BASE_SIZE,
      ICON_BASE_SCALE,
      ICON_IS_SYMBOLIC
-     
+  
+function _(atom x, integer t)
+if x = 0 then
+	crash("Invalid type - pointer is null!")
+end if
+init(t) register(x,t)
+return x
+end function
+
+------------------------------------------------------------------------
+-- GTK Widget Types -- used rarely, with caution
+------------------------------------------------------------------------
+global type Object(atom x)return _(x,GObject)end type
+global type Window(atom x)return _(x,GtkWindow)end type
+global type Dialog(atom x)return _(x,GtkDialog)end type
+global type AboutDialog(atom x)return _(x,GtkAboutDialog)end type
+global type Assistant(atom x)return _(x,GtkAssistant)end type
+global type Box(atom x)return _(x,GtkBox)end type
+global type Grid(atom x)return _(x,GtkGrid)end type
+global type Revealer(atom x)return _(x,GtkRevealer)end type
+global type ListBox(atom x)return _(x,GtkListBox)end type
+global type FlowBox(atom x)return _(x,GtkFlowBox)end type
+global type Stack(atom x)return _(x,GtkStack)end type
+global type StackSwitcher(atom x)return _(x,GtkStackSwitcher)end type
+global type Sidebar(atom x)return _(x,GtkSidebar)end type
+global type ActionBar(atom x)return _(x,GtkActionBar)end type
+global type HeaderBar(atom x)return _(x,GtkHeaderBar)end type
+global type Overlay(atom x)return _(x,GtkOverlay)end type
+global type ButtonBox(atom x)return _(x,GtkButtonBox)end type
+global type Paned(atom x)return _(x,GtkPaned)end type
+global type Layout(atom x)return _(x,GtkLayout)end type
+global type Notebook(atom x)return _(x,GtkNotebook)end type
+global type Expander(atom x)return _(x,GtkExpander)end type
+global type AspectFrame(atom x)return _(x,GtkAspectFrame)end type
+global type Label(atom x)return _(x,GtkLabel)end type
+global type Image(atom x)return _(x,GtkImage)end type
+global type Spinner(atom x)return _(x,GtkSpinner)end type
+global type InfoBar(atom x)return _(x,GtkInfoBar)end type
+global type ProgressBar(atom x)return _(x,GtkProgressBar)end type
+global type LevelBar(atom x)return _(x,GtkLevelBar)end type
+global type Statusbar(atom x)return _(x,GtkStatusbar)end type
+global type AccelLabel(atom x)return _(x,GtkAccelLabel)end type
+global type Button(atom x)return _(x,GtkButton)end type
+global type CheckButton(atom x)return _(x,GtkCheckButton)end type
+global type RadioButton(atom x)return _(x,GtkRadioButton)end type
+global type ToggleButton(atom x)return _(x,GtkToggleButton)end type
+global type LinkButton(atom x)return _(x,GtkLinkButton)end type
+global type MenuButton(atom x)return _(x,GtkMenuButton)end type
+global type Switch(atom x)return _(x,GtkSwitch)end type
+global type ScaleButton(atom x)return _(x,GtkScaleButton)end type
+global type VolumeButton(atom x)return _(x,GtkVolumeButton)end type
+global type LockButton(atom x)return _(x,GtkLockButton)end type
+global type Entry(atom x)return _(x,GtkEntry)end type
+global type EntryBuffer(atom x)return _(x,GtkEntryBuffer)end type
+global type EntryCompletion(atom x)return _(x,GtkEntryCompletion)end type
+global type Scale(atom x)return _(x,GtkScale)end type
+global type SpinButton(atom x)return _(x,GtkSpinButton)end type
+global type SearchEntry(atom x)return _(x,GtkSearchEntry)end type
+global type SearchBar(atom x)return _(x,GtkSearchBar)end type
+global type Editable(atom x)return _(x,GtkEditable)end type
+global type TextMark(atom x)return _(x,GtkTextMark)end type
+global type TextBuffer(atom x)return _(x,GtkTextBuffer)end type
+global type TextTag(atom x)return _(x,GtkTextTag)end type
+global type TextTagTable(atom x)return _(x,GtkTextTagTable)end type
+global type TextView(atom x)return _(x,GtkTextView)end type
+global type TreeModel(atom x)return _(x,GtkTreeModel)end type
+global type TreeModelSort(atom x)return _(x,GtkTreeModelSort)end type
+global type TreeSelection(atom x)return _(x,GtkTreeSelection)end type
+global type TreeViewColumn(atom x)return _(x,GtkTreeViewColumn)end type
+global type TreeView(atom x)return _(x,GtkTreeView)end type
+global type IconView(atom x)return _(x,GtkIconView)end type
+global type CellRendererText(atom x)return _(x,GtkCellRendererText)end type
+global type CellRendererAccel(atom x)return _(x,GtkCellRendererAccel)end type
+global type CellRendererCombo(atom x)return _(x,GtkCellRendererCombo)end type
+global type CellRendererPixbuf(atom x)return _(x,GtkCellRendererPixbuf)end type
+global type CellRendererProgress(atom x)return _(x,GtkCellRendererProgress)end type
+global type CellRendererSpin(atom x)return _(x,GtkCellRendererSpin)end type
+global type CellRendererToggle(atom x)return _(x,GtkCellRendererToggle)end type
+global type CellRendererSpinner(atom x)return _(x,GtkCellRendererSpinner)end type
+global type ListStore(atom x)return _(x,GtkListStore)end type
+global type TreeStore(atom x)return _(x,GtkTreeStore)end type
+global type ComboBox(atom x)return _(x,GtkComboBox)end type
+global type ComboBoxText(atom x)return _(x,GtkComboBoxText)end type
+global type Menu(atom x)return _(x,GtkMenu)end type
+global type MenuBar(atom x)return _(x,GtkMenuBar)end type
+global type MenuItem(atom x)return _(x,GtkMenuItem)end type
+global type RadioMenuItem(atom x)return _(x,GtkRadioMenuItem)end type
+global type CheckMenuItem(atom x)return _(x,GtkCheckMenuItem)end type
+global type SeparatorMenuItem(atom x)return _(x,GtkSeparatorMenuItem)end type
+global type Toolbar(atom x)return _(x,GtkToolbar)end type
+global type ToolItem(atom x)return _(x,GtkToolItem)end type
+global type ToolPalette(atom x)return _(x,GtkToolPalette)end type
+global type ToolButton(atom x)return _(x,GtkToolButton)end type
+global type MenuToolButton(atom x)return _(x,GtkMenuToolButton)end type
+global type ToggleToolButton(atom x)return _(x,GtkToggleToolButton)end type
+global type RadioToolButton(atom x)return _(x,GtkRadioToolButton)end type
+global type Popover(atom x)return _(x,GtkPopover)end type
+global type PopoverMenu(atom x)return _(x,GtkPopoverMenu)end type
+global type ColorChooser(atom x)return _(x,GtkColorChooser)end type
+global type ColorButton(atom x)return _(x,GtkColorButton)end type
+global type ColorChooserWidget(atom x)return _(x,GtkColorChooserWidget)end type
+global type ColorChooserDialog(atom x)return _(x,GtkColorChooserDialog)end type
+global type FileChooser(atom x)return _(x,GtkFileChooser)end type
+global type FileChooserButton(atom x)return _(x,GtkFileChooserButton)end type
+global type FileChooserDialog(atom x)return _(x,GtkFileChooserDialog)end type
+global type FileChooserWidget(atom x)return _(x,GtkFileChooserWidget)end type
+global type FileFilter(atom x)return _(x,GtkFileFilter)end type
+global type FontChooser(atom x)return _(x,GtkFontChooser)end type
+global type FontButton(atom x)return _(x,GtkFontButton)end type
+global type FontChooserWidget(atom x)return _(x,GtkFontChooserWidget)end type
+global type FontChooserDialog(atom x)return _(x,GtkFontChooserDialog)end type
+global type PlacesSidebar(atom x)return _(x,GtkPlacesSidebar)end type
+global type Frame(atom x)return _(x,GtkFrame)end type
+global type Scrollbar(atom x)return _(x,GtkScrollbar)end type
+global type ScrolledWindow(atom x)return _(x,GtkScrolledWindow)end type
+global type Adjustment(atom x)return _(x,GtkAdjustment)end type
+global type Calendar(atom x)return _(x,GtkCalendar)end type
+global type GLArea(atom x)return _(x,GtkGLArea)end type
+global type Tooltip(atom x)return _(x,GtkTooltip)end type
+global type Viewport(atom x)return _(x,GtkViewport)end type
+global type Widget(atom x)return _(x,GtkWidget)end type
+global type Container(atom x)return _(x,GtkContainer)end type
+global type Bin(atom x)return _(x,GtkBin)end type
+global type Range(atom x)return _(x,GtkRange)end type
+global type PrintContext(atom x)return _(x,GtkPrintContext)end type
+global type ListBoxRow(atom x)return _(x,GtkListBoxRow)end type
+global type FontFamily(atom x)return _(x,PangoFontFamily)end type
+global type FontDescription(atom x)return _(x,PangoFontDescription)end type
+global type AppChooserDialog(atom x)return _(x,GtkAppChooserDialog)end type
+global type PaperSize(atom x)return _(x,GtkPaperSize)end type
+global type DrawingArea(atom x)return _(x,GtkDrawingArea)end type
+global type RecentChooserDialog(atom x)return _(x,GtkRecentChooserDialog)end type
+global type RecentChooserWidget(atom x)return _(x,GtkRecentChooserWidget)end type
+global type RecentChooser(atom x)return _(x,GtkRecentChooser)end type
+global type RecentFilter(atom x)return _(x,GtkRecentFilter)end type
+global type RecentChooserMenu(atom x)return _(x,GtkRecentChooserMenu)end type
+global type EventBox(atom x)return _(x,GtkEventBox)end type
+global type TreeModelFilter(atom x)return _(x,GtkTreeModelFilter)end type
+global type Application(atom x)return _(x,GtkApplication)end type
+global type ApplicationWindow(atom x)return _(x,GtkApplicationWindow)end type
+global type Pixbuf(atom x)return _(x,GdkPixbuf)end type
+global type IconTheme(atom x)return _(x,GtkIconTheme)end type   
 -------------------------
--- © 2014 by Irv Mullins
+-- © 2015 by Irv Mullins
 -------------------------
