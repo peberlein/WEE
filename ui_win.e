@@ -4,6 +4,7 @@ include window.ew
 include wee.exw
 include std/text.e
 include std/filesys.e
+include std/sort.e
 
 -- MenuItem constants
 constant 
@@ -27,20 +28,19 @@ constant
     Search_Replace = 302,
     View_Subs = 401,
     View_Error = 402,
-    View_Font = 403,
     View_Completions = 404,
     View_Declaration = 405,
     View_GoBack = 406,
     View_SubArgs = 407,
-    View_LineNumbers = 408,
     Run_Start = 501,
-    Run_Intepreter = 502,
-    Run_Intepreter_Default = 511,
-    Run_Intepreter_EUIW = 512,
-    Run_Intepreter_EUI = 513,
-    Run_Intepreter_EXW = 514,
-    Run_Intepreter_EX = 515,
+    Run_WithArgs = 502,
+    Run_Arguments = 503,
+    Run_Bind = 504,
+    Run_Translate = 505,
     Options_Font = 601,
+    Options_LineNumbers = 602,
+    Options_SortedSubs = 603,
+    Options_Colors = 604,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -87,6 +87,7 @@ constant
 
 atom captionFont, smCaptionFont, menuFont, statusFont, messageFont
 
+constant cmdline = command_line()
 
 
 
@@ -272,12 +273,13 @@ end procedure
 
 constant 
     DialogListID = 1000,
-    DialogLabelID = 1001
+    DialogLabelID = 1001,
+    DialogEditID = 1002
 sequence subs
 
 function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     atom junk, hList, pos
-    sequence text, word
+    sequence text, word, tmp
 
     --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
 
@@ -291,12 +293,19 @@ function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
         text = get_edit_text()
         pos = get_pos()
         word = word_pos(text, pos)
-        subs = get_subroutines(parse(text, file_name))
+        tmp = get_subroutines(parse(text, file_name))
+        subs = repeat(0, floor(length(tmp)/2))
+        for i = 1 to length(subs) do
+            subs[i] = {tmp[i*2-1], tmp[i*2]}
+        end for
+        if sorted_subs then
+            subs = sort(subs)
+        end if
         
-        for i = 1 to length(subs) by 2 do
-            junk = c_func(SendMessage, {hList, LB_ADDSTRING, 0, alloc_string(subs[i])})
-            if equal(word[1], subs[i]) then
-                junk = c_func(SendMessage, {hList, LB_SETCURSEL, floor((i-1)/2), 0})
+        for i = 1 to length(subs) do
+            junk = c_func(SendMessage, {hList, LB_ADDSTRING, 0, alloc_string(subs[i][1])})
+            if equal(word[1], subs[i][1]) then
+                junk = c_func(SendMessage, {hList, LB_SETCURSEL, i-1, 0})
             end if
         end for
         free_strings()
@@ -304,10 +313,10 @@ function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     elsif iMsg = WM_COMMAND then
         if LOWORD(wParam) = IDOK then
             hList = c_func(GetDlgItem, {hdlg, DialogListID})
-            pos = c_func(SendMessage, {hList, LB_GETCURSEL, 0, 0})*2+1
+            pos = c_func(SendMessage, {hList, LB_GETCURSEL, 0, 0})+1
             if pos >= 1 and pos <= length(subs) then
-              word = subs[pos]
-              pos = subs[pos+1]-1
+              word = subs[pos][1]
+              pos = subs[pos][2]-1
               --printf(1, "%s: pos=%d line=%d\n", {word, pos, 
               --    c_func(SendMessage, {hedit, SCI_LINEFROMPOSITION, pos, 0})})
               junk = c_func(SendMessage, {hedit, SCI_SETSEL, pos, pos+length(word)})
@@ -575,18 +584,22 @@ global procedure ui_view_error()
 end procedure
 
 global procedure ui_show_help(sequence html)
-    
+    -- TODO
 end procedure
 
 global procedure ui_show_uri(sequence uri)
     atom result
+    -- TODO: get default browser from
+    --       HKEY_LOCAL_MACHINE\SOFTWARE\Classes\http\shell\open\command 
+    -- note: just opening the uri won't work, since shellexecute will
+    -- strip off any #anchor text, so using iexplore.exe for now
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
+	alloc_string("iexplore.exe"), 
 	alloc_string(uri),
 	NULL,
-	NULL,
-	1})
-    
+	SW_SHOWNORMAL})
+    free_strings()
 end procedure
 
 
@@ -640,36 +653,141 @@ procedure process_find(atom struc)
 
 end procedure
 
-constant cmdline = command_line()
 
-procedure run_start()
+function RunArgsProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
+    atom junk, hEdit, len, buf
+
+    --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
+
+    if iMsg = WM_INITDIALOG then
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
+                      WM_SETFONT, captionFont, 0})
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDCANCEL}), 
+                      WM_SETFONT, captionFont, 0})
+        hEdit = c_func(GetDlgItem, {hdlg, DialogEditID})
+        junk = c_func(SendMessage, {hEdit, WM_SETFONT, messageFont, 0})
+
+	junk = c_func(SendMessage, {hEdit, WM_SETTEXT, 0, alloc_string(get_tab_arguments())})
+        junk = c_func(SetFocus, {hEdit})
+
+    elsif iMsg = WM_COMMAND then
+        if LOWORD(wParam) = IDOK then
+            hEdit = c_func(GetDlgItem, {hdlg, DialogEditID})
+            len = 1 + c_func(SendMessage, {hEdit, WM_GETTEXTLENGTH, 0, 0})
+            buf = allocate(len)
+            junk = c_func(SendMessage, {hEdit, WM_GETTEXT, len, buf})
+            set_tab_arguments(peek_string(buf))
+            free(buf)
+            junk = c_func(EndDialog, {hdlg, 1})
+            return 1
+        elsif LOWORD(wParam) = IDCANCEL then
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+        end if
+
+    elsif iMsg = WM_CLOSE then --closing dialog
+        junk = c_func(EndDialog, {hdlg, 0})
+    end if
+
+    return 0
+end function
+
+constant RunArgsCallback = call_back(routine_id("RunArgsProc"))
+
+global procedure run_arguments()
+    integer junk
+    junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
+        --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
+	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
+         50,50, 100,36, 0, 0, "Run Arguments"},
+        --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
+        {{WS_CHILD, WS_VISIBLE, WS_BORDER, ES_AUTOHSCROLL}, 0,
+         4,4, 92,12, DialogEditID, DIALOG_CLASS_EDIT, get_tab_arguments()},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,20, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
+        {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
+         52,20, 44,12, IDOK, DIALOG_CLASS_BUTTON, "OK"}
+        },
+        hMainWnd, 
+        RunArgsCallback,
+        0)
+end procedure
+
+procedure run_start(integer with_args)
     atom result
+    sequence args
 
     -- save, no confirm 
-    if save_if_modified(0) = 0 or length(file_name) = 0 then 
+    if save_if_modified(0) = 0 or length(file_name) = 0 then
       return -- cancelled, or no name
     end if
     
     run_file_name = file_name
     reset_ex_err()
 
+    args = ""
+    if with_args then
+	if length(get_tab_arguments()) = 0 then
+	    run_arguments()
+	end if
+        args = ' ' & get_tab_arguments()
+    end if
+
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
-	alloc_string(run_file_name),
-	NULL,
+	alloc_string(interpreter_path),
+	alloc_string(run_file_name & args),
 	alloc_string(dirname(run_file_name)),
-	1})
+	SW_SHOWNORMAL})
     if result < 33 then
 	-- shellexecute failed
 	if match(".exw", lower(run_file_name)) or
 	   match(".ew", lower(run_file_name)) then
-	    system("euiw " & run_file_name)
+	    system("euiw " & run_file_name & args)
 	else
-	    system("eui " & run_file_name)
+	    system("eui " & run_file_name & args)
 	end if
     end if
     free_strings()
 end procedure
+
+procedure run_bind()
+    atom result
+
+    -- save, no confirm 
+    if save_if_modified(0) = 0 or length(file_name) = 0 then 
+      return -- cancelled, or no name
+    end if
+    result = c_func(ShellExecute, {
+	hMainWnd, NULL,
+	alloc_string("eubind"),
+	alloc_string(file_name),
+	alloc_string(dirname(run_file_name)),
+	SW_SHOWNORMAL})
+    if result < 33 then
+        ui_message_box_error("Bind", "eubind failed")
+    end if
+end procedure
+
+procedure run_translate()
+    atom result
+    
+    -- save, no confirm 
+    if save_if_modified(0) = 0 or length(file_name) = 0 then 
+      return -- cancelled, or no name
+    end if
+    result = c_func(ShellExecute, {
+	hMainWnd, NULL,
+	alloc_string("euc"),
+	alloc_string(file_name),
+	alloc_string(dirname(run_file_name)),
+	SW_SHOWNORMAL})
+    if result < 33 then
+        ui_message_box_error("Translate", "euc failed")
+    end if
+    
+end procedure
+
 
 function get_appdata_path()
     atom junk, path
@@ -881,13 +999,16 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = View_Error then
 		ui_view_error()
 		return rc
-	    elsif wParam = View_Font then
+	    elsif wParam = Options_Font then
 		choose_font()
 		return rc
-	    elsif wParam = View_LineNumbers then
+	    elsif wParam = Options_LineNumbers then
 	        line_numbers = not line_numbers
 	        reinit_all_edits()
-	        return c_func(CheckMenuItem, {hviewmenu, View_LineNumbers, MF_CHECKED*line_numbers})
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers})
+	    elsif wParam = Options_SortedSubs then
+	        sorted_subs = not sorted_subs
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs})
 	    elsif wParam = View_Completions then
 		view_completions()
 		return rc
@@ -898,8 +1019,20 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
                 view_subroutine_arguments()
 		return rc
 	    elsif wParam = Run_Start then
-		run_start()
+		run_start(0)
 		return rc
+	    elsif wParam = Run_WithArgs then
+		run_start(1)
+		return rc
+	    elsif wParam = Run_Arguments then
+		run_arguments()
+		return rc
+	    elsif wParam = Run_Bind then
+	        run_bind()
+	        return rc
+	    elsif wParam = Run_Translate then
+	        run_translate()
+	        return rc
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -962,7 +1095,9 @@ procedure translate_editor_keys(atom msg)
         poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
       end if
     elsif iMsg = WM_KEYUP then
-      if wParam = VK_F5 then
+      if wParam = VK_F5 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, Run_WithArgs, 0})
+      elsif wParam = VK_F5 then
         poke4(msg, {hMainWnd, WM_COMMAND, Run_Start, 0})
       elsif wParam = VK_F4 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
@@ -1036,15 +1171,15 @@ procedure WinMain()
 -- file menu
     hfilemenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	File_New, alloc_string("&New")})
+	File_New, alloc_string("&New\tCtrl+N")})
     junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	File_Open, alloc_string("&Open...")})
+	File_Open, alloc_string("&Open...\tCtrl+O")})
     junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	File_Save, alloc_string("&Save")})
+	File_Save, alloc_string("&Save\tCtrl+S")})
     junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	File_SaveAs, alloc_string("Save &As...")})
     junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	File_Close, alloc_string("&Close")})
+	File_Close, alloc_string("&Close\tCtrl+W")})
 --    junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
 --    junk = c_func(AppendMenu, {hfilemenu, MF_BYPOSITION + MF_STRING + MF_GRAYED, 
 --	File_Print, alloc_string("Print...")})
@@ -1087,23 +1222,30 @@ procedure WinMain()
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_Completions, alloc_string("&Completions...\tCtrl+Space")})
     --junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	--View_NavigateBack, alloc_string("&Navigate Back")})
+	--View_NavigateBack, alloc_string("&Navigate Back\tEsc")})
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_Error, alloc_string("Goto &Error\tF4")})
-    --junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
-    junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
-    junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	View_Font, alloc_string("&Font...")})
-    junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	View_LineNumbers, alloc_string("&Line Numbers")})
 -- run menu
     hrunmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Start, alloc_string("&Start\tF5")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_WithArgs, alloc_string("Start with &Arguments\tShift-F5")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_Arguments, alloc_string("Set Arguments...")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_Bind, alloc_string("&Bind")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_Translate, alloc_string("&Translate")})
 -- options menu
---    hoptionsmenu = c_func(CreateMenu, {})
---    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_GRAYED, 
---	Options_Font, alloc_string("&Font...")})
+    hoptionsmenu = c_func(CreateMenu, {})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Options_Font, alloc_string("&Font...")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Options_LineNumbers, alloc_string("&Line Numbers")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Options_SortedSubs, alloc_string("&Sort View Subroutines")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1111,7 +1253,7 @@ procedure WinMain()
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Help_Tutorial, alloc_string("&Tutorial")})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Help_Context, alloc_string("&Context...")})
+	Help_Context, alloc_string("&Help\tF1")})
 -- main menu
     hmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
@@ -1124,8 +1266,8 @@ procedure WinMain()
 	hviewmenu, alloc_string("&View")})
     junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
 	hrunmenu, alloc_string("&Run")})
---    junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
---	hoptionsmenu, alloc_string("&Options")})
+    junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
+	hoptionsmenu, alloc_string("&Options")})
     junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
 	hhelpmenu, alloc_string("&Help")})
 	
@@ -1137,7 +1279,8 @@ procedure WinMain()
     ui_refresh_file_menu(recent_files)
     
     -- set the checkmark on the Line Numbers menu item
-    c_func(CheckMenuItem, {hviewmenu, View_LineNumbers, MF_CHECKED*line_numbers}) 
+    c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers}) 
+    c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs}) 
     
 -- window creation
     hMainWnd = CreateWindow({
@@ -1210,5 +1353,6 @@ procedure WinMain()
 end procedure
 
 wee_init()
+interpreter_path = "euiw"
 WinMain()
 save_wee_conf(wee_conf_filename)

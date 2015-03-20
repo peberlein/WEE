@@ -6,6 +6,8 @@
 --  * current folder for load and save dialogs
 --  * window placement taking window theme into account 
 --  * file dialog filters
+--  * menu accelerator appearance
+--  * new subs dialog
 
 -- Changes:
 -- fix intermittent hang on quit (found it, caused by putting the program in the
@@ -24,6 +26,7 @@
 public include std/machine.e
 public include std/error.e
 include std/regex.e
+include std/sort.e
 include scintilla.e
 include EuGTK/GtkEngine.e
 include wee.exw as wee
@@ -56,6 +59,29 @@ x_size = 500 y_size = 600
 
 constant wee_conf_file = getenv("HOME") & "/.wee_conf"
 load_wee_conf(wee_conf_file)
+
+
+-- helper function for setting multiple properties at once
+function sets(atom handle, sequence properties)
+    sequence p
+    for i = 1 to length(properties) do
+	p = properties[i]
+	if length(p) = 2 then
+	   set(handle, p[1], p[2])
+	elsif length(p) = 3 then
+	   set(handle, p[1], p[2], p[3])
+	elsif length(p) = 4 then
+	   set(handle, p[1], p[2], p[3], p[4])
+	elsif length(p) = 5 then
+	   set(handle, p[1], p[2], p[3], p[4], p[5])
+	elsif length(p) = 6 then
+	   set(handle, p[1], p[2], p[3], p[4], p[5], p[6])
+	else
+	    crash("unhandled property length")
+	end if
+    end for
+    return handle
+end function
 
 
 --------------------------------------------------
@@ -215,15 +241,23 @@ function ViewComp() view_completions() return 0 end function
 function ViewError() ui_view_error() return 0 end function
 
 function ViewSubs() 
-    sequence text, word, subs
+    sequence text, word, subs, tmp
     integer pos, result
     atom dialog, scroll, list, content, row, lbl
 
     text = get_edit_text()
     pos = get_pos()
     word = word_pos(text, pos)
-    subs = get_subroutines(parse(text, file_name))
+    tmp = get_subroutines(parse(text, file_name))
     word = word[1]
+    
+    subs = repeat(0, floor(length(tmp)/2))
+    for i = 1 to length(subs) do
+        subs[i] = {tmp[i*2-1], tmp[i*2]}
+    end for
+    if sorted_subs then
+        subs = sort(subs)
+    end if
     
     dialog = create(GtkDialog)
     set(dialog, "default size", 200, 400)
@@ -240,12 +274,12 @@ function ViewSubs()
 
     list = create(GtkListBox)
     add(scroll, list)
-    for i = 1 to length(subs) by 2 do
-	lbl = create(GtkLabel, subs[i])
+    for i = 1 to length(subs) do
+	lbl = create(GtkLabel, subs[i][1])
 	set(lbl, "halign", GTK_ALIGN_START)
 	set(list, "insert", lbl, -1)
-	if equal(subs[i], word) then
-	    row = gtk:get(list, "row at index", floor(i/2))
+	if equal(subs[i][1], word) then
+	    row = gtk:get(list, "row at index", i-1)
 	    set(list, "select row", row)
 	end if
     end for
@@ -254,10 +288,10 @@ function ViewSubs()
     if set(dialog, "run") = GTK_RESPONSE_OK then
 	row = gtk:get(list, "selected row")
         --result = gtk:get(row, "index") -- doesn't work?
-	for i = 1 to floor(length(subs) / 2)  do
+	for i = 1 to length(subs) do
 	    if row = gtk:get(list, "row at index", i-1) then
-		word = subs[i*2-1]
-		pos = subs[i*2]-1
+		word = subs[i][1]
+		pos = subs[i][2]-1
 		SSM(tab_hedit(), SCI_SETSEL, pos, pos + length(word))
 		set_top_line(-1)
 		exit
@@ -268,7 +302,79 @@ function ViewSubs()
     return 0
 end function
 
-function ViewFont()
+-- contributed by Irv, but pressing enter doesn't activate default 
+function NewViewSubs()
+    sequence text, word, subs
+    integer pos, result
+    atom dialog, scroll, list, content, row, lbl
+
+    text = get_edit_text()
+    pos = get_pos()
+    word = word_pos(text, pos)
+    subs = get_subroutines(parse(text, file_name))
+    word = word[1]
+
+    dialog = create(GtkDialog)
+    set(dialog, "default size", 200, 400)
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
+    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "Subroutines")
+    set(dialog, "default response", GTK_RESPONSE_OK)
+    set(dialog, "modal", TRUE)
+
+    content = gtk:get(dialog, "content area")
+    scroll = create(GtkScrolledWindow)
+    pack(content, scroll, TRUE, TRUE)
+
+    object routines = {}, data
+    for i = 1 to length(subs) by 2 do
+	routines = append(routines,{subs[i],subs[i+1]})
+    end for
+    if sorted_subs then
+        routines = sort(routines)
+    end if
+
+    list = create(GtkTreeView)
+    add(scroll, list)
+    object store = create(GtkListStore,{gSTR,gINT})
+    set(list,"model",store)
+    object col1 = create(GtkTreeViewColumn)
+    object rend1 = create(GtkCellRendererText)
+    add(col1,rend1)
+    set(col1,"add attribute",rend1,"text",1)
+    set(col1,"sort indicator",TRUE)
+    set(col1,"max width",100)
+    set(col1,"title","Routine Name")
+    set(list,"append columns",col1)
+
+    object col2 = create(GtkTreeViewColumn)
+    object rend2 = create(GtkCellRendererText)
+    add(col2,rend2)
+    set(col2,"add attribute",rend2,"text",2)
+    set(list,"append columns",col2)
+    set(store,"data",routines)
+    object selection = gtk:get(list,"selection")
+    set(selection,"mode",GTK_SELECTION_SINGLE)
+    set(col2,"visible",FALSE)
+
+    set(col1,"sort column id",1)
+
+    show_all(dialog)
+    if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
+	row = gtk:get(selection,"selected row")
+	data = gtk:get(store,"row data",row)
+	word = data[1]
+	pos = data[2]-1
+	SSM(tab_hedit(), SCI_SETSEL, pos, pos + length(word))
+	set_top_line(-1)
+    end if
+    hide(dialog)
+
+    return 0
+end function
+
+function OptionsFont()
   atom dialog
   sequence font, tmp
 
@@ -294,11 +400,17 @@ function ViewFont()
   return 0 
 end function
 
-function ViewLineNumbers(atom handle)
+function OptionsLineNumbers(atom handle)
     line_numbers = gtk:get(handle, "active")
     reinit_all_edits()
     return 0
 end function
+
+function OptionsSortedSubs(atom handle)
+    sorted_subs = gtk:get(handle, "active")
+    return 0
+end function
+
 
 function RunStart() 
     if save_if_modified(0) = 0 or length(file_name) = 0 then
@@ -314,6 +426,71 @@ function RunStart()
     check_ex_err()
     return 0
 end function
+
+function RunStartWithArguments()
+    if save_if_modified(0) = 0 or length(file_name) = 0 then
+        return 0 -- cancelled, or no name
+    end if
+    if length(get_tab_arguments()) = 0 then
+        RunSetArguments()
+    end if
+    
+    run_file_name = file_name
+    reset_ex_err()
+    -- TODO: make configurable
+    chdir(dirname(run_file_name))
+    system("eui " & run_file_name & " " & get_tab_arguments())
+    --system(cmdline[1] & " " & run_file_name)
+    check_ex_err()
+    return 0
+end function
+
+function RunSetArguments()
+    atom dialog, content, text_entry
+    
+    dialog = create(GtkDialog)
+    --set(dialog, "default size", 200, 200)
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT)
+    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "Arguments")
+    set(dialog, "default response", GTK_RESPONSE_OK)
+    set(dialog, "modal", TRUE)
+    content = gtk:get(dialog, "content area")
+    
+    text_entry = create(GtkEntry)
+    add(content, text_entry)
+    set(text_entry, "activates default", TRUE)
+    set(text_entry, "text", get_tab_arguments())
+
+    show_all(dialog)
+    if set(dialog, "run") = GTK_RESPONSE_OK then
+	set_tab_arguments(gtk:get(text_entry, "text"))
+    end if
+    hide(dialog)
+    return 0
+end function
+
+function RunBind() 
+    if save_if_modified(0) = 0 or length(file_name) = 0 then
+        return 0 -- cancelled, or no name
+    end if
+    
+    chdir(dirname(file_name))
+    system("eubind " & file_name)
+    return 0
+end function
+
+function RunTranslate() 
+    if save_if_modified(0) = 0 or length(file_name) = 0 then
+        return 0 -- cancelled, or no name
+    end if
+    
+    chdir(dirname(file_name))
+    system("euc " & file_name)
+    return 0
+end function
+
 
 function HelpAbout()
   set(about_dialog, "run")
@@ -365,12 +542,6 @@ function window_set_focus(atom widget)
     return 0
 end function
 
-function sets(atom handle, sequence property_pairs)
-    for i = 1 to length(property_pairs) by 2 do
-        set(handle, property_pairs[i], property_pairs[i+1])
-    end for
-    return handle
-end function
 
 function accelerator_parse(sequence key)
   atom x
@@ -401,13 +572,13 @@ set(win, "move", x_pos, y_pos)
 
 constant
   about_dialog = sets(create(GtkAboutDialog), {
-    "transient for", win,
-    "program name", window_title,
-    "comments", "A small editor for Euphoria programming.",
-    "version", wee:version,
-    "authors", {author, "Powered by EuGTK http://sites.google.com/site/euphoriagtk/Home/"},
-    "website", "https://github.com/peberlein/WEE/",
-    "website label", "Wee on GitHub"
+    {"transient for", win},
+    {"program name", window_title},
+    {"comments", "A small editor for Euphoria programming."},
+    {"version", wee:version},
+    {"authors", {author, "Powered by EuGTK http://sites.google.com/site/euphoriagtk/Home/"}},
+    {"website", "https://github.com/peberlein/WEE/"},
+    {"website label", "Wee on GitHub"}
   })
 
 constant
@@ -417,20 +588,26 @@ constant
   menuSearch = create(GtkMenuItem, "_Search"),
   menuView = create(GtkMenuItem, "_View"),
   menuRun = create(GtkMenuItem, "_Run"),
+  menuOptions = create(GtkMenuItem, "_Options"),
   menuHelp = create(GtkMenuItem, "_Help"),
-  filemenu = sets(create(GtkMenu), {"accel group", group}),
-  editmenu = sets(create(GtkMenu), {"accel group", group}),
-  searchmenu = sets(create(GtkMenu), {"accel group", group}),
-  viewmenu = sets(create(GtkMenu), {"accel group", group}),
-  runmenu = sets(create(GtkMenu), {"accel group", group}),
-  helpmenu = sets(create(GtkMenu), {"accel group", group})
+  filemenu = sets(create(GtkMenu), {{"accel group", group}}),
+  editmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  searchmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  viewmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  runmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  optionsmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  helpmenu = sets(create(GtkMenu), {{"accel group", group}})
 
 -- create a menu item with "activate" signal connected to local routine
 -- and add parsed accelerator key 
-function createmenuitem(sequence text, object r, object key = 0, integer mod = 0, integer check = -1)
+function createmenuitem(sequence text, object r, object key = 0, integer check = -1)
   atom widget, x
   if check = -1 then
-    widget = create(GtkMenuItem, text)
+    if sequence(key) then
+      widget = create(GtkMenuItem, text, 0, 0, {group, key})
+    else
+      widget = create(GtkMenuItem, text)
+    end if
   else
     widget = create(GtkCheckMenuItem, text)
     set(widget, "active", check)
@@ -443,13 +620,6 @@ function createmenuitem(sequence text, object r, object key = 0, integer mod = 0
     r = call_back(x)
   end if
   connect(widget, "activate", r)
-
-  if sequence(key) then
-    {key, mod} = accelerator_parse(key)
-  end if
-  if key then
-      set(widget, "add accelerator", "activate", group, key, mod, 1)
-  end if
   return widget
 end function
 
@@ -477,7 +647,10 @@ add(editmenu, {
 set(menuEdit, "submenu", editmenu)
 
 add(searchmenu, {
-  createmenuitem("Find...", "SearchFind", "F3"),
+  sets(createmenuitem("Find...", "SearchFind", "F3"), {
+    {"add accelerator", "activate", group} & 
+    accelerator_parse("<Control>F") & {GTK_ACCEL_VISIBLE}
+    }),
   createmenuitem("Replace...", "SearchReplace")
   })
 set(menuSearch, "submenu", searchmenu)
@@ -487,27 +660,43 @@ add(viewmenu, {
   createmenuitem("Declaration", "ViewDecl", "<Control>F2"),
   createmenuitem("Subroutine Arguments...", "ViewArgs", "<Shift>F2"),
   createmenuitem("Completions...", "ViewComp", "<Control>space"),
-  createmenuitem("Goto Error", "ViewError", "F4"),
-  create(GtkSeparatorMenuItem),
-  createmenuitem("Font...", "ViewFont"),
-  createmenuitem("Line Numbers", "ViewLineNumbers", 0, 0, line_numbers)
+  createmenuitem("Goto Error", "ViewError", "F4")
   })
 set(menuView, "submenu", viewmenu)
 
+add(optionsmenu, {
+  createmenuitem("Font...", "OptionsFont"),
+  createmenuitem("Line Numbers", "OptionsLineNumbers", 0, line_numbers),
+  createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs)
+  })
+set(menuOptions, "submenu", optionsmenu)
+
 add(runmenu, {
-  createmenuitem("Start", "RunStart", "F5")
+  createmenuitem("Start", "RunStart", "F5"),
+  createmenuitem("Start with Arguments", "RunStartWithArguments", "<Shift>F5"),
+  createmenuitem("Set Arguments...", "RunSetArguments"),
+  create(GtkSeparatorMenuItem),
+  createmenuitem("Bind", "RunBind"),
+  createmenuitem("Translate", "RunTranslate")
   })
 set(menuRun, "submenu", runmenu)
 
 add(helpmenu, {
   createmenuitem("About...", "HelpAbout"),
   createmenuitem("Tutorial", "HelpTutorial"),
-  createmenuitem("Help...", "HelpHelp", "F1")
+  createmenuitem("Help", "HelpHelp", "F1")
   })
 set(menuHelp, "submenu", helpmenu)
 
-add(menubar, {menuFile, menuEdit, menuSearch, menuView, menuRun, menuHelp})
-  
+add(menubar, {
+    menuFile,
+    menuEdit,
+    menuSearch,
+    menuView,
+    menuRun,
+    menuOptions,
+    menuHelp})
+
 pack(panel, menubar)
 
 
@@ -605,20 +794,20 @@ end procedure
 
 
 constant filter1 = sets(create(GtkFileFilter), {
-    "name", "Euphoria files",
-    "add pattern", "*.e",
-    "add pattern", "*.ex",
-    "add pattern", "*.exw"
+    {"name", "Euphoria files"},
+    {"add pattern", "*.e"},
+    {"add pattern", "*.ex"},
+    {"add pattern", "*.exw"}
     })
 
 constant filter2 = sets(create(GtkFileFilter), {
-    "name", "Text files",
-    "add mime type", "text/*"
+    {"name", "Text files"},
+    {"add mime type", "text/*"}
     })
 
 constant filter3 = sets(create(GtkFileFilter), {
-    "name", "All files",
-    "add pattern", "*"
+    {"name", "All files"},
+    {"add pattern", "*"}
     })
 
 global function ui_get_open_file_name()
@@ -806,6 +995,7 @@ global function ui_show_help(sequence html)
 end function
 
 global procedure ui_show_uri(sequence uri)
+    --puts(1, uri & "\n")
     show_uri(uri)
 end procedure
 
@@ -816,17 +1006,11 @@ ui_refresh_file_menu(recent_files)
 -- open files on command line
 if length(cmdline) > 2 then
   for i = 3 to length(cmdline) do
-    open_file(cmdline[i], 0)      
+    open_file(cmdline[i], 0)
   end for
 else
   new_file()
 end if
 
-
-
 show_all(win)
 main()
-
-
-
-
