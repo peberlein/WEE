@@ -21,8 +21,8 @@ namespace gtk
 ------------------------------------------------------------------------
 
 export constant 
-    version = "4.9.0",
-    release = "Mar 15, 2015",
+    version = "4.9.2",
+    release = "Mar 17, 2015 Luck o' the Irish",
     copyright = "2015 by Irv Mullins"
 
 public include GtkEnums.e -- enums includes most of Eu std libraries
@@ -127,7 +127,7 @@ export constant
     os_distro = os_info[2], -- e.g: Mint17
     os_version = os_info[3], -- e.g: 3.13.0-24-generic
     os_compiled = os_info[4] -- #46-Ubuntu SMP Thu Apr 10 19:11:08 UTC 2014
- ifdef LINUX then
+ ifdef UNIX then
  export constant 
     host_addr = inet_address(),
     os_architecture = os_info[5], -- e.g: x86_64
@@ -258,6 +258,8 @@ public function create(integer class,
         case GtkCheckMenuItem then connect(handle,"toggled",p2,p3)
         case GtkFontButton then connect(handle,"font-set",p2,p3)
         case GtkStatusIcon then connect(handle,"activate",p1,p2)
+        case GtkColorButton then connect(handle,"color-set",p2,p3)
+        case GtkCalendar then connect(handle,"day-selected-double-click",p2,p3)
         case GtkComboBoxText, GtkComboBoxEntry then connect(handle,"changed",p1,p2)
         case GtkCheckButton, GtkToggleButton, GtkToggleToolButton 
             then connect(handle,"toggled",p2,p3)    
@@ -343,10 +345,11 @@ object obj, name, nick, path
                     if string(args[i]) then 
                         args[i] = allocate_string(args[i]) 
                     end if
-                case I then -- apply patches for zero-based indexes;
+                case B,I,D then 
 					if string(args[i]) then
 						args[i] = to_number(args[i])
 					end if
+					-- apply patches for zero-based indexes;
                     switch method[1] do
                         case "add_attribute",
                         "set_active",
@@ -1275,7 +1278,7 @@ end function
 export function from_rgba(object rgba, object fmt=0) 
 ----------------------------------------------------
 object result = gtk_str_func("gdk_rgba_to_string",{P},{rgba})
- if fmt = 0 then return result 
+ if fmt=0 then return result 
  else return fmt_color(result,fmt) 
  end if
 end function
@@ -1484,7 +1487,7 @@ widget[GtkWidget] = {"gtk_widget",
     {"is_focus",{P},B},
     {"grab_focus",{P},B},
     {"grab_default",{P}},
-    {"set_name",{P,S}},
+    {"set_name",{P,S},-routine_id("widget_set_name")},
     {"get_name",{P},S},
     {"set_sensitive",{P,B}},
     {"get_sensitive",{P},B},
@@ -1640,6 +1643,15 @@ widget[GtkWidget] = {"gtk_widget",
     {"list_action_prefixes",{P},A}, -- 3.16
 "GtkWidget"}
 
+	function widget_set_name(atom ctl, object name)
+	gtk_proc("gtk_widget_set_name",{P,P},{ctl,name})
+	integer x = find(ctl,vslice(registry,1))
+	if x > 0 then
+		registry[x][4] = peek_string(name)
+	end if
+	return 1
+	end function
+	
  -- This allows specifying a font name, e.g. "Courier bold 12", instead of 
  -- as a pango font description object;
     function setFont(atom x, object fnt)
@@ -3277,16 +3289,21 @@ widget[GtkRadioButton] = {"gtk_radio_button",
     
 widget[GtkColorButton] = {"gtk_color_button",
 {GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkColorChooser,GObject},
-    {"new",{},P},
-    {"new_with_rgba",{P},P},
+    {"new",{P},-routine_id("new_color_button")},
     {"set_title",{P,S}},
     {"get_title",{P},S},
 "GtkColorButton"}
-
+	
+	function new_color_button(object c=0)
+	if string(c) then c = to_rgba(c) end if
+	if c=0 then return gtk_func("gtk_color_button_new")
+	else return gtk_func("gtk_color_button_new_with_rgba",{P},{c})
+	end if
+	end function
+	
 widget[GtkFontButton] = {"gtk_font_button",
 {GtkFontChooser,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{},P},
-    {"new_with_font",{S},P},
+    {"new",{P,P,P},-routine_id("new_font_button")},
     {"set_font_name",{P,S}},
     {"get_font_name",{P},S},
     {"set_show_style",{P,B}},
@@ -3301,6 +3318,17 @@ widget[GtkFontButton] = {"gtk_font_button",
     {"get_title",{P},S},
 "GtkFontButton"}
 
+	function new_font_button(object f=0, object fn=0, object data=0)
+	if string(f) then f = allocate_string(f) end if
+	atom fnt
+	if f = 0 then
+		fnt = gtk_func("gtk_font_button_new")
+		else fnt = gtk_func("gtk_font_button_new_with_font",{P},{f})
+	end if
+	if string(fn) or fn > 0 then connect(fnt,"font-set",fn,data) end if
+	return fnt
+	end function
+	
 widget[GtkLinkButton] = {"gtk_link_button",
 {GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S,S},-routine_id("newLinkButton")},
@@ -3463,14 +3491,8 @@ widget[GtkMenuItem] = {"gtk_menu_item",
     {"get_reserve_indicator",{P},B},
 "GtkMenuItem"}
 
-	-----------------------------------------------------------------------------
-    function newMenuItem(object stk=0, object fn=0, atom data=0, object accels=0)
-    -----------------------------------------------------------------------------
-	MenuItem item
-	AccelLabel child 
-	atom icon, lbl
+export function add_accels(object item, object accels)
 	atom x = allocate(8)
-
 	if sequence(accels) then
 		if length(accels) < 3 then 
 			accels &= 0 
@@ -3482,6 +3504,31 @@ widget[GtkMenuItem] = {"gtk_menu_item",
 		end if
 	end if
 
+	atom child = get(item,"child")
+	set(item,"add accelerator","activate",accels[1],accels[2],accels[3],GTK_ACCEL_VISIBLE)
+
+	return item
+end function
+
+	-----------------------------------------------------------------------------
+    function newMenuItem(object stk=0, object fn=0, atom data=0, object accels=0)
+    -----------------------------------------------------------------------------
+	MenuItem item
+	AccelLabel child 
+	atom icon, lbl
+
+		atom x = allocate(8)
+	if sequence(accels) then
+		if length(accels) < 3 then 
+			accels &= 0 
+		end if
+		if string(accels[2])then 
+			gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(accels[2], 1), x, x+4})
+			accels[2] = peek4u(x)
+			accels[3] = peek4u(x+4)
+		end if
+	end if
+	
 	if match("#",stk) then
 		stk = split(stk,'#')
 		icon = create(GtkImage,stk[1],GTK_ICON_SIZE_MENU)
@@ -3543,7 +3590,7 @@ widget[GtkImageMenuItem] = {"gtk_image_menu_item", -- warning: deprecated in 3.1
             return item
         end if
     
-		ifdef LINUX then
+		ifdef UNIX then
         -- see if there's an icon;
         default_theme = gtk_func("gtk_icon_theme_get_default",{})
         tmp = allocate_string(stk) 
@@ -6212,7 +6259,7 @@ widget[GtkCalendar] = {"gtk_calendar",
     {"get_day_is_marked",{P,I},B},
     {"get_display_options",{P},I},
     {"mark_day",{P,I},B},
-    {"new",{},P},
+    {"new",{P},-routine_id("new_calendar")},
     {"select_day",{P,I}},
     {"select_month",{P,I,I},-routine_id("selectCalendarMonth")},
     {"set_display_options",{P,I}},
@@ -6225,6 +6272,15 @@ widget[GtkCalendar] = {"gtk_calendar",
     {"set_date",{P,P},-routine_id("setCalendarDate")},
 "GtkCalendar"}
 
+	function new_calendar(object d = 0)
+	object cal = gtk_func("gtk_calendar_new")
+	if atom(d) and d = 0 then return cal
+	else gtk_proc("gtk_calendar_select_month",{P,I,I},{cal,d[2]-1,d[1]})
+		 gtk_proc("gtk_calendar_select_day",{P,I},{cal,d[3]})
+	return cal
+	end if
+	end function
+	
 ------------------------------------------------------------------------
 -- Calendar convenience functions
 ------------------------------------------------------------------------
@@ -6250,9 +6306,15 @@ widget[GtkCalendar] = {"gtk_calendar",
     end function
     
     ------------------------------------------------------------------------
-    function setCalendarDate(atom handle, object date)
+    function setCalendarDate(atom handle, object cdate)
     ------------------------------------------------------------------------
-    integer yr = date[1], mo = date[2], da = date[3]
+    if string(cdate) then 
+		cdate = split(cdate,',')
+		cdate[1] = to_number(cdate[1][2..$])
+		cdate[2] = to_number(cdate[2])
+		cdate[3] = to_number(cdate[3][1..$-1])
+    end if
+    integer yr = cdate[1], mo = cdate[2], da = cdate[3]
         gtk_proc("gtk_calendar_select_month",{P,I,I},{handle,mo-1,yr})
         gtk_proc("gtk_calendar_select_day",{P,I},{handle,da})
     return 1
@@ -6299,6 +6361,7 @@ widget[GtkCalendar] = {"gtk_calendar",
         case 1 then return getCalendarEuDate(handle) + {1900,0,0} & {0,0,0}
         case 2 then clock = datetime:now() 
                 return getCalendarEuDate(handle) + {1900,0,0} & clock[4..6]
+        case else return getCalendarEuDate(handle) + {1900,0,0}
     end switch
     end function
 
@@ -8172,58 +8235,306 @@ end for
 
 end procedure
 
+------------------------------------------------------------------------
+-- SETTINGS - new in EuGTK4.9.1 -  read and write config files
+------------------------------------------------------------------------
 function FilterFn(object a, object f)
 return match(f,a[4])
 end function
 constant filterfn = routine_id("FilterFn")
 	
 -----------------------------------------------------------------------
-global function update_settings(atom self) 
+global function get_settings(object self) 
 -----------------------------------------------------------------------
+-- returns settings string for object self
+-- object must be a named object
+
+-- e.g: MyButton:GtkCheckButton={"active",1}
+-- e.g: My Calendar={"date",{YYYY,MM,DD}}
+-- 
+if string(self) then 
+	self = vlookup(self,registry,4,1) 
+end if
+
 object name = get(self,"name")
-name = split(name,':')
-name = name[1]
+if find(':',name) then
+	name = split(name,':')
+	name = name[1]
+end if 
+
 object tmp = filter(registry,filterfn,name)
 object index = vslice(registry,1)
 object handles = vslice(tmp,1)
 atom x =-1
+
 for i = 1 to length(tmp) do
 		x = find(tmp[i][1],index)
+		if x = 0 then
+			x = find(name,index)
+		end if
 		if x >  0 then
 		switch tmp[i][2] do
+			case GtkEntry,GtkEntryBuffer then
+				registry[x][5] = {"text",get(tmp[i][4],"text")}
+				
 			case GtkCheckButton,GtkRadioButton,
-				 GtkToggleButton,GtkSwitch,GtkComboBoxText then
-				registry[x][5] = {"active","integer",get(tmp[i][4],"active")}
+				 GtkToggleButton,GtkSwitch,GtkComboBox,GtkComboBoxText,
+				 GtkCheckMenuItem,GtkToggleToolButton then
+				registry[x][5] = {"active",get(tmp[i][4],"active")}
+				
+			case GtkPopover then
+				registry[x][5] = {"position",get(tmp[i][4],"position")}
+				
+			case GtkFontChooser then
+				registry[x][5] = {"font",get(tmp[i][4],"font")}
+				
 			case GtkFontButton then
-				registry[x][5] = {"font name","string",get(tmp[i][4],"font")}
-			case GtkAdjustment,GtkSpinButton then
-				registry[x][5] = {"value","atom",get(tmp[i][4],"value")}
+				registry[x][5] = {"font name",peek_string(get(tmp[i][4],"font-name"))}
+				
+			case GtkAdjustment,GtkSpinButton,GtkScaleButton,GtkVolumeButton,GtkModelButton,GtkScale then
+				registry[x][5] = {"value",get(tmp[i][4],"value")}
+				
 			case GtkEntryCompletion then
-				registry[x][5] = {"model","atom",get(tmp[i][4],"model")}
+				registry[x][5] = {"model",get(tmp[i][4],"model")}
+				
 			case GtkSearchEntry then
-				registry[x][5] = {"text","string",get(tmp[i][4],"text")}
-			case GtkColorButton then
-				registry[x][5] = {"rgba","string",get(tmp[i][4],"rgba")}
+				registry[x][5] = {"text",get(tmp[i][4],"text")}
+				
+			case GtkColorButton,GtkColorChooser,GtkColorChooserWidget,GtkColorChooserDialog then
+				registry[x][5] = {"rgba",get(tmp[i][4],"rgba",1)}
+		
+			case GtkLinkButton then
+				registry[x][5] = {"uri",get(tmp[i][4],"uri")}
+				
+			case GtkCalendar then 
+				registry[x][5] = {"date",get(tmp[i][4],"ymd")}
+
 		end switch
 	end if
 end for
 object txt = {}
 index = vslice(registry,1)
+object  prop, params, vals
 for i = 1 to length(handles) do
 	x = find(handles[i],index) 
 	if x > 0 then
+		vals = -1
 		if atom(registry[x][5]) and registry[x][5] = MINF then
-		-- skip
+		-- skip, no value available;
 		else
-			txt &= text:format("[4][5]\n",registry[x])
+			params = {registry[x][4]}
+			params &= registry[x][5]
+			txt &= text:format("""[]->[]=[]""",params)
+			ifdef INI then
+				display("""[]->[]=[]""",params)
+			end ifdef
 		end if
 	end if
 end for
 return txt
 end function
 
+------------------------------------------------------------------------
+export function save_settings(sequence inifile, object ctl_list)
+------------------------------------------------------------------------
+atom fn
+object line, comments = {}
+
+if file_exists(inifile) then
+    fn = open(inifile,"u")
+    while 1 do
+	line = gets(fn)
+	    if atom(line) then exit end if
+	    if match("--",line) > 0 or equal("\n",line) then
+		    comments &= line
+	    end if
+    end while
+    close(fn)
+    
+    if length(comments) > 0 then
+		while comments[$] = 10 do
+			comments = comments[1..$-1]
+		end while
+    end if
+    
+end if -- file exists
+
+fn = open(inifile,"w",1)
+writefln(comments,,fn)
+
+ifdef INI then
+	system("clear",0)
+	display(comments) -- show on xterm (optional);
+end ifdef
+
+for x = 1 to length(ctl_list) do
+	ifdef INI then
+		writefln(get_settings(ctl_list[x])) -- show on xterm (optional);
+	end ifdef
+	writefln(get_settings(ctl_list[x]),,fn) -- write to ini;
+end for
+
+return 1
+end function
+
+------------------------------------------------------------------------------------------------
+export function add_setting(object ini, object ctl, sequence prop, object val1=0, object val2=0)
+------------------------------------------------------------------------------------------------
+
+if has_setting(ini,ctl,prop) = TRUE then
+	return update_setting(ini,ctl,prop,val1,val2)
+end if
+
+if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
+
+if val2 != 0 then
+	writefln("""--@[]->[]={[],[]}""",{ctl,prop,val1,val2},{ini,"a"})
+else 
+	writefln("""--@[]->[]=[]""",{ctl,prop,val1},{ini,"a"})
+end if
+
+ifdef INI then
+	display("Append setting [] [] [] []",{ctl,prop,val1,val2})
+end ifdef
+
+return 1
+end function
+
+------------------------------------------------------------------------
+export function remove_setting(object ini, object ctl, sequence prop)
+------------------------------------------------------------------------
+
+if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
+
+object patt = text:format("""--@[]->[]""",{ctl,prop})
+
+object txt = read_lines(ini)
+
+for i = 1 to length(txt) do
+	if match(patt,txt[i]) > 0 then
+		display("removing []",{txt[i]})
+		txt[i] = "-- removed"
+	end if
+end for
+
+io:write_lines(ini,txt)
+
+return 1
+end function
+
+----------------------------------------------------------------------------------------------------
+export function update_setting(object ini, object ctl, sequence prop, object val1=0, object val2=-1)
+----------------------------------------------------------------------------------------------------
+if has_setting(ini,ctl,prop) = FALSE then
+	display("Can't find []",{prop})
+	abort(1)
+	return 0
+end if
+
+if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
+
+object patt = text:format("""--@[]->[]""",{ctl,prop})
+
+object txt = read_lines(ini)
+
+for i = 1 to length(txt) do
+	if match(patt,txt[i]) > 0 then
+		if val2 = -1 then
+			txt[i] = text:format("""--@[]->[]=[]""",{ctl,prop,val1})
+		else
+			txt[i] = text:format("""--@[]->[]={[],[]}""",{ctl,prop,val1,val2})
+		end if
+	end if
+end for
+
+io:write_lines(ini,txt)
+
+return 1
+end function
+
+------------------------------------------------------------------------
+export function has_setting(object ini, object ctl, sequence prop)
+------------------------------------------------------------------------
+if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
+
+object patt = text:format("""--@[]->[]""",{ctl,prop})
+
+object txt = read_lines(ini)
+
+if sequence(txt) then
+	for i = 1 to length(txt) do
+		if match(patt,txt[i]) then
+			return TRUE
+		end if
+	end for
+end if
+
+return FALSE
+end function
+
+------------------------------------------------------------------------
+export function load_settings(sequence inifile)
+------------------------------------------------------------------------
+object txt, line, obj, prop, val1=0, val2=0, val3=0, val4=0
+integer x
+if file_exists(inifile) then
+	txt = read_lines(inifile)
+	for i = 1 to length(txt) do
+		line = txt[i]
+		ifdef INI then
+			display(line)
+		end ifdef 
+		if match("--",line) < 4 and match("--!",line) > 0 then
+			line = line[4..$]
+		end if
+		if match("--",line) < 4 and match("--@",line) > 0 then
+			line = line[4..$]
+		end if
+		if match("--",line) then continue -- comment 
+		end if
+		if length(line) > 0  then
+			line = split(line,"->")
+			obj = line[1]
+			line = split(line[2],"=")
+			prop = line[1]
+			
+			if match("date",prop) > 0 then
+				val1 = line[2]
+				set(obj,prop,val1)
+				continue
+			end if
+			
+			if match("active",prop) > 0 then
+				val1 = match("0",line[2])
+				set(obj,prop,val1)
+				continue
+			end if
+
+			if find('{',line[2]) then
+				line[2] = line[2][2..$-1]
+				line = split(line[2],',')
+				val1 = line[1]
+				if length(line) > 1 then
+					val2 = line[2]
+				end if
+				if length(line) > 2 then
+					val3 = line[3]
+				end if
+				if length(line) > 3 then
+					val4 = line[3]
+				end if
+			else val1 = line[2]
+			end if
+			
+			set(obj,prop,val1,val2,val3,val4)
+		end if
+	end for
+end if
+return 1
+end function
+
 ------------------------------------------------------------------------------------------
-procedure show_template(object handlr)
+procedure show_template(object handlr) -- used with Glade
 ------------------------------------------------------------------------------------------
 printf(1,"""
 ________

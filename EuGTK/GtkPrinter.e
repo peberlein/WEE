@@ -1,7 +1,7 @@
 ------------------
 namespace printer
 ------------------
-constant version = "4.8.8"
+constant version = "4.9.2"
 
 include GtkEngine.e
 include std/datetime.e

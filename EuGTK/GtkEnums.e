@@ -1,7 +1,7 @@
 ----------------
 namespace enums
 ----------------
-export constant version = "4.9.0"
+export constant version = "4.9.2"
 
 public include std/io.e
 public include std/os.e
