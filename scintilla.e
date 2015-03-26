@@ -7,6 +7,7 @@
 include std/dll.e
 include std/machine.e
 include std/error.e
+include std/filesys.e
 
 sequence dll, send_message
 ifdef WINDOWS then
@@ -27,8 +28,18 @@ elsedef
   send_message = "scintilla_send_message"
 end ifdef
 
+constant cmd_line = command_line()
+
+atom scintilla
+scintilla = open_dll(dirname(cmd_line[1]) & SLASH & dll)
+if scintilla = 0 and length(cmd_line) >= 2 then
+    scintilla = open_dll(dirname(cmd_line[2]) & SLASH & dll)
+end if
+if scintilla = 0  then
+    scintilla = open_dll(dll)
+end if
+
 constant
-  scintilla = open_dll(dll),
   scintilla_new_ = define_c_func(scintilla, "scintilla_new", {}, C_POINTER),
   scintilla_send_message_ = define_c_func(scintilla, send_message, {C_POINTER, C_LONG, C_LONG, C_LONG}, C_LONG)
 
