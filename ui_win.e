@@ -36,7 +36,8 @@ constant
     Run_WithArgs = 502,
     Run_Arguments = 503,
     Run_Bind = 504,
-    Run_Translate = 505,
+    Run_Shroud = 505,
+    Run_Translate = 506,
     Options_Font = 601,
     Options_LineNumbers = 602,
     Options_SortedSubs = 603,
@@ -56,7 +57,7 @@ constant file_filters = allocate_string(
 
 atom hMainWnd, hFindDlg, class,
     hmenu, hfilemenu, heditmenu, hsearchmenu, hviewmenu, 
-    hrunmenu, hoptionsmenu, hhelpmenu,
+    hrunmenu, hoptionsmenu, hhelpmenu, htabmenu,
     hstatus, htabs, hcode, hedit,
     WM_FIND
 
@@ -195,14 +196,33 @@ global procedure ui_close_tab(integer tab)
     ui_hedits = ui_hedits[1..tab-1] & ui_hedits[tab+1..$]
 end procedure
 
+procedure rightclick_tab()
+    atom point
+    integer tab, x, y
+    point = allocate(12)
+    c_func(GetCursorPos, {point})
+    x = peek4u(point)
+    y = peek4u(point+4)
+    c_func(ScreenToClient, {hMainWnd, point})
+    tab = c_func(SendMessage, {htabs, TCM_HITTEST, 0, point})
+    if tab >= 0 then
+        select_tab(tab + 1)
+        c_func(TrackPopupMenu, {htabmenu, TPM_LEFTALIGN, x, y, 0, hMainWnd, 0})
+    end if
+    free(point)
+end procedure
+
 
 integer current_filter
 current_filter = 1
 
-global function ui_get_open_file_name()
+global function ui_get_open_file_name(integer multiple = 1)
     sequence temp
     temp = GetOpenFileName({hMainWnd, 0, file_filters, current_filter, 
-	    "", 0, 0, OFN_EXPLORER + OFN_PATHMUSTEXIST + OFN_FILEMUSTEXIST + OFN_HIDEREADONLY, 0})
+	    "", 0, 0, 
+	    OFN_EXPLORER + OFN_PATHMUSTEXIST + OFN_FILEMUSTEXIST + OFN_HIDEREADONLY
+	    + (multiple != 0) * OFN_ALLOWMULTISELECT
+	    , 0})
     if length(temp) < 2 then return "" end if
     current_filter = temp[1]
     return temp[2]
@@ -751,7 +771,7 @@ procedure run_start(integer with_args)
     free_strings()
 end procedure
 
-procedure run_bind()
+procedure run_convert(sequence name, sequence cmd)
     atom result
 
     -- save, no confirm 
@@ -760,34 +780,14 @@ procedure run_bind()
     end if
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
-	alloc_string("eubind"),
+	alloc_string(cmd),
 	alloc_string(file_name),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
     if result < 33 then
-        ui_message_box_error("Bind", "eubind failed")
+        ui_message_box_error(name, cmd & " failed")
     end if
 end procedure
-
-procedure run_translate()
-    atom result
-    
-    -- save, no confirm 
-    if save_if_modified(0) = 0 or length(file_name) = 0 then 
-      return -- cancelled, or no name
-    end if
-    result = c_func(ShellExecute, {
-	hMainWnd, NULL,
-	alloc_string("euc"),
-	alloc_string(file_name),
-	alloc_string(dirname(run_file_name)),
-	SW_SHOWNORMAL})
-    if result < 33 then
-        ui_message_box_error("Translate", "euc failed")
-    end if
-    
-end procedure
-
 
 function get_appdata_path()
     atom junk, path
@@ -805,6 +805,108 @@ function get_appdata_path()
 end function
 
 constant wee_conf_filename = get_appdata_path() & "\\wee_conf.txt"
+
+
+function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
+    atom junk, hEdit, len, buf
+
+    --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
+
+    if iMsg = WM_INITDIALOG then
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
+                      WM_SETFONT, captionFont, 0})
+	for id = 1000 to 1008 do
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, id}), 
+                      WM_SETFONT, captionFont, 0})
+	end for
+
+    elsif iMsg = WM_COMMAND then
+        if LOWORD(wParam) = IDOK then
+            junk = c_func(EndDialog, {hdlg, 1})
+            return 1
+        elsif LOWORD(wParam) = IDCANCEL then
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+        elsif LOWORD(wParam) = 1000 then
+            normal_color = ChooseColor(hMainWnd, normal_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1001 then
+            background_color = ChooseColor(hMainWnd, background_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1002 then
+            comment_color = ChooseColor(hMainWnd, comment_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1003 then
+            number_color = ChooseColor(hMainWnd, number_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1004 then
+            keyword_color = ChooseColor(hMainWnd, keyword_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1005 then
+            builtin_color = ChooseColor(hMainWnd, builtin_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1006 then
+            string_color = ChooseColor(hMainWnd, string_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1007 then
+            bracelight_color = ChooseColor(hMainWnd, bracelight_color)
+            reinit_all_edits()
+            return 0
+        elsif LOWORD(wParam) = 1008 then
+            linenumber_color = ChooseColor(hMainWnd, linenumber_color)
+            reinit_all_edits()
+            return 0
+        end if
+
+    elsif iMsg = WM_CLOSE then --closing dialog
+        junk = c_func(EndDialog, {hdlg, 0})
+    end if
+
+    return 0
+end function
+
+constant ColorsDialogCallback = call_back(routine_id("ColorsDialogProc"))
+
+global procedure choose_colors()
+    integer junk
+    junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
+        --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
+	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
+         50,50, 100,166, 0, 0, "Colors"},
+        --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,4, 64,12, 1000, DIALOG_CLASS_BUTTON, "Normal"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,20, 64,12, 1001, DIALOG_CLASS_BUTTON, "Background"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,36, 64,12, 1002, DIALOG_CLASS_BUTTON, "Comment"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,52, 64,12, 1003, DIALOG_CLASS_BUTTON, "Number"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,68, 64,12, 1004, DIALOG_CLASS_BUTTON, "Keyword"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,84, 64,12, 1005, DIALOG_CLASS_BUTTON, "Built-in"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,100, 64,12, 1006, DIALOG_CLASS_BUTTON, "String"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,116, 64,12, 1007, DIALOG_CLASS_BUTTON, "Brace Highlight"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,132, 64,12, 1008, DIALOG_CLASS_BUTTON, "Line Number"},
+
+        {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
+         4,150, 44,12, IDOK, DIALOG_CLASS_BUTTON, "Close"}
+        },
+        hMainWnd, 
+        ColorsDialogCallback,
+        0)
+end procedure
 
 
 procedure init_fonts()
@@ -913,8 +1015,13 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
          sci_notify(c_func(SendMessage, {hedit, SCI_GETDIRECTPOINTER, 0, 0}), 0, lParam, 0)
          return rc
 
-      elsif hwndFrom = htabs and code = TCN_SELCHANGE then
-        select_tab(1 + c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0}))
+      elsif hwndFrom = htabs then
+	if code = TCN_SELCHANGE then
+	    select_tab(1 + c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0}))
+	elsif code = NM_RCLICK then
+	    rightclick_tab()
+	    --printf(1, "hwndFrom=%x idFrom=%x code=%x %x %x %x\n", peek4u({lParam,6}))
+	end if
 
       else
         --? peek4u({lParam, 6})
@@ -999,16 +1106,6 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = View_Error then
 		ui_view_error()
 		return rc
-	    elsif wParam = Options_Font then
-		choose_font()
-		return rc
-	    elsif wParam = Options_LineNumbers then
-	        line_numbers = not line_numbers
-	        reinit_all_edits()
-	        return c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers})
-	    elsif wParam = Options_SortedSubs then
-	        sorted_subs = not sorted_subs
-	        return c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs})
 	    elsif wParam = View_Completions then
 		view_completions()
 		return rc
@@ -1028,11 +1125,27 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		run_arguments()
 		return rc
 	    elsif wParam = Run_Bind then
-	        run_bind()
+	        run_convert("Bind", "eubind")
+	        return rc
+	    elsif wParam = Run_Shroud then
+	        run_convert("Shroud", "eushroud")
 	        return rc
 	    elsif wParam = Run_Translate then
-	        run_translate()
+	        run_convert("Translate", "euc")
 	        return rc
+	    elsif wParam = Options_Font then
+		choose_font()
+		return rc
+	    elsif wParam = Options_LineNumbers then
+	        line_numbers = not line_numbers
+	        reinit_all_edits()
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers})
+	    elsif wParam = Options_SortedSubs then
+	        sorted_subs = not sorted_subs
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs})
+	    elsif wParam = Options_Colors then
+		choose_colors()
+		return rc
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -1237,6 +1350,8 @@ procedure WinMain()
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Bind, alloc_string("&Bind")})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_Shroud, alloc_string("S&hroud")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Translate, alloc_string("&Translate")})
 -- options menu
     hoptionsmenu = c_func(CreateMenu, {})
@@ -1246,6 +1361,8 @@ procedure WinMain()
 	Options_LineNumbers, alloc_string("&Line Numbers")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Options_SortedSubs, alloc_string("&Sort View Subroutines")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Options_Colors, alloc_string("&Colors...")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1270,6 +1387,15 @@ procedure WinMain()
 	hoptionsmenu, alloc_string("&Options")})
     junk = c_func(AppendMenu, {hmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
 	hhelpmenu, alloc_string("&Help")})
+	
+-- tab popup menu
+    htabmenu = c_func(CreatePopupMenu)
+    junk = c_func(AppendMenu, {htabmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	File_Save, alloc_string("Save")})
+    junk = c_func(AppendMenu, {htabmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	File_SaveAs, alloc_string("Save As")})
+    junk = c_func(AppendMenu, {htabmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	File_Close, alloc_string("Close")})
 	
     free_strings() -- garbage collect menu strings
 

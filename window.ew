@@ -104,6 +104,8 @@ global constant
     GetScrollPos = link_c_func(user32, "GetScrollPos", {C_INT, C_INT}, C_INT),
     SetScrollPos = link_c_func(user32, "SetScrollPos", {C_INT, C_INT, C_INT, C_INT}, C_INT),
     GetKeyState = link_c_func(user32, "GetKeyState", {C_INT}, C_INT),
+    GetCursorPos = link_c_func(user32, "GetCursorPos", {C_POINTER}, C_INT),
+    ScreenToClient = link_c_func(user32, "ScreenToClient", {C_LONG, C_POINTER}, C_INT),
 
     LoadLibrary = link_c_func(kernel32, "LoadLibraryA", {C_POINTER}, C_LONG),
     GetModuleHandle = link_c_func(kernel32, "GetModuleHandleA", {C_POINTER}, C_INT),
@@ -868,8 +870,32 @@ global constant
     TCN_LAST = -580,
     TCN_KEYDOWN = TCN_FIRST,
     TCN_SELCHANGE = (TCN_FIRST-1),
-    TCN_SELCHANGING = (TCN_FIRST-2)
-
+    TCN_SELCHANGING = (TCN_FIRST-2),
+    
+    NM_FIRST = 0,
+    NM_LAST = NM_FIRST - 99,
+    NM_OUTOFMEMORY = NM_FIRST - 1,
+    NM_CLICK = NM_FIRST - 2,
+    NM_DBLCLK = NM_FIRST - 3,
+    NM_RETURN = NM_FIRST - 4,
+    NM_RCLICK = NM_FIRST - 5,
+    NM_RDBLCLK = NM_FIRST - 6,
+    NM_SETFOCUS = NM_FIRST - 7,
+    NM_KILLFOCUS = NM_FIRST - 8,
+    NM_CUSTOMDRAW = NM_FIRST - 12,
+    NM_HOVER = NM_FIRST - 13,
+    NM_NCHITTEST = NM_FIRST - 14,
+    NM_KEYDOWN = NM_FIRST - 15,
+    NM_RELEASEDCAPTURE = NM_FIRST - 16,
+    NM_SETCURSOR = NM_FIRST - 17,
+    NM_CHAR = NM_FIRST - 18,
+    NM_TOOLTIPSCREATED = NM_FIRST - 19,
+    NM_LDOWN = NM_FIRST - 20,
+    NM_RDOWN = NM_FIRST - 21,
+    NM_THEMECHANGED = NM_FIRST - 22,
+    NM_FONTCHANGED = NM_FIRST - 23,
+    NM_CUSTOMTEXT = NM_FIRST - 24,
+    NM_TVSTATEIMAGECHANGING = NM_FIRST - 24
 
 -- dialog specific stuff
 global constant
@@ -1685,6 +1711,23 @@ global constant
     OFN_SHARENOWARN = 1,
     OFN_SHAREWARN = 0
 
+function peek_multi_strings(atom ptr)
+    sequence path, name, result
+    path = peek_string(ptr)
+    ptr += length(path) + 1
+    result = {}
+    name = peek_string(ptr)
+    if length(name) = 0 then
+        return path
+    end if
+    while length(name) do
+        result = append(result, path & '\\' & name)
+        ptr += length(name) + 1
+        name = peek_string(ptr)
+    end while
+    return result
+end function
+
 constant SIZE_OF_OPENFILENAME = 76
 global function GetOpenFileName(sequence info)
 -- info = {hwndOwner, hInstance, lpstrFilter, nFilterIndex, lpstrFile, 
@@ -1692,10 +1735,15 @@ global function GetOpenFileName(sequence info)
 -- returns: {nFilterIndex, FileName, Flags, nFileOffset, nFileExtension}
     atom struc
     object result
+    integer maxsize
+    maxsize = 260
+    if and_bits(info[8], OFN_ALLOWMULTISELECT) then
+        maxsize = 4096
+    end if
     if compare(info[5], 0) then 
-        info[5] = repeat(0,260)
-    elsif length(info[5]) < 260 then
-        info[5] = info[5] & repeat(0, 260 - length(info[5]))
+        info[5] = repeat(0, maxsize)
+    elsif length(info[5]) < maxsize then
+        info[5] = info[5] & repeat(0, maxsize - length(info[5]))
     end if
     
     struc = allocate(SIZE_OF_OPENFILENAME)
@@ -1719,8 +1767,13 @@ global function GetOpenFileName(sequence info)
         0&                             -- lpfnHook
         0)                             -- lpTemplateName
     if c_func(GetOpenFileName_, {struc}) then
+        if and_bits(info[8], OFN_ALLOWMULTISELECT) then
+            result = peek_multi_strings(peek4u(struc+28))
+        else
+	    result = peek_string(peek4u(struc+28))
+        end if
         result = peek4u(struc+24)&
-            {peek_string(peek4u(struc+28))}&
+            {result}&
             peek4u(struc+52)&
             and_bits(peek4u(struc+56),#FFFF)&
             floor(peek4u(struc+56)/#10000)
@@ -1930,6 +1983,48 @@ global constant
     WM_CHOOSEFONT_GETLOGFONT = (WM_USER+1),
     WM_CHOOSEFONT_SETLOGFONT = (WM_USER+101),
     WM_CHOOSEFONT_SETFLAGS = (WM_USER+102)
+
+-- choose color common dialog
+global constant
+    ChooseColor_ = link_c_func(comdlg32, "ChooseColorA", {C_POINTER}, C_INT),
+    CC_ANYCOLOR = #100,
+    CC_ENABLEHOOK = #10,
+    CC_ENABLETEMPLATE = #20,
+    CC_ENABLETEMPLATEHANDLE = #40,
+    CC_FULLOPEN = #2,
+    CC_PREVENTFULLOPEN = #4,
+    CC_RGBINIT = #1,
+    CC_SHOWHELP = #8,
+    CC_SOLIDCOLOR = #80
+
+sequence cur_palette
+cur_palette = repeat(0, 16)
+
+global function ChooseColor(atom hwnd, integer rgb)
+    atom struc, size, pal
+    size = 4+4+4+4+4+4+4+4+4
+    struc = allocate(size)
+    pal = allocate(4*length(cur_palette))
+    poke4(pal, cur_palette)
+    poke4(struc, {
+	size,
+	hwnd, -- hwndOwner
+	0, -- hInstance
+	rgb, -- rgbResult
+	pal, -- lpCustColors
+	CC_RGBINIT+CC_FULLOPEN, -- Flags
+	0, -- lpCustData
+	0, -- lpfnHook
+	0 -- lpTemplateName
+	})
+    if c_func(ChooseColor_, {struc}) != 0 then
+        rgb = peek4u(struc + 12)
+    end if
+    cur_palette = peek4u({pal, length(cur_palette)})
+    free(struc)
+    free(pal)
+    return rgb
+end function
 
 ----------------------------------------------------------------------------
 integer bytes_allotted

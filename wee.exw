@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.20"
+  version = "0.21"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -58,7 +58,9 @@ global constant
 --  saved run arguments
 --  move options to separate menu
 --  option to sort subroutines in View Subroutines dialog
---  added Bind and Translate to Run menu
+--  added Bind, Shroud and Translate to Run menu
+--  dialog to change syntax highlighting colors
+--  popup menu on Windows tab control
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -78,6 +80,7 @@ global constant
 --    completions are now sorted
 --    switch/case syntax highlight and autocomplete were missing
 --    shift-ctrl-Z does redo
+--    better at locating scintilla DLL when bound/compiled
 
 -- todo:
 --  save tabs in conf file?
@@ -87,7 +90,6 @@ global constant
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
 --    as it is now, its really annoying
---  dialog to change syntax highlighting colors
 --  fix brace highlighting in comments and strings
 --  configurable indent size
 --  namespaces still need to be fixed (include as)
@@ -407,6 +409,19 @@ global procedure reinit_all_edits()
     hedit = saved_hedit
 end procedure
 
+-- pos is integer position in current tab, or {"filename", pos}
+-- note: first character in document is at pos=1
+global procedure goto_pos(object pos, integer len=0)
+    if sequence(pos) then
+	if open_file(pos[1], 0) = 0 then
+	    return
+	end if
+	pos = pos[2]
+    end if
+    pos -= 1
+    ssm(SCI_SETSEL, pos, pos + len)
+    set_top_line(-1)
+end procedure
 
 global function get_pos()
     return ssm(SCI_GETCURRENTPOS)
@@ -588,6 +603,13 @@ global function open_file(sequence file_name, integer reload)
     if length(file_name) = 0 then
         file_name = ui_get_open_file_name()
         if length(file_name) = 0 then return 0 end if
+        if sequence(file_name[1]) then
+            -- multiple open
+            for i = 1 to length(file_name) do
+                open_file(file_name[i], reload)
+            end for
+            return 0
+        end if
     end if
     
     file_name = canonical_path(file_name, 0, CORRECT)
@@ -670,7 +692,7 @@ global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if canc
     atom result, junk
     sequence text
     
-    if not get_modified() then 
+    if not get_modified() and length(file_name) != 0 then
        return 1
     end if
 
@@ -685,6 +707,7 @@ global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if canc
 	    return result + 1
 	end if
     end if
+
     if length(file_name) = 0 then
         return save_file_as()
     end if
@@ -1290,8 +1313,8 @@ end procedure
 
 global procedure view_declaration()
     sequence text, decls, word, name_space
-    integer pos, junk
-
+    integer pos
+    
     text = get_edit_text()
     pos = get_pos()
     word = word_pos(text, pos)
@@ -1300,21 +1323,12 @@ global procedure view_declaration()
     word = word[1]
 
     decls = get_declarations(parse(text, file_name), pos, name_space)
-    pos = -1
     for i = 1 to length(decls) by 2 do
       if equal(decls[i], word) then
-        if atom(decls[i+1]) then
-          pos = decls[i+1]-1
-        else
-          open_file(decls[i+1][1], 0)
-          pos = decls[i+1][2]-1
-        end if
+        goto_pos(decls[i+1], length(word))
+        exit
       end if
     end for
-    if pos != -1 then
-      ssm(SCI_SETSEL, pos, pos+length(word))
-      set_top_line(-1) -- set the top visible line to the current line
-    end if
 end procedure
 
 

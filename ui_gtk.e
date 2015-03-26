@@ -240,7 +240,7 @@ function ViewArgs() view_subroutine_arguments() return 0 end function
 function ViewComp() view_completions() return 0 end function
 function ViewError() ui_view_error() return 0 end function
 
-function ViewSubs() 
+function OldViewSubs() 
     sequence text, word, subs, tmp
     integer pos, result
     atom dialog, scroll, list, content, row, lbl
@@ -291,9 +291,8 @@ function ViewSubs()
 	for i = 1 to length(subs) do
 	    if row = gtk:get(list, "row at index", i-1) then
 		word = subs[i][1]
-		pos = subs[i][2]-1
-		SSM(tab_hedit(), SCI_SETSEL, pos, pos + length(word))
-		set_top_line(-1)
+		pos = subs[i][2]
+		goto_pos(pos, length(word))
 		exit
 	    end if
 	end for
@@ -302,8 +301,14 @@ function ViewSubs()
     return 0
 end function
 
--- contributed by Irv, but pressing enter doesn't activate default 
-function NewViewSubs()
+function RowActivated(atom ctl, atom path, atom col, atom dialog)
+    set(dialog, "response", GTK_RESPONSE_OK)
+    return 0
+end function
+constant row_activated = call_back(routine_id("RowActivated"))
+
+-- contributed by Irv
+function ViewSubs()
     sequence text, word, subs
     integer pos, result
     atom dialog, scroll, list, content, row, lbl
@@ -354,20 +359,21 @@ function NewViewSubs()
     set(col2,"add attribute",rend2,"text",2)
     set(list,"append columns",col2)
     set(store,"data",routines)
+    
     object selection = gtk:get(list,"selection")
     set(selection,"mode",GTK_SELECTION_SINGLE)
     set(col2,"visible",FALSE)
 
     set(col1,"sort column id",1)
+    connect(list, "row-activated", row_activated, dialog)
 
     show_all(dialog)
     if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
 	row = gtk:get(selection,"selected row")
 	data = gtk:get(store,"row data",row)
 	word = data[1]
-	pos = data[2]-1
-	SSM(tab_hedit(), SCI_SETSEL, pos, pos + length(word))
-	set_top_line(-1)
+	pos = data[2]
+	goto_pos(pos, length(word))
     end if
     hide(dialog)
 
@@ -398,6 +404,76 @@ function OptionsFont()
   set(dialog, "hide")
     
   return 0 
+end function
+
+function RunColorDialog(integer color)
+    object ccd = create(GtkColorChooserDialog, "Select a color", win)
+    set(ccd, "use alpha", FALSE)
+    set(ccd, "rgba", sprintf("#%02x%02x%02x", 
+	and_bits(floor(color/{1,#100,#10000}),#FF)))
+    if gtk:get(ccd, "run") = MB_OK then
+	color = gtk:get(ccd, "rgba", 2)
+	color = floor(and_bits(color, #FF0000) / #10000) +
+	    and_bits(color, #FF00) + and_bits(color, #FF) * #10000
+    end if
+    set(ccd, "hide")
+    return color
+end function
+
+function ColorButton(atom ctl, atom w)
+    if w = 1 then
+	normal_color = RunColorDialog(normal_color)
+    elsif w = 2 then
+	background_color = RunColorDialog(background_color)
+    elsif w = 3 then
+	comment_color = RunColorDialog(comment_color)
+    elsif w = 4 then
+	string_color = RunColorDialog(string_color)
+    elsif w = 5 then
+	keyword_color = RunColorDialog(keyword_color)
+    elsif w = 6 then
+	builtin_color = RunColorDialog(builtin_color)
+    elsif w = 7 then
+	number_color = RunColorDialog(number_color)
+    elsif w = 8 then
+	bracelight_color = RunColorDialog(bracelight_color)
+    elsif w = 9 then
+	linenumber_color = RunColorDialog(linenumber_color)
+    end if
+    reinit_all_edits()
+    return 0
+end function
+
+constant color_button = call_back(routine_id("ColorButton"))
+
+function OptionsColors()
+    atom dialog, vbox
+    
+    dialog = create(GtkDialog)
+    set(dialog, "default size", 200, 300)
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "Colors")
+    set(dialog, "default response", GTK_RESPONSE_OK)
+    set(dialog, "modal", TRUE)
+    
+    vbox = create(GtkBox, VERTICAL)
+    add(gtk:get(dialog, "content area"), vbox)
+    
+    pack(vbox, create(GtkButton, "Normal", color_button, 1))
+    pack(vbox, create(GtkButton, "Background", color_button, 2))
+    pack(vbox, create(GtkButton, "Comment", color_button, 3))
+    pack(vbox, create(GtkButton, "String", color_button, 4))
+    pack(vbox, create(GtkButton, "Keyword", color_button, 5))
+    pack(vbox, create(GtkButton, "Built-in", color_button, 6))
+    pack(vbox, create(GtkButton, "Number", color_button, 7))
+    pack(vbox, create(GtkButton, "Brace Highlight", color_button, 8))
+    pack(vbox, create(GtkButton, "Line Number", color_button, 9))
+    
+    show_all(dialog)
+    set(dialog, "run")
+    set(dialog, "hide")
+    return 0
 end function
 
 function OptionsLineNumbers(atom handle)
@@ -471,26 +547,23 @@ function RunSetArguments()
     return 0
 end function
 
-function RunBind() 
+function RunConvert(atom ctl)
+    object lbl = gtk:get(ctl, "label")
+
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
     end if
     
     chdir(dirname(file_name))
-    system("eubind " & file_name)
-    return 0
-end function
-
-function RunTranslate() 
-    if save_if_modified(0) = 0 or length(file_name) = 0 then
-        return 0 -- cancelled, or no name
+    if equal(lbl, "Bind") then
+	system("eubind " & file_name)
+    elsif equal(lbl, "Shroud") then
+	system("eushroud " & file_name)
+    elsif equal(lbl, "Translate") then
+	system("euc " & file_name)
     end if
-    
-    chdir(dirname(file_name))
-    system("euc " & file_name)
     return 0
 end function
-
 
 function HelpAbout()
   set(about_dialog, "run")
@@ -664,22 +737,24 @@ add(viewmenu, {
   })
 set(menuView, "submenu", viewmenu)
 
-add(optionsmenu, {
-  createmenuitem("Font...", "OptionsFont"),
-  createmenuitem("Line Numbers", "OptionsLineNumbers", 0, line_numbers),
-  createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs)
-  })
-set(menuOptions, "submenu", optionsmenu)
-
 add(runmenu, {
   createmenuitem("Start", "RunStart", "F5"),
   createmenuitem("Start with Arguments", "RunStartWithArguments", "<Shift>F5"),
   createmenuitem("Set Arguments...", "RunSetArguments"),
   create(GtkSeparatorMenuItem),
-  createmenuitem("Bind", "RunBind"),
-  createmenuitem("Translate", "RunTranslate")
+  createmenuitem("Bind", "RunConvert"),
+  createmenuitem("Shroud", "RunConvert"),
+  createmenuitem("Translate", "RunConvert")
   })
 set(menuRun, "submenu", runmenu)
+
+add(optionsmenu, {
+  createmenuitem("Font...", "OptionsFont"),
+  createmenuitem("Line Numbers", "OptionsLineNumbers", 0, line_numbers),
+  createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs),
+  createmenuitem("Colors...", "OptionsColors")
+  })
+set(menuOptions, "submenu", optionsmenu)
 
 add(helpmenu, {
   createmenuitem("About...", "HelpAbout"),
