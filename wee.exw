@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.21"
+  version = "0.22"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -85,6 +85,7 @@ global constant
 -- todo:
 --  save tabs in conf file?
 --  comment/uncomment selected lines
+--  fill in Find dialog with current selection
 --  choose which intepreter to use for run (interpreter_path)
 --  64-bit safe on Windows (Linux/OSX ok)
 --  bug with reloading files, first few characters get garbled
@@ -98,6 +99,7 @@ global constant
 --  investigate Mike Duffy's scintilla Euphoria Lexer
 --    multicolored brackets and parens
 --    multiline comments and strings
+--  code-aware identifier rename
 
 without warning
 
