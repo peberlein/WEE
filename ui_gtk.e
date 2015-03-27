@@ -29,6 +29,7 @@ include std/regex.e
 include std/sort.e
 include scintilla.e
 include EuGTK/GtkEngine.e
+include EuGTK/events.e
 include wee.exw as wee
 
 
@@ -604,6 +605,7 @@ function delete_event()
 end function
 
 function notebook_switch_page(atom nb, atom page, atom page_num)
+    --? {nb, page, page_num}
     select_tab(page_num + 1)
     return 0
 end function
@@ -669,7 +671,8 @@ constant
   viewmenu = sets(create(GtkMenu), {{"accel group", group}}),
   runmenu = sets(create(GtkMenu), {{"accel group", group}}),
   optionsmenu = sets(create(GtkMenu), {{"accel group", group}}),
-  helpmenu = sets(create(GtkMenu), {{"accel group", group}})
+  helpmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  tabmenu = create(GtkMenu)
 
 -- create a menu item with "activate" signal connected to local routine
 -- and add parsed accelerator key 
@@ -763,6 +766,14 @@ add(helpmenu, {
   })
 set(menuHelp, "submenu", helpmenu)
 
+-- popup menu for tab controls
+add(tabmenu, {
+  createmenuitem("Save", "FileSave"),
+  createmenuitem("Save As...", "FileSaveAs"),
+  createmenuitem("Close", "FileClose")
+})
+show_all(tabmenu)
+
 add(menubar, {
     menuFile,
     menuEdit,
@@ -772,14 +783,47 @@ add(menubar, {
     menuOptions,
     menuHelp})
 
+
 pack(panel, menubar)
 
+-------------------------------------------------
+function PopupTabMenu(atom nb, atom event)
+
+  if events:button(event) = 3 then
+    atom x, y, lx, ly, lw, lh
+    {x,y} = events:xy(event) -- get mouse coordinates
+    atom allocation = allocate(4*4)
+    for i = 0 to gtk:get(nb, "n_pages")-1 do
+      atom pg = gtk:get(nb, "nth_page", i)
+      atom lbl = gtk:get(nb, "tab_label", pg)
+
+      gtk_func("gtk_widget_get_allocation", {P,P}, {lbl, allocation})
+      {lx, ly, lw, lh} = peek4u({allocation, 4}) -- get label rect
+
+      if x >= lx-10 and x <= lx+lw+10 then
+        select_tab(i+1)
+        set(tabmenu, "popup", NULL, NULL, NULL, NULL, 0, events:time(event))
+        exit
+      end if
+    end for
+    free(allocation)
+  end if
+
+  return 0
+end function
 
 constant
-  notebook = create(GtkNotebook)
+  notebook = create(GtkNotebook),
+  status_label = create(GtkLabel, "status")
 
 pack(panel, notebook, TRUE, TRUE)
+
 connect(notebook, "switch-page", call_back(routine_id("notebook_switch_page")))
+connect(notebook, "button-press-event", call_back(routine_id("PopupTabMenu")))
+
+show(status_label)
+set(notebook, "action widget", status_label, GTK_PACK_END)
+
 
 --------------------------------------------------
 
@@ -796,8 +840,7 @@ end function
 --------------------------------------------------
 
 global procedure ui_update_status(sequence status)
-  -- no status label yet
-  -- may not need it with View->Line Numbers now
+  set(status_label, "text", status)
 end procedure
 
 function file_open_recent(atom handle, integer idx)
@@ -841,18 +884,14 @@ end procedure
 constant sci_notify_cb = call_back(routine_id("sci_notify"))
 
 global function ui_new_tab(sequence name)
-  atom editor, lbl
-
-  lbl = create(GtkLabel)
-  set(lbl, "text", name)
-  show(lbl)
+  atom editor
 
   editor = scintilla_new()
   ui_hedits &= editor
   init_edit(editor)
   gtk_proc("gtk_widget_show", {P}, editor)
 
-  set(notebook, "append page", editor, lbl)
+  set(notebook, "append page", editor, create(GtkLabel, name))
 
   connect(editor, "sci-notify", sci_notify_cb, 0)
 
@@ -890,15 +929,18 @@ global function ui_get_open_file_name()
   sequence filename
   
   dialog = create(GtkFileChooserDialog, "Open...", win, GTK_FILE_CHOOSER_ACTION_OPEN)
-  --set(dialog, "transient for", win)
-  set(dialog, "select multiple", FALSE)
+  set(dialog, "select multiple", TRUE)
   set(dialog, "add button", "gtk-cancel", GTK_RESPONSE_CLOSE)
   set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
   set(dialog, "position", GTK_WIN_POS_MOUSE)
   set(dialog, "current folder", pathname(canonical_path(file_name)))
   add(dialog, {filter1, filter2, filter3})
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
-    filename = gtk:get(dialog, "filename")
+    filename = gtk:get(dialog, "filenames")
+    if length(filename) = 1 then
+	-- single filename selected
+        filename = filename[1]
+    end if
   else
     filename = ""
   end if
