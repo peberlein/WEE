@@ -20,6 +20,7 @@ files = {
  {"EuGTK/GtkEngine.e", 0, 0, 0, LINUX, OSX},
  {"EuGTK/GtkEnums.e", 0, 0, 0, LINUX, OSX},
  {"EuGTK/GtkPrinter.e", 0, 0, 0, LINUX, OSX},
+ {"EuGTK/events.e", 0, 0, 0, LINUX, OSX},
  {"EuGTK/README.txt", 0, 0, 0, LINUX, OSX},
  {"EuGTK/license.txt", 0, 0, 0, LINUX, OSX},
 -- scintilla
