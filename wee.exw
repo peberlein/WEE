@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.22"
+  version = "0.23"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -60,7 +60,7 @@ global constant
 --  option to sort subroutines in View Subroutines dialog
 --  added Bind, Shroud and Translate to Run menu
 --  dialog to change syntax highlighting colors
---  popup menu on Windows tab control
+--  popup menu on tab control
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -80,10 +80,12 @@ global constant
 --    completions are now sorted
 --    switch/case syntax highlight and autocomplete were missing
 --    shift-ctrl-Z does redo
---    better at locating scintilla DLL when bound/compiled
+--    better at locating scintilla library when bound/compiled
+--    run/bind/shroud/translate didn't like spaces in the path
 
 -- todo:
---  save tabs in conf file?
+--  esc to return to previous location
+--  save tabs in conf file? option to restore last tabs?
 --  comment/uncomment selected lines
 --  fill in Find dialog with current selection
 --  choose which intepreter to use for run (interpreter_path)
@@ -143,6 +145,8 @@ integer expand_line, last_deleted_char
 sequence insert_chars
 sequence calltip_args -- {{start,end},...}
 integer calltip_pos
+sequence calltip_stack -- {calltip_pos, calltip_args...}
+sequence calltip_text -- "routine_name(type1 arg1, ...)"
 sequence wee_conf_filename
 sequence search_idx, search_dat
 
@@ -212,6 +216,8 @@ global procedure wee_init()
   indent_str = repeat(' ', indent_size)
   calltip_args = {}
   calltip_pos = -1
+  calltip_stack = {}
+  calltip_text = ""
   
   current_tab = 0
 
@@ -425,6 +431,10 @@ global procedure goto_pos(object pos, integer len=0)
     set_top_line(-1)
 end procedure
 
+global procedure goto_prev_pos()
+    
+end procedure
+
 global function get_pos()
     return ssm(SCI_GETCURRENTPOS)
 end function
@@ -562,6 +572,8 @@ global procedure select_tab(integer tab)
     insert_chars = ""
     calltip_args = {}
     calltip_pos = -1
+    calltip_stack = {}
+    calltip_text = ""
 
     ui_select_tab(tab)
     ui_update_window_title(file_name)
@@ -1417,6 +1429,10 @@ global procedure view_subroutine_arguments()
     decls = get_subroutine_arguments(parse(text, file_name), word, name_space)
     if length(decls) then
         decls = decls[$] -- overloaded?  use the last one
+        if calltip_save != -1 then
+	    calltip_stack &= {calltip_save, calltip_args, calltip_text}
+	    --? calltip_stack
+        end if
         text = decls[1] & " " & decls[2] & "("
 	calltip_args = {}
         for i = 3 to length(decls) by 3 do
@@ -1429,6 +1445,7 @@ global procedure view_subroutine_arguments()
         end for
         text &= ")"
         --puts(1, text & "\n")
+        calltip_text = text
         ssm(SCI_CALLTIPSHOW, pos, text)
         if length(calltip_args) then
             ssm(SCI_CALLTIPSETHLT, calltip_args[1][1], calltip_args[1][2])
@@ -1467,24 +1484,35 @@ procedure update_subroutine_arguments()
         return
     end if
     --? {calltip_pos, pos}
-    if calltip_pos = -1 or pos < calltip_pos then
-        return
-    end if
+    while calltip_pos != -1 or length(calltip_stack) != 0 do
     
-    -- get the text from after '(' up to the cursor
-    text = repeat(0, pos - calltip_pos + 1)
-    for i = 1 to length(text) do
-        text[i] = ssm(SCI_GETCHARAT, calltip_pos+i-1)
-    end for
-    --puts(1, text&"\n")
-    
-    arg = parse_argument_position(text)
-    if arg = 0 or arg > length(calltip_args) then
-        ssm(SCI_CALLTIPCANCEL)
-        if arg = 0 then calltip_pos = -1 end if
-    else
-        ssm(SCI_CALLTIPSETHLT, calltip_args[arg][1], calltip_args[arg][2])
-    end if
+	if calltip_pos = -1 or pos < calltip_pos then
+	    calltip_pos = calltip_stack[$-2]
+	    calltip_args = calltip_stack[$-1]
+	    calltip_text = calltip_stack[$]
+	    ssm(SCI_CALLTIPSHOW, calltip_pos, calltip_text)        
+	    calltip_stack = calltip_stack[1..$-3]
+	end if
+	
+	-- get the text from after '(' up to the cursor
+	text = repeat(0, pos - calltip_pos + 1)
+	for i = 1 to length(text) do
+	    text[i] = ssm(SCI_GETCHARAT, calltip_pos+i-1)
+	end for
+	--puts(1, text&"\n")
+	
+	arg = parse_argument_position(text)
+	if arg = 0 then
+	    ssm(SCI_CALLTIPCANCEL)
+	    calltip_pos = -1
+	elsif arg > length(calltip_args) then
+	    ssm(SCI_CALLTIPSETHLT, 0, 0)
+	    exit
+	else
+	    ssm(SCI_CALLTIPSETHLT, calltip_args[arg][1], calltip_args[arg][2])
+	    exit
+	end if
+    end while
 end procedure
 
 

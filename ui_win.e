@@ -750,22 +750,22 @@ procedure run_start(integer with_args)
 	if length(get_tab_arguments()) = 0 then
 	    run_arguments()
 	end if
-        args = ' ' & get_tab_arguments()
+        args = get_tab_arguments()
     end if
 
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
 	alloc_string(interpreter_path),
-	alloc_string(run_file_name & args),
+	alloc_string("\"" & run_file_name & "\" " & args),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
     if result < 33 then
 	-- shellexecute failed
 	if match(".exw", lower(run_file_name)) or
 	   match(".ew", lower(run_file_name)) then
-	    system("euiw " & run_file_name & args)
+	    system("euiw \"" & run_file_name & "\" " & args)
 	else
-	    system("eui " & run_file_name & args)
+	    system("eui \"" & run_file_name & "\" " & args)
 	end if
     end if
     free_strings()
@@ -781,7 +781,7 @@ procedure run_convert(sequence name, sequence cmd)
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
 	alloc_string(cmd),
-	alloc_string(file_name),
+	alloc_string("\"" & file_name & "\""),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
     if result < 33 then

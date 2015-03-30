@@ -489,7 +489,7 @@ function OptionsSortedSubs(atom handle)
 end function
 
 
-function RunStart() 
+function RunStart()
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
     end if
@@ -498,7 +498,7 @@ function RunStart()
     reset_ex_err()
     -- TODO: make configurable
     chdir(dirname(run_file_name))
-    system("eui " & run_file_name)
+    system("eui \"" & run_file_name & "\"")
     --system(cmdline[1] & " " & run_file_name)
     check_ex_err()
     return 0
@@ -516,7 +516,7 @@ function RunStartWithArguments()
     reset_ex_err()
     -- TODO: make configurable
     chdir(dirname(run_file_name))
-    system("eui " & run_file_name & " " & get_tab_arguments())
+    system("eui \"" & run_file_name & "\" " & get_tab_arguments())
     --system(cmdline[1] & " " & run_file_name)
     check_ex_err()
     return 0
@@ -557,11 +557,11 @@ function RunConvert(atom ctl)
     
     chdir(dirname(file_name))
     if equal(lbl, "Bind") then
-	system("eubind " & file_name)
+	system("eubind \"" & file_name & "\"")
     elsif equal(lbl, "Shroud") then
-	system("eushroud " & file_name)
+	system("eushroud \"" & file_name & "\"")
     elsif equal(lbl, "Translate") then
-	system("euc " & file_name)
+	system("euc \"" & file_name & "\"")
     end if
     return 0
 end function
