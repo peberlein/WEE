@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.23"
+  version = "0.24"
 
 -- revision notes:
 --  added: syntax coloring!
