@@ -110,7 +110,11 @@ global constant
     LoadLibrary = link_c_func(kernel32, "LoadLibraryA", {C_POINTER}, C_LONG),
     GetModuleHandle = link_c_func(kernel32, "GetModuleHandleA", {C_POINTER}, C_INT),
     ShellExecute = link_c_func(shell32, "ShellExecuteA", {C_INT,C_INT,C_INT,C_INT,C_INT,C_INT}, C_INT),
-    SHGetFolderPath = link_c_func(shell32, "SHGetFolderPathA", {C_INT, C_INT, C_INT, C_LONG, C_POINTER}, C_INT)
+    SHGetFolderPath = link_c_func(shell32, "SHGetFolderPathA", {C_INT, C_INT, C_INT, C_LONG, C_POINTER}, C_INT),
+    DragAcceptFiles = link_c_proc(shell32, "DragAcceptFiles", {C_INT, C_INT}),
+    DragFinish = link_c_proc(shell32, "DragFinish", {C_POINTER}),
+    DragQueryFile = link_c_func(shell32, "DragQueryFile", {C_POINTER, C_UINT, C_POINTER, C_UINT}, C_UINT),
+    DragQueryPoint = link_c_func(shell32, "DragQueryPoint", {C_POINTER, C_POINTER}, C_INT)
 
 global constant
     CW_USEDEFAULT = #80000000,

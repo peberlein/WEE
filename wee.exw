@@ -61,6 +61,7 @@ global constant
 --  added Bind, Shroud and Translate to Run menu
 --  dialog to change syntax highlighting colors
 --  popup menu on tab control
+--  drag'n'drop files
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -109,6 +110,7 @@ include parser.e
 include scintilla.e
 include get.e
 include std/filesys.e
+include std/sequence.e
 include misc.e
 
 
@@ -1766,6 +1768,17 @@ procedure delete_pair()
     end if
 end procedure
 
+-- open file(s) from a drag and drop operation
+procedure open_uri(sequence uri)
+    uri = split(uri, "\r\n")
+    for i = 1 to length(uri) do
+	? uri[i]
+        if match("file://", uri[i]) = 1 then
+            open_file(uri[i][8..$], 0)
+        end if
+    end for
+end procedure
+
 procedure log_notification(atom notification)
   integer code, pos, ch, modifiers
   --? peek4u({notification, 24})
@@ -1955,7 +1968,16 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 	    last_deleted_char = ssm(SCI_GETCHARAT, pos)
 	end if
     end if
-   
+
+  elsif code = SCN_URIDROPPED then
+    ifdef BITS64 then
+	ptr = peek8u(notification+NOTIFICATION_TEXT)
+    elsedef
+	ptr = peek4u(notification+NOTIFICATION_TEXT)
+    end ifdef
+    open_uri(peek_string(ptr))
+    --puts(1, "SCN_URIDROPPED "& peek_string(ptr) &"\n")
+    
   end if
   return 0
 end function

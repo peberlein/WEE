@@ -991,6 +991,24 @@ procedure choose_font()
     free(lf)
 end procedure
 
+procedure process_dropfiles(atom hDrop)
+    integer count, len, size
+    atom buf, junk
+
+    -- get the number of files dropped
+    count = c_func(DragQueryFile, {hDrop, #FFFFFFFF, NULL, 0})
+    for i = 0 to count-1 do
+	-- get the length of the indexed filename and null-terminator
+	size = c_func(DragQueryFile, {hDrop, i, NULL, 0}) + 1
+        buf = allocate(size)
+        -- get the indexed filename into our buffer and open it
+        junk = c_func(DragQueryFile, {hDrop, i, buf, size})
+        open_file(peek_string(buf), 0)
+        free(buf)
+    end for
+    c_proc(DragFinish, {hDrop})
+end procedure
+
 
 integer doing_setfocus_checks
 doing_setfocus_checks = 0
@@ -1171,6 +1189,8 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	end if
     elsif iMsg = WM_FIND then  -- find/replace dialog
 	process_find(lParam)
+    elsif iMsg = WM_DROPFILES then
+        process_dropfiles(wParam)
     else
        --printf(1, "hwnd=%x iMsg=%d #%x wParam=%d lParam=%d\n", {hwnd, iMsg, iMsg, wParam, lParam})
 
@@ -1464,6 +1484,7 @@ procedure WinMain()
 
     c_proc(ShowWindow, {hMainWnd, SW_SHOWNORMAL})
     c_proc(UpdateWindow, {hMainWnd})
+    c_proc(DragAcceptFiles, {hMainWnd, 1})
 
     while c_func(GetMessage, {msg, NULL, 0, 0}) do
 	if hFindDlg and c_func(IsDialogMessage,{hFindDlg,msg}) then
