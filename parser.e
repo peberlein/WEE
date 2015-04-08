@@ -531,7 +531,11 @@ function include_file(sequence filename)
   if ts = -1 then
     paths = include_paths(0)
     for i = 1 to length(paths) do
-        tmp = paths[i] & SLASH & filename
+        tmp = paths[i]
+        if tmp[$] != SLASH then
+            tmp &= SLASH
+        end if
+        tmp &= filename
         ts = get_timestamp(tmp)
         --printf(1, "%s %d\n", {tmp, ts})
         if ts != -1 then
@@ -554,7 +558,7 @@ function include_file(sequence filename)
   state = {text, source_filename, idx, tok_idx, tok, e}
   source_filename = filename
   text = read_file(filename)
---printf(1, "including %s, length %d\n", {source_filename, length(text)})
+--printf(1, "including %s, length %d, ts %d\n", {source_filename, length(text), ts})
   idx = 1
   tok_idx = 1
   tok = ""
