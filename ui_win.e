@@ -1134,10 +1134,10 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		hFindDlg = FindText(hMainWnd,0,FR_DOWN,find_phrase)
 		return rc
 	    elsif wParam = Search_Find_Next then
-		search_find(0)
+		search_find(find_phrase, 0)
 	        return rc
 	    elsif wParam = Search_Find_Prev then
-		search_find(1)
+		search_find(find_phrase, 1)
 	        return rc
 	    elsif wParam = Search_Replace then
 		hFindDlg = ReplaceText(hMainWnd,0,FR_DOWN,find_phrase,replace_phrase)
@@ -1289,8 +1289,6 @@ procedure translate_editor_keys(atom msg)
         else
           poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
         end if
-      elsif wParam = 71 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
       elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Declaration, 0})
       elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
