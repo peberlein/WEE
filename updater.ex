@@ -15,17 +15,26 @@ if wait_key() = 'q' then
 end if
 
 constant
-  base_url = "http://cdn.rawgit.com/peberlein/WEE/" -- & "commit/filename"
+  repo = "peberlein/WEE/",
+  base_url = "http://cdn.rawgit.com/" & repo -- & "commit/filename"
 
 -- this needs to be .json since rawgit.com has a whitelist of extensions
 -- otherwise it will just redirect to https://raw.githubusercontent.com
+-- and http_get doesn't support https: protocol
 constant
-  manifest = http_get("http://rawgit.com/peberlein/WEE/master/manifest.json")
+  manifest = http_get("http://rawgit.com/"& repo &"master/manifest.json")
+--  manifest = {{{0,"200"}} ,read_file("../manifest.json")}
+
+procedure fail(sequence fmt, object args={})
+    printf(1, fmt, args)
+    puts(1, "\nPress any key to exit, then try updating again.\n")
+    wait_key()
+    abort(1)
+end procedure
 
 if atom(manifest) or not equal(manifest[1][1][2], "200") then
   display(manifest)
-  puts(1, "Failed to download manifest.json\n")
-  abort(1)
+  fail("Failed to download manifest.json\n")
 end if
 
 -- manifest format
@@ -37,8 +46,7 @@ sequence files, name, commit_tag
 files = value(manifest[2])
 --display(files)
 if files[1] != 0 then
-  puts(1, "Failed to parse manifest\n")
-  abort(1)
+  fail("Failed to parse manifest\n")
 end if
 files = files[2]
 
@@ -54,6 +62,10 @@ sequence platforms, subdir
 object result, hashcode
 
 for i = 1 to length(files) do
+  if length(files[i]) < 4 then
+      fail("Manifest file has invalid format.\n")
+  end if
+
   name = files[i][1]
   hashcode = files[i][2]
   commit_tag = files[i][3]
@@ -75,7 +87,9 @@ for i = 1 to length(files) do
     result = http_get(base_url & commit_tag & "/" & name)
     if atom(result) or not equal(result[1][1][2], "200") then
       display(result)
-      printf(1, "Failed to download %s\n", {name})
+      fail("Failed to download %s\n", {name})
+    elsif not equal(hashcode, hash(result[2], HSIEH30)) then
+      fail("Failed to validate %s\n", {name})
     else
       subdir = dirname(name)
       if length(subdir) and atom(dir(subdir)) then
@@ -89,4 +103,5 @@ for i = 1 to length(files) do
   end if
 end for
 
-puts(1, "Done.\n")
+puts(1, "Done.  Press any key to exit.\n")
+wait_key()
