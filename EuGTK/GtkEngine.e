@@ -2600,9 +2600,9 @@ widget[GtkDialog] = {"gtk_dialog",
     {"run",{P},I},
     {"response",{P,I}},
     {"add_button",{P,S,I},P,0,GtkWidget},
-    {"get_action_area",{P},P,0,GtkWidget}, -- Deprecated 3.12
+    {"get_action_area",{P},P,0,GtkBox}, -- Deprecated 3.12
     {"add_action_widget",{P,P,I}},
-    {"get_content_area",{P},P,0,GtkWidget},
+    {"get_content_area",{P},P,0,GtkBox},
     {"set_default_response",{P,I}},
     {"set_response_sensitive",{P,I,B}},
     {"get_response_for_widget",{P,P},I},
