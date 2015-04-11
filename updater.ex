@@ -23,7 +23,6 @@ constant
 -- and http_get doesn't support https: protocol
 constant
   manifest = http_get("http://rawgit.com/"& repo &"master/manifest.json")
---  manifest = {{{0,"200"}} ,read_file("../manifest.json")}
 
 procedure fail(sequence fmt, object args={})
     printf(1, fmt, args)
