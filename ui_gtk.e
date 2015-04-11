@@ -29,7 +29,7 @@ include std/regex.e
 include std/sort.e
 include scintilla.e
 include EuGTK/GtkEngine.e
-include EuGTK/events.e
+include EuGTK/GtkEvents.e
 include wee.exw as wee
 
 
@@ -88,18 +88,16 @@ end function
 --------------------------------------------------
 -- Find dialog
 
-sequence find_phrase, replace_phrase
-find_phrase = ""
-replace_phrase = ""
-
 constant 
     GTK_RESPONSE_FIND = 1,
     GTK_RESPONSE_REPLACE = 2,
     GTK_RESPONSE_REPLACE_ALL = 3
 
-procedure do_find(integer rep)
-    atom dialog, content, row, vbox, hbox, lbl, hedit, find_entry, rep_entry, chk_word, chk_case
-    integer flags, result, pos
+procedure find_dialog(integer rep)
+    atom dialog, content, row, vbox, hbox, lbl, hedit, 
+	find_entry, rep_entry, chk_word, chk_case, chk_backward
+    integer flags, result, pos, backward
+    sequence text
 -- Fi_nd What: __________________  [_Find Next]
 -- [ ] Match _Whole Word Only      [  Cancel  ]
 -- [ ] Match _Case
@@ -108,6 +106,11 @@ procedure do_find(integer rep)
 -- Re_place With: _______________   [_Replace ]
 -- [ ] Match _Whole Word Only       [Replace _All ]
 -- [ ] Match _Case                  [Cancel]
+
+    text = get_selection()
+    if length(text) then
+	find_phrase = text
+    end if
 
     dialog = create(GtkDialog)
     --set(dialog, "default size", 200, 200)
@@ -139,6 +142,8 @@ procedure do_find(integer rep)
     pack(hbox, find_entry)
     --pack(hbox, -create(GtkButton, "Find Next", GTK_RESPONSE_OK))
 
+    hedit = tab_hedit()
+
     if rep then
         hbox = create(GtkBox, HORIZONTAL)
 	pack(vbox, hbox)
@@ -147,22 +152,29 @@ procedure do_find(integer rep)
 	set(rep_entry, "activates default", TRUE)
 	set(rep_entry, "text", replace_phrase)
 	pack(hbox, rep_entry)
+	
+	-- clear the target so that first replace won't reuse old one
+	SSM(hedit, SCI_SETTARGETSTART, 0)
+	SSM(hedit, SCI_SETTARGETEND, 0)
     end if
 
     hbox = create(GtkBox, HORIZONTAL)
     pack(vbox, hbox)
-    chk_word = create(GtkCheckButton, "Match Whole Word Only")
+    chk_word = create(GtkCheckButton, "Match whole word only")
     pack(hbox, chk_word)
     --pack(hbox, -create(GtkButton, "Cancel", GTK_RESPONSE_DELETE_EVENT))
     
     hbox = create(GtkBox, HORIZONTAL)
     pack(vbox, hbox)
-    chk_case = create(GtkCheckButton, "Match Case")
+    chk_case = create(GtkCheckButton, "Match case")
     pack(hbox, chk_case)
 
+    hbox = create(GtkBox, HORIZONTAL)
+    pack(vbox, hbox)
+    chk_backward = create(GtkCheckButton, "Search backward")
+    pack(hbox, chk_backward)
+
     show_all(dialog)
-    hedit = tab_hedit()
-    pos = -1
     
     result = set(dialog, "run")
     while result != GTK_RESPONSE_DELETE_EVENT do
@@ -173,38 +185,31 @@ procedure do_find(integer rep)
 	if gtk:get(chk_case, "active") then
 	    flags += SCFIND_MATCHCASE
 	end if
+	backward = gtk:get(chk_backward, "active")
 	
 	SSM(hedit, SCI_SETSEARCHFLAGS, flags)
 	find_phrase = gtk:get(find_entry, "text")
 
-	if result = GTK_RESPONSE_REPLACE_ALL then
-	    pos = 0
+	if result = GTK_RESPONSE_FIND then
+	    if search_find(find_phrase, backward) = 0 then
+		Info(dialog, "Find", "Unable to find a match.")
+	    end if
+	else
+	    replace_phrase = gtk:get(rep_entry, "text")
+	    if result = GTK_RESPONSE_REPLACE_ALL then
+		result = search_replace_all(find_phrase, replace_phrase)
+		if result then
+		    Info(dialog, "Replace All", sprintf("%d replacements.", {result}))
+		else
+		    Info(dialog, "Replace All", "Unable to find a match.")
+		end if
+	    else
+	        result = search_replace(replace_phrase)
+	        if search_find(find_phrase, backward) = 0 and result = 0 then
+	           Info(dialog, "Replace", "Unable to find a match.") 
+	        end if
+	    end if
 	end if
-	
-	while 1 do
-	    if pos = -1 then
-		pos = SSM(hedit, SCI_GETCURRENTPOS)
-	    elsif result != GTK_RESPONSE_FIND then
-		-- replace or replace_all
-		replace_phrase = gtk:get(rep_entry, "text")
-		SSM(hedit, SCI_REPLACETARGET, length(replace_phrase), replace_phrase)
-		pos += length(replace_phrase)
-	    end if
-	    
-	    SSM(hedit, SCI_SETTARGETSTART, pos)
-	    SSM(hedit, SCI_SETTARGETEND, SSM(hedit, SCI_GETTEXTLENGTH))
-	    pos = SSM(hedit, SCI_SEARCHINTARGET, length(find_phrase), find_phrase)
-	    if pos < 0 then
-		SSM(hedit, SCI_GOTOPOS, 0)
-	        pos = -1
-	        exit
-	    end if
-	    if result != GTK_RESPONSE_REPLACE_ALL then
-	        SSM(hedit, SCI_SETSEL, pos, pos+length(find_phrase))
-	        pos += length(find_phrase)
-	        exit
-	    end if
-	end while
 	result = set(dialog, "run")
     end while
     hide(dialog)
@@ -234,12 +239,16 @@ function EditCopy() SSM(tab_hedit(), SCI_COPY) return 0 end function
 function EditPaste() SSM(tab_hedit(), SCI_PASTE) return 0 end function
 function EditClear() SSM(tab_hedit(), SCI_CLEAR) return 0 end function
 function EditSelectAll() SSM(tab_hedit(), SCI_SELECTALL) return 0 end function
-function SearchFind() do_find(0) return 0 end function
-function SearchReplace() do_find(1) return 0 end function
+function EditToggleComment() toggle_comment() return 0 end function
+function SearchFind() find_dialog(0) return 0 end function
+function SearchFindNext() search_find(find_phrase, 0) return 0 end function
+function SearchFindPrevious() search_find(find_phrase, 1) return 0 end function
+function SearchReplace() find_dialog(1) return 0 end function
 function ViewDecl() view_declaration() return 0 end function
 function ViewArgs() view_subroutine_arguments() return 0 end function
 function ViewComp() view_completions() return 0 end function
 function ViewError() ui_view_error() return 0 end function
+function GoBack() go_back() return 0 end function
 
 function OldViewSubs() 
     sequence text, word, subs, tmp
@@ -366,7 +375,7 @@ function ViewSubs()
     set(col2,"visible",FALSE)
 
     set(col1,"sort column id",1)
-    connect(list, "row-activated", row_activated, dialog)
+    --connect(list, "row-activated", row_activated, dialog)
 
     show_all(dialog)
     if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
@@ -562,6 +571,8 @@ function RunConvert(atom ctl)
 	system("eushroud \"" & file_name & "\"")
     elsif equal(lbl, "Translate") then
 	system("euc \"" & file_name & "\"")
+    else
+	crash("Unable to get menu label")
     end if
     return 0
 end function
@@ -718,16 +729,20 @@ add(editmenu, {
   createmenuitem("C_opy", "EditCopy", "<Control>C"),
   createmenuitem("_Paste", "EditPaste", "<Control>V"),
   createmenuitem("Clear", "EditClear"),
-  createmenuitem("Select _All", "EditSelectAll", "<Control>A")
+  createmenuitem("Select _All", "EditSelectAll", "<Control>A"),
+  create(GtkSeparatorMenuItem),
+  createmenuitem("Toggle Comment", "EditToggleComment", "<Control>M")
   })
 set(menuEdit, "submenu", editmenu)
 
 add(searchmenu, {
-  sets(createmenuitem("Find...", "SearchFind", "F3"), {
-    {"add accelerator", "activate", group} & 
-    accelerator_parse("<Control>F") & {GTK_ACCEL_VISIBLE}
-    }),
-  createmenuitem("Replace...", "SearchReplace")
+  sets(createmenuitem("Find...", "SearchFind", "<Control>F"),
+    {{"add accelerator", {group,"F3"}}}),
+  sets(createmenuitem("Find Next", "SearchFindNext", "<Control>G"),
+    {{"add accelerator", {group, "<Control>F3"}}}),
+  sets(createmenuitem("Find Previous", "SearchFindPrevious", "<Control><Shift>G"),
+    {{"add accelerator", {group, "<Control><Shift>F3"}}}),
+  createmenuitem("Replace...", "SearchReplace", "<Control>R")
   })
 set(menuSearch, "submenu", searchmenu)
 
@@ -736,7 +751,8 @@ add(viewmenu, {
   createmenuitem("Declaration", "ViewDecl", "<Control>F2"),
   createmenuitem("Subroutine Arguments...", "ViewArgs", "<Shift>F2"),
   createmenuitem("Completions...", "ViewComp", "<Control>space"),
-  createmenuitem("Goto Error", "ViewError", "F4")
+  createmenuitem("Goto Error", "ViewError", "F4"),
+  createmenuitem("Go Back", "GoBack", "Escape")
   })
 set(menuView, "submenu", viewmenu)
 
@@ -782,7 +798,6 @@ add(menubar, {
     menuRun,
     menuOptions,
     menuHelp})
-
 
 pack(panel, menubar)
 
@@ -852,18 +867,18 @@ sequence filemenu_items = {}
 
 global procedure ui_refresh_file_menu(sequence items)
     atom widget
-    if length(filemenu_items) = 0 then
-	filemenu_items &= create(GtkSeparatorMenuItem)
-	add(filemenu, filemenu_items[1])
+    if length(filemenu_items) = 0 and length(items) != 0 then
+	add(filemenu, create(GtkSeparatorMenuItem))
     end if
     for i = 1 to length(items) do
-        if i + 1 > length(filemenu_items) then
+        if i > length(filemenu_items) then
 	    widget = create(GtkMenuItem, items[i])
+	    set(widget, "use underline", 0)
 	    filemenu_items &= widget
 	    add(filemenu, widget)
 	    connect(widget, "activate", call_back(routine_id("file_open_recent")), i)
 	else
-	    set(filemenu_items[i+1], "label", items[i])
+	    set(filemenu_items[i], "label", items[i])
         end if
     end for
 end procedure
@@ -970,6 +985,11 @@ global function ui_get_save_file_name(sequence filename)
   
   return filename
 end function
+
+-- show a message box
+global procedure ui_message_box_ok(sequence title, sequence message)
+  Info(win, title, "", message)
+end procedure
 
 -- returns yes=1 no=0
 global function ui_message_box_yes_no(sequence title, sequence message)

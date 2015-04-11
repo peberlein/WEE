@@ -1867,6 +1867,17 @@ global constant
     ReplaceText_ = link_c_func(comdlg32, "ReplaceTextA", {C_POINTER}, C_LONG)
 
 constant SIZE_OF_FINDREPLACE = 40 
+    -- 0  DWORD        lStructSize;
+    -- 4  HWND         hwndOwner;
+    -- 8  HINSTANCE    hInstance;
+    -- 12 DWORD        Flags;
+    -- 16 LPTSTR       lpstrFindWhat;
+    -- 20 LPTSTR       lpstrReplaceWith;
+    -- 24 WORD         wFindWhatLen;
+    -- 26 WORD         wReplaceWithLen;
+    -- 28 LPARAM       lCustData;
+    -- 32 LPFRHOOKPROC lpfnHook;
+    -- 36 LPCTSTR      lpTemplateName;
 
 atom find_struc, hwnd_find
 find_struc = 0
@@ -1944,7 +1955,7 @@ global function GetFindWhat(atom struc)
     return peek_string(peek4u(struc+16))
 end function
 global function GetReplaceWith(atom struc)
-    return peek_string(peek4u(struc+18))
+    return peek_string(peek4u(struc+20))
 end function
 
 -- choose font common dialog

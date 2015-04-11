@@ -24,8 +24,11 @@ constant
     Edit_Clear = 205,
     Edit_SelectAll = 206,
     Edit_Redo = 207,
+    Edit_ToggleComment = 208,
     Search_Find = 301,
-    Search_Replace = 302,
+    Search_Find_Next = 302,
+    Search_Find_Prev = 303,
+    Search_Replace = 304,
     View_Subs = 401,
     View_Error = 402,
     View_Completions = 404,
@@ -237,6 +240,15 @@ global function ui_get_save_file_name(sequence file_name)
     return temp[2]
 end function
 
+
+global procedure ui_message_box_ok(sequence title, sequence message)
+    atom result
+    result = c_func(MessageBox, {hMainWnd, 
+	  alloc_string(message),
+	  alloc_string(title),
+	  or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
+    free_strings()
+end procedure
 
 -- returns yes=1 no=0
 global function ui_message_box_yes_no(sequence title, sequence message)
@@ -623,54 +635,61 @@ global procedure ui_show_uri(sequence uri)
 end procedure
 
 
-sequence find_phrase
-find_phrase = ""
-
 procedure process_find(atom struc)
-    atom flags, findtext, junk, result
+    atom flags, junk, result
+    integer backward
+
     flags = GetFindFlags(struc)
     if and_bits(flags, FR_DIALOGTERM) then
         find_phrase = GetFindWhat(struc)
+        replace_phrase = GetReplaceWith(struc)
+        --puts(1, find_phrase&" "&replace_phrase&"\n")
 	hFindDlg = 0
-    elsif and_bits(flags, FR_FINDNEXT) 
-    or and_bits(flags, FR_REPLACE) 
-    or and_bits(flags, FR_REPLACEALL) then
-	findtext = allocate(20)
-	poke4(findtext, {0,-1,peek4u(struc+16),0,-1})
-	while 1 do
-	
-	    --junk = c_func(SendMessage, {hedit, SCI_GETSEL, findtext+12, findtext})
-            poke4(findtext, c_func(SendMessage, {hedit, SCI_GETSELECTIONEND, 0, 0}))
-            poke4(findtext+4, c_func(SendMessage, {hedit, SCI_GETTEXTLENGTH, 0, 0}))
-        
-	    if and_bits(flags, FR_REPLACE)
-	    or and_bits(flags, FR_REPLACEALL) then
-		if peek4s(findtext) > peek4s(findtext+12) then
-		    junk = c_func(SendMessage, {hedit, SCI_REPLACESEL, 1, peek4u(struc+20)})
-		end if
-	    end if
-	    junk = c_func(SendMessage, {hedit, SCI_FINDTEXT, 
-		and_bits(flags, or_bits(FR_MATCHCASE, FR_WHOLEWORD)),
-		findtext})
-	    if junk != -1 then
-		junk = c_func(SendMessage, {hedit, SCI_SETSEL}& peek4u({findtext + 12,2}))
-		if and_bits(flags, FR_REPLACEALL) = 0 then
-		    exit
-		end if
-	    else
-		junk = c_func(MessageBox, {hFindDlg, 
-		    alloc_string("Finished searching document.\n"
-			&"Next search will start at the top of the document."),
-		    alloc_string(window_title), 
-		    or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
-		junk = c_func(SendMessage, {hedit, SCI_SETSEL, 0,0})
-		exit
-	    end if
-	end while
-
-	free(findtext)
+	return
     end if
-
+    --printf(1, "flags=%x\n", {flags})
+    
+    backward = not and_bits(flags, FR_DOWN)
+    result = 0
+    if and_bits(flags, FR_MATCHCASE) then
+        result += SCFIND_MATCHCASE
+    end if
+    if and_bits(flags, FR_WHOLEWORD) then
+        result += SCFIND_WHOLEWORD
+    end if
+    junk = c_func(SendMessage, {hedit, SCI_SETSEARCHFLAGS, result, 0})
+    
+    
+    if and_bits(flags, FR_FINDNEXT) then
+	if search_find(GetFindWhat(struc), backward) = 0 then
+	    result = c_func(MessageBox, {hFindDlg, 
+		  alloc_string("Unable to find a match."),
+		  alloc_string("Find"),
+		  or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
+	end if
+    elsif and_bits(flags, FR_REPLACE) then
+	result = search_replace(GetReplaceWith(struc))
+	if search_find(GetReplaceWith(struc), backward) = 0 and result = 0 then
+	    result = c_func(MessageBox, {hFindDlg, 
+		  alloc_string("Unable to find a match."),
+		  alloc_string("Replace"),
+		  or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
+	end if
+    elsif and_bits(flags, FR_REPLACEALL) then
+	result = search_replace_all(GetFindWhat(struc), GetReplaceWith(struc))
+	if result then
+	    result = c_func(MessageBox, {hFindDlg, 
+		  alloc_string(sprintf("%d replacements.", {result})),
+		  alloc_string("Replace All"),
+		  or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
+	else
+	    result = c_func(MessageBox, {hFindDlg, 
+		  alloc_string("Unable to find a match."),
+		  alloc_string("Replace All"),
+		  or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
+	end if
+    end if
+    free_strings()
 end procedure
 
 
@@ -1050,18 +1069,14 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 
     if iMsg = WM_CREATE then
 	return rc
-    elsif iMsg = WM_PAINT then
-	
     elsif iMsg = WM_DESTROY then
 	c_proc(PostQuitMessage, {0})
-
-      get_window_size()
+	get_window_size()
 	return rc
     elsif iMsg = WM_SIZE then  --resize the rich edit control to fit the window
 	c_proc(MoveWindow, {hedit, 0, tab_h, LOWORD(lParam), HIWORD(lParam)-tab_h, 1})
         c_proc(MoveWindow, {hstatus, LOWORD(lParam)-64, 2, 64, tab_h-4, 1})
         c_proc(MoveWindow, {htabs, 0, 0, LOWORD(lParam), tab_h, 1})
-
 	return rc
     elsif iMsg = WM_CLOSE then --closing window
 	if save_modified_tabs() then
@@ -1112,11 +1127,20 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		return c_func(SendMessage, {hedit, WM_CLEAR, 0, 0})
 	    elsif wParam = Edit_SelectAll then
 		return c_func(SendMessage, {hedit, EM_SETSEL, 0, -1})
-	    elsif wParam = Search_Find then
-		hFindDlg = FindText(hMainWnd,0,or_all({FR_HIDEUPDOWN}),find_phrase)
+	    elsif wParam = Edit_ToggleComment then
+	        toggle_comment()
 		return rc
+	    elsif wParam = Search_Find then
+		hFindDlg = FindText(hMainWnd,0,FR_DOWN,find_phrase)
+		return rc
+	    elsif wParam = Search_Find_Next then
+		search_find(0)
+	        return rc
+	    elsif wParam = Search_Find_Prev then
+		search_find(1)
+	        return rc
 	    elsif wParam = Search_Replace then
-		hFindDlg = ReplaceText(hMainWnd,0,or_all({FR_HIDEUPDOWN}),"","")
+		hFindDlg = ReplaceText(hMainWnd,0,FR_DOWN,find_phrase,replace_phrase)
 		return rc
 	    elsif wParam = View_Subs then
 		view_subroutines()
@@ -1132,6 +1156,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		return rc
 	    elsif wParam = View_SubArgs then
                 view_subroutine_arguments()
+		return rc
+	    elsif wParam = View_GoBack then
+                go_back()
 		return rc
 	    elsif wParam = Run_Start then
 		run_start(0)
@@ -1212,19 +1239,37 @@ procedure translate_editor_keys(atom msg)
   if hwnd = hedit then
     if iMsg = WM_CHAR  then
       --printf(1, "%x %x %x %x\n", {hwnd, iMsg, wParam, lParam})
-      if wParam = #13 then -- Ctrl-S
+      if wParam = 27 then -- Esc
+        poke4(msg, {hMainWnd, WM_COMMAND, View_GoBack, 0})
+      elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) = 0 then
+        -- control key is not pressed
+      elsif wParam = #13 then -- Ctrl+S
         poke4(msg, {hMainWnd, WM_COMMAND, File_Save, 0})
-      elsif wParam = #6 then -- Ctrl-F
+      elsif wParam = #6 then -- Ctrl+F
         poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
-      elsif wParam = #17 then -- Ctrl-W
+      elsif wParam = #12 then -- Ctrl+R
+        poke4(msg, {hMainWnd, WM_COMMAND, Search_Replace, 0})
+      elsif wParam = #7 then -- Ctrl+G
+	if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+	  poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
+	else
+	  poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Next, 0})
+	end if
+      elsif wParam = #17 then -- Ctrl+W
         poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
-      elsif wParam = #F then -- Ctrl-O
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Open, 0})
-      elsif wParam = #E then -- Ctrl-N
+      elsif wParam = #D then -- Ctrl+M
+        poke4(msg, {hMainWnd, WM_COMMAND, Edit_ToggleComment, 0})
+      elsif wParam = #E then -- Ctrl+N
         poke4(msg, {hMainWnd, WM_COMMAND, File_New, 0})
-      elsif wParam = VK_SPACE and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+      elsif wParam = #F then -- Ctrl+O
+        poke4(msg, {hMainWnd, WM_COMMAND, File_Open, 0})
+      elsif wParam = #11 then -- Ctrl+Q
+        poke4(msg, {hMainWnd, WM_COMMAND, File_Exit, 0})
+      elsif wParam = VK_SPACE then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Completions, 0})
-      elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+        poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
+      elsif wParam = 25 then -- Ctrl+Y
         poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
       end if
     elsif iMsg = WM_KEYUP then
@@ -1237,7 +1282,15 @@ procedure translate_editor_keys(atom msg)
       elsif wParam = VK_F4 then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Error, 0})
       elsif wParam = VK_F3 then
-        poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
+	if and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
+        elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Next, 0})
+        else
+          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
+        end if
+      elsif wParam = 71 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
       elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Declaration, 0})
       elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
@@ -1338,10 +1391,17 @@ procedure WinMain()
 	Edit_Clear, alloc_string("Cl&ear\tDel")})
     junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Edit_SelectAll, alloc_string("Select &All\tCtrl+A")})
+    junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
+    junk = c_func(AppendMenu, {heditmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Edit_ToggleComment, alloc_string("Toggle Co&mment\tCtrl+M")})
 -- search menu
     hsearchmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Search_Find, alloc_string("&Find...\tF3")})
+    junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Search_Find_Next, alloc_string("Find &Next\tCtrl+F3")})
+    junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Search_Find_Prev, alloc_string("Find &Previous\tShift+Ctrl+F3")})
     junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Search_Replace, alloc_string("&Replace...")})
 -- view menu
@@ -1354,10 +1414,10 @@ procedure WinMain()
 	View_SubArgs, alloc_string("Subroutine &Arguments...\tShift+F2")})
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_Completions, alloc_string("&Completions...\tCtrl+Space")})
-    --junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	--View_NavigateBack, alloc_string("&Navigate Back\tEsc")})
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_Error, alloc_string("Goto &Error\tF4")})
+    junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	View_GoBack, alloc_string("Go &Back\tEsc")})
 -- run menu
     hrunmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
