@@ -1,7 +1,7 @@
 ----------------
 namespace enums
 ----------------
-export constant version = "4.9.2"
+export constant version = "4.9.4"
 
 public include std/io.e
 public include std/os.e
@@ -57,7 +57,7 @@ end type
 
 ------------------------------------------------------------------------
 -- These are the widget names used to create GTK widgets;
--- GObject MUST be first on the list, and GtkFinal MUST be last!
+-- GObject MUST be first on the list.
 -- Other than that, order is unimportant, but try to keep 'em in 
 -- alphabetical order just to be neat.
 ------------------------------------------------------------------------
@@ -116,7 +116,9 @@ public enum type WIDGET
     GtkAccelGroup,
     GtkAccelLabel,
     GtkAccessible,
+    GtkActionable,
     GtkActionBar,
+    GtkActivatable,
     GtkAdjustment,
     GtkAlignment,
     GtkAppChooser,
@@ -170,6 +172,7 @@ public enum type WIDGET
     GtkCssProvider,
     GtkCssSection,
     GtkDialog,
+    GtkDrag,
     GtkDrawingArea,
     GtkEditable,
     GtkEntry,
@@ -280,6 +283,7 @@ public enum type WIDGET
     GtkSpinButton,
     GtkSpinner,
     GtkStack,
+    GtkStackSidebar,
     GtkStackSwitcher,
     GtkStatusbar,
     GtkStatusIcon,
@@ -326,6 +330,7 @@ public enum type WIDGET
     GtkWidget,
     GtkWidgetPath,
     GtkWindow,
+    GtkWindowGroup,
     PangoCairoLayout,
     PangoContext,
     PangoFont,
@@ -340,9 +345,10 @@ public enum type WIDGET
     PangoLayoutIter,
     PangoLayoutLine,
     PangoLayoutRun,
-    PangoTabArray,
-    GtkFinal
+    PangoTabArray
 end type
+
+global integer GtkFinal = PangoTabArray + 1
 
 ------------------------------------------------------------------------
 
@@ -553,6 +559,7 @@ public enum
   GTK_BUTTONBOX_START,
   GTK_BUTTONBOX_END,
   GTK_BUTTONBOX_CENTER,
+  GTK_BUTTONBOX_EXPAND,
   
   GTK_CALENDAR_SHOW_HEADING = 1,
   GTK_CALENDAR_SHOW_DAY_NAMES = 2,
@@ -582,6 +589,8 @@ public enum
   GTK_DIALOG_MODAL  = 1,
   GTK_DIALOG_DESTROY_WITH_PARENT = 2, 
   GTK_DIALOG_NO_SEPARATOR = 4,
+  
+  NON_MODAL = -1, -- for EuGTK
   
   GTK_DIR_TAB_FORWARD = 0,
   GTK_DIR_TAB_BACKWARD,
@@ -964,8 +973,8 @@ public enum
 public enum 
   PANGO_SCALE = 1000,
   PANGO_STYLE_NORMAL= 0,
-  PANGO_STYLE_ITALIC,
   PANGO_STYLE_OBLIQUE,
+  PANGO_STYLE_ITALIC,
   
   PANGO_STRETCH_ULTRA_CONDENSED = 0,
   PANGO_STRETCH_EXTRA_CONDENSED,
@@ -1425,7 +1434,8 @@ global type TreeModelFilter(atom x)return _(x,GtkTreeModelFilter)end type
 global type Application(atom x)return _(x,GtkApplication)end type
 global type ApplicationWindow(atom x)return _(x,GtkApplicationWindow)end type
 global type Pixbuf(atom x)return _(x,GdkPixbuf)end type
-global type IconTheme(atom x)return _(x,GtkIconTheme)end type   
+global type IconTheme(atom x)return _(x,GtkIconTheme)end type  
+global type Cairo_T(atom x)return _(x,Cairo_t)end type 
 -------------------------
 -- © 2015 by Irv Mullins
 -------------------------

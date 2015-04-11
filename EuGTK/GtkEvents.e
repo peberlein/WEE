@@ -1,7 +1,7 @@
 
 namespace events
 
---WORK IN PROGRESS
+--Thanks to Pete Eberlein for helping with this!
 
 include GtkEngine.e
 include std/convert.e
@@ -12,10 +12,10 @@ include std/convert.e
 -- values;
 
 constant keyvalues = {
-{8,-8}, -- bksp
-{9,-9}, -- tab
-{20,-20},-- scroll lock
-{27,27}, -- escape
+{8,-8},   -- bksp
+{9,-9},   -- tab
+{20,-20}, -- scroll lock
+{27,27},  -- escape
 {80,-80}, -- home        'P'
 {81,-81}, -- left arrow  'Q'
 {82,-82}, -- up arrow    'R'
@@ -42,10 +42,12 @@ constant keyvalues = {
 {157,-157}, -- keypad 5
 {158,-158}, -- keypad ins
 {159,-159}, -- keypad del
+
 -- keypad keys with numlock - return ascii 0..9
 {170,'*'},{171,'+'},{173,'-'},{175,'/'}, 
 {176,48},{177,49},{178,50},{179,51},{180,52}, -- keypad numbers 0..4
 {181,53},{182,54},{183,55},{184,56},{185,57}, -- keypad numbers 5..9
+
 -- F keys;
 {190,-190}, -- F1
 {191,-191}, -- F2

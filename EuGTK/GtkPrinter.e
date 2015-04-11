@@ -1,7 +1,7 @@
 ------------------
 namespace printer
 ------------------
-constant version = "4.9.2"
+constant version = "4.9.4"
 
 include GtkEngine.e
 include std/datetime.e
@@ -66,7 +66,7 @@ export atom
 
 export object
     name = 0,
-    font = "Courier New 8",
+    font = "Ubuntu Mono 8",
     jobname = 0,
     settings_file = 0,
     setup_file = 0,
@@ -76,6 +76,8 @@ export object
     custom_tab_hook = 0,
     custom_tab_label = 0,
     custom_tab_func = 0
+
+ifdef WINDOWS then font = "Courier New 16" end ifdef
 
 export object 
     line_number_format = "[:4] []\n",   -- controls line # format AND code line!

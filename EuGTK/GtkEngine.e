@@ -2,7 +2,7 @@
 -------------
 namespace gtk 
 -------------
- 
+
 ------------------------------------------------------------------------
 -- This library is free software; you can redistribute it 
 -- and/or modify it under the terms of the GNU Lesser General 
@@ -21,11 +21,15 @@ namespace gtk
 ------------------------------------------------------------------------
 
 export constant 
-    version = "4.9.2",
-    release = "Mar 17, 2015 Luck o' the Irish",
-    copyright = "2015 by Irv Mullins"
+    version = "4.9.4",
+    release = "Apr 15, 2015",
+    copyright = "© 2015 by Irv Mullins"
 
-public include GtkEnums.e -- enums includes most of Eu std libraries
+public include GtkEnums.e 
+-- GtkEnums includes most of Eu std libraries, making them available to your eu programs
+-- without specifically including them. std/math, std/locale, and std/datetime aren't 
+-- public, because that would cause too many conflicting names, requiring you to use
+-- namespaces everywhere. 
 
 if not equal(gtk:version,enums:version) then 
     crash("Version mismatch: GtkEnums should be version %s",{version})
@@ -38,17 +42,17 @@ public constant -- 'shorthand' identifiers save space in method prototypes;
   P = C_POINTER, I = C_INT,   S = E_OBJECT,  B = C_BYTE,
   D = C_DOUBLE,  F = C_FLOAT, A = E_SEQUENCE
   
-object LIBS
+export object LIBS
   
+constant windll = "C:\\gtk\\bin\\" -- assume this is where you put your gtk3.dll's 
+ 
 ifdef OSX then -- thanks to Pete Eberlein for testing with OSX!
   LIBS =  {open_dll("/opt/local/lib/libgtk-3.dylib" )}
-end ifdef
-
-ifdef LINUX then 
+elsifdef UNIX then -- Linux, BSD, etc.
   LIBS = {open_dll("libgtk-3.so.0" )}
 end ifdef 
 
-ifdef WINDOWS then
+ifdef WINDOWS then -- assuming you put the dlls in C:\\gtk...
 	LIBS = {
 	"libgtk-3-0.dll",
 	"libgdk-3-0.dll",
@@ -63,12 +67,11 @@ ifdef WINDOWS then
 	"libgio-2.0-0.dll"
 	}
     atom x
-	chdir(canonical_path("~\\demos\\gtk3\\bin"))
+	chdir(windll) -- switch to dll folder so dll's can find other dll's
 	for i = 1 to length(LIBS) do
-	   LIBS[i] = canonical_path("~\\demos\\gtk3\\bin\\"&LIBS[i])
-	    x = open_dll(LIBS[i])
+	    x = open_dll(windll & LIBS[i])
 	    	    if x = 0 then
-	        display("Error loading []",{LIBS[i]})
+	        display("Error loading []",{windll & LIBS[i]})
 	    else
 		LIBS[i] = x
 	    end if
@@ -82,7 +85,7 @@ end ifdef
  
  for i = 1 to length(LIBS)  do
      if LIBS[i] = 0 then
-         crash("GTK Libraries not found!")
+         crash("GTK Library %s not found!",{LIBS[i]})
      end if
  end for
  
@@ -95,7 +98,7 @@ else -- success!
     gtk_proc("g_type_init",{}) -- initialize normal GTK types;
 end if
 
-public constant -- two special types must be initialized at run-time;
+public constant -- two special types must be initialized at run-time;  ??
     gPIX = gtk_func("gdk_pixbuf_get_type"),
     gCOMBO = gtk_func("gtk_combo_box_get_type")
 
@@ -122,18 +125,20 @@ export constant
     runt_dir = gtk_str_func("g_get_user_runtime_dir"),
     app_name = gtk_str_func("g_get_application_name"),
     prg_name = gtk_str_func("g_get_prgname"),
-    os_pid = os:get_pid(), -- process id 
-    os_name = os_info[1], -- e.g: Linux
+    os_pid = os:get_pid(), -- process id 1234
+    os_name = os_info[1],  -- e.g: Linux
     os_distro = os_info[2], -- e.g: Mint17
     os_version = os_info[3], -- e.g: 3.13.0-24-generic
     os_compiled = os_info[4] -- #46-Ubuntu SMP Thu Apr 10 19:11:08 UTC 2014
- ifdef UNIX then
+    
+ifdef UNIX then
  export constant 
     host_addr = inet_address(),
     os_architecture = os_info[5], -- e.g: x86_64
     os_shell = getenv("SHELL") -- e.g: /bin/bash
 end ifdef
-ifdef WINDOWS then
+
+ifdef WINDOWS then -- FIXME
 export constant
     host_addr = "localhost",
     os_architecture = "unknown",
@@ -143,7 +148,9 @@ export constant
 object os_term = getenv("TERM")
     if atom(os_term) then os_term = "none" end if
 
-export constant info = { -- above in key/value form, sometimes more useful
+ifdef WINDOWS then os_term = "CMD.COM" end ifdef
+
+export constant info = { -- above system info in key/value form, sometimes more useful
     "version="   & version,
     "release="   & release,
     "copyright=" & copyright,
@@ -176,7 +183,7 @@ export constant info = { -- above in key/value form, sometimes more useful
     "eu_date=" & version_date()
     } 
     
- ifdef WINDOWS then
+ifdef WINDOWS then -- switch back from GTK3 dll folder
     chdir(init_dir)
 end ifdef
 
@@ -189,11 +196,16 @@ public function create(integer class,
 -- This function does the following:
 -- 1. initializes the class if not already initialized,
 -- 2. creates a new instance of the class (returning a handle to that instance)
--- 3. links signals to your specified Eu function (for commonly-used widgets).
+-- 3. links signals to your specified Eu function (for commonly-used widgets),
+--    Widgets which have no default signal or which need to respond to a signal
+--    other than the default must be linked manually, using connect().
+--    If no function is specified, no link will be created.
+--    Immediately following the function identifier is an optional data item.
+--   data item can contain anything - integer, atom, string, or mixed sequence.
 -------------------------------------------------------------------------------
     
     if class = GtkStockList then -- GtkStock is not a real widget,
-        return newStockList() -- also, stock items are deprecated in 3.10+
+        return newStockList() -- in addition, stock items are deprecated in 3.10+
     end if
     
     if not initialized[class] then -- create a routine_id for each 'method' in class
@@ -202,14 +214,19 @@ public function create(integer class,
 
     object method = lookup("new",vslice(widget[class],1),widget[class],0)
     if method[VECTOR] = -1 then -- if a 'new' method name not found,
-        puts(1,repeat('*',60))
-	printf(1,"\nERROR: %s not implemented in this version of GTK!\n",widget[class])
-	puts(1,repeat('*',60))
-        Error(0,,widget[class][$], -- issue an error message and die.
-            sprintf("not implemented in GTK vers. %d.%d.%d",
-                {major_version,minor_version,micro_version}),,2) 
-         return 0
+        puts(1,repeat('*',70))
+		printf(1,"\nERROR 220: %s not implemented in this version of GTK!\n",widget[class])
+		puts(1,repeat('*',70))
+		puts(1,"\nPress  any key ...")
+		wait_key()
+		abort(220)
     end if
+
+	object props = 0
+	if sequence(p1) and sequence(p1[1]) then -- list of properties provided (new style)
+		props = p1 -- save until widget is created, then set them in one 'swell foop'
+		p1 = 0
+	end if
 
     atom handle = 0
     object params = method[PARAMS]
@@ -230,7 +247,7 @@ public function create(integer class,
 
     ifdef CREATE then -- debug
         display(decode_method("Create",class,method)) 
-        display("\tArgs: []",decode_args(method,args))
+        puts(1,"Args: ") display(args)
         ifdef METHOD then display(method) end ifdef 
     end ifdef
 
@@ -243,19 +260,22 @@ public function create(integer class,
     end if
 
     if handle = 0 then 
+		ifdef CREATE then
         Warn(,,"Create failed for class",widget[class][$])
         crash("Create failed for class %s",{widget[class][$]})
+		end ifdef
+		return handle
     end if
 
-    switch class do -- connect a default signal for certain controls;
+    switch class do -- connect a default signal for some common controls;
         case GtkButton then connect(handle,"clicked",p2,p3)
         case GtkToolButton then connect(handle,"clicked",p3,p4) 
         case GtkRadioButton then connect(handle,"toggled",p3,p4)
         case GtkRadioToolButton then connect(handle,"toggled",p3,p4)
         case GtkRadioMenuItem then connect(handle,"toggled",p3,p4)
         case GtkMenuItem then connect(handle,"activate",p2,p3)
-        case GtkImageMenuItem then connect(handle,"activate",p3,p4)
         case GtkCheckMenuItem then connect(handle,"toggled",p2,p3)
+        case GtkCellRendererToggle then connect(handle,"toggled",p1,p2)
         case GtkFontButton then connect(handle,"font-set",p2,p3)
         case GtkStatusIcon then connect(handle,"activate",p1,p2)
         case GtkColorButton then connect(handle,"color-set",p2,p3)
@@ -271,6 +291,13 @@ public function create(integer class,
     
     register(handle,class)
 
+	if not atom(props) then -- set properties using new style;
+		for i = 1 to length(props) do
+			while length(props[i]) < 4 do props[i] &= 0 end while
+			set(handle,props[i][1],props[i][2],props[i][3],props[i][4])
+		end for
+	end if
+	
     return handle -- a pointer to the newly created instance
     
 end function  /*create*/
@@ -280,36 +307,45 @@ public function set(object handle, sequence property,
     object p1=0, object p2=0, object p3=0, object p4=0,
     object p5=0, object p6=0, object p7=0, object p8=0)
 ------------------------------------------------------------------------
--- This routine sets a property for the given widget handle.
+-- This routine sets a property or sequence of properties
+-- for the given widget handle.
 -- In order to work with Glade, widget names in string form
 -- may be used.
--- Property is a string, p1...p8 are [optional] parameters.
--- Any parameter not supplied is set to null;
+-- Property is always a string, p1...p8 are [optional] parameters.
+-- Any parameter expected but not supplied is set to null, excess 
+-- parameters are discarded.
 ------------------------------------------------------------------------
 integer class=-1, x
-object obj, name, nick, path
+object name
     
-    if string(handle) then
-		name = handle
-        handle = vlookup(name,registry,4,1,-1)
-		if handle = -1 then
-			Error(,,"Cannot find object named ",name)
-			crash("Error - invalid object name %s",{name})
-			abort(1)
-		end if
-		class = vlookup(name,registry,4,2,-1)
-    else
-		class = vlookup(handle,registry,1,2,-1) -- get widget's class;
-    end if
-    
+    name = handle
+    if string(handle) then handle = pointer(handle) end if
+    if handle = 0 then
+		crash("Fatal error 325 Can't obtain a handle for %s",{name})
+	end if
+	
+	object prop = 0
+	if sequence(property) -- new create format 
+	and not string(property) then
+	for i = 1 to length(property) do
+		prop = property[i]
+		while length(prop) < 8 do prop &= 0 end while
+		set(handle,prop[1],prop[2],prop[3],prop[4],prop[5],prop[6],prop[7],prop[8])
+	end for
+	return 0
+	end if
+	
+	class = vlookup(handle,registry,1,2,-1) -- get widget's class;
+ 
     if class = -1 then
-        Error(,,"Cannot find class",sprintf("for %d",handle))
-        crash("Error - invalid handle %d",handle)
+		--display(registry)
+        display("Error 343 in set() - invalid handle [] []",{handle,prop})
+        abort(1)
     end if
-    
+    	
     property = "set_" & lower(join(split(property,' '),'_')) -- conform;
     ifdef SET then 
-        printf(1,"%s->%s\n",{widget[class][$],property}) 
+        display("Line 349 []->[]",{widget[class][$],property}) 
     end ifdef
     
     object method = lookup_method(class,property)
@@ -340,16 +376,18 @@ object obj, name, nick, path
         for i = 2 to length(args) do
             switch params[i] do
                 case A then -- array of strings;
-                    args[i] = allocate_string_pointer_array(args[i])
+					if not atom(args[i]) then
+						args[i] = allocate_string_pointer_array(args[i])
+                    end if
                 case S then -- string;
                     if string(args[i]) then 
                         args[i] = allocate_string(args[i]) 
                     end if
-                case B,I,D then 
+                case I,D then 
 					if string(args[i]) then
 						args[i] = to_number(args[i])
 					end if
-					-- apply patches for zero-based indexes;
+		 -- apply patches for zero-based indexes;
                     switch method[1] do
                         case "add_attribute",
                         "set_active",
@@ -402,30 +440,22 @@ export function get(object handle, sequence property,
 -- This routine gets one or more values for a given property name.
 -- Property name is always a string, handle is usually an atom,
 -- but may sometimes be a string in order to work with Glade. 
--- [optional] parameters p1...p4
--- are not often used when calling get, but are intended to store return
--- values from the GTK function. For example, get(win,"default size")
--- will return with the window width in p1, height in p2.
+--
+-- parameters p1...p4 are normally not supplied when calling get()
+-- but are there to store return values from the GTK function. 
+-- For example, get(win,"default size") will return with the 
+-- window width in p1, height in p2, which are converted by the get 
+-- function into a Euphoria tuple {w,h} before returning.
 ------------------------------------------------------------------------
 integer class, x
-object obj, name, nick, path
+object name
     
-    if string(handle) then
-		name = handle
-        handle = vlookup(name,registry,4,1,-1)
-		if handle = -1 then
-			Error(,,"Cannot find object named ",name)
-			crash("Error - invalid object name %s",{name})
-		end if
-		class = vlookup(name,registry,4,2,-1)
-    else
-		class = vlookup(handle,registry,1,2,-1) -- get widget's class;
-    end if
-    
-    
+    if string(handle) then handle = pointer(handle) end if
+
+	class = vlookup(handle,registry,1,2,-1) -- get widget's class;
+
     if class = -1 then
-        Error(,,"Cannot find class",sprintf("for %d",handle))
-        crash("Error - invalid handle %d",handle)
+        crash("Error 459 - unregistered handle %d",handle)
     end if
     
     property = "get_" & lower(join(split(property,' '),'_'))
@@ -450,7 +480,7 @@ object obj, name, nick, path
     end ifdef
 
     if method[VECTOR] = -1 then
-        crash("\nERROR\n****** Invalid call: %s->%s",{widget[class][$],method[1]})
+        crash("\nERROR 478\n****** Invalid call: %s->%s",{widget[class][$],method[1]})
     end if
     
         for i = 2 to length(args) do -- convert args to pointers if necessary;
@@ -524,7 +554,7 @@ end function /*get*/
 ------------------------------------------------------------------------
 public function add(object parent, object child, object space = 0)
 ------------------------------------------------------------------------
--- add a child or a {list} of child widgets to parent container
+-- add a child widget or a {list} of child widgets to parent container
 object name, class, handle
 
     if classid(child) = GdkPixbuf then -- issue a warning;
@@ -539,24 +569,26 @@ object name, class, handle
     
     if string(parent) then
 		parent = vlookup(parent,registry,4,1,-1)
-	end if
+    end if
     
     if string(child) then
-		child = vlookup(child,registry,4,1,-1)
+	child = vlookup(child,registry,4,1,-1)
     end if
     
     -- Switch below implements an easier-to-remember 'add' syntax 
-    -- as an alias for the various calls shown;
+    -- as an alias for the various calls shown. The GTK original is still available,
+    -- if you wish to use it. 
+    
     switch classid(parent) do 
     
         case GtkComboBoxText, GtkComboBoxEntry then
             for i = 1 to length(child) do
-                set(parent,"append text",child[i])
+                set(parent,"append text",child[i]) -- add is alias for "append text"
             end for
             
         case GtkToolbar then
             if atom(child) then
-                set(parent,"insert",child,-1)
+                set(parent,"insert",child,-1) 
             else for i = 1 to length(child) do
                     add(parent,child[i])
                 end for
@@ -607,26 +639,39 @@ return -1
 end function /*add*/
 
 ------------------------------------------------------------------------
-public procedure pack(atom parent, object child,
+public function pack(atom parent, object child,
     integer expand=0, integer fill=0, integer padding=0)
 ------------------------------------------------------------------------
--- pack a child or {list} of child widgets into parent container;
+-- pack a child widget or {list} of child widgets into parent container;
 -- prepending a negative sign to the child pointer means
---'pack end'; this can be more versatile than having 2 different calls
+--'pack end'. this is an alias which is sometimes useful.
 ------------------------------------------------------------------------
     if atom(child) then
         if child > 0 then
             set(parent,"pack start",child,expand,fill,padding)
         else
-            set(parent,"pack end",-child,expand,fill,padding)
+			child = -child
+            set(parent,"pack end",child,expand,fill,padding)
         end if
     else 
         for i = 1 to length(child) do
             pack(parent,child[i],expand,fill,padding)
         end for
     end if
-end procedure
+    return child
+end function
 
+-- following 2 calls are supplied for completeness;
+public function pack_start(atom parent, object child, -- original GTK call
+	boolean expand=0, boolean fill=0, integer padding=0)
+return pack(parent,child,expand,fill,padding)
+end function 
+
+public function pack_end(atom parent, object child, -- orignal GTK call
+	boolean expand=0, boolean fill=0, integer padding=0)
+return pack(parent,-child,expand,fill,padding)
+end function	
+	
 ------------------------------------------------------------------------
 public procedure show(object x)
 ------------------------------------------------------------------------
@@ -666,7 +711,7 @@ end procedure
 ------------------------------------------------------------------------
 public procedure hide_all(object x)
 ------------------------------------------------------------------------
-    set(x,"hide all") -- hide container x and any children
+    set(x,"hide all") -- hide container x and any children it contains
 end procedure
 
 ------------------------------------------------------------------------
@@ -690,9 +735,9 @@ export procedure main()
     gtk_proc("gtk_main") -- start the GTK engine;
 end procedure
 
-------------------------------------------------------------------------
-export function events_pending()
-------------------------------------------------------------------------
+---------------------------------------------------------------------------------
+export function events_pending() -- used sometimes when using timeout or eu tasks
+---------------------------------------------------------------------------------
     return gtk_func("gtk_events_pending")
 end function 
 
@@ -702,26 +747,26 @@ export procedure main_iteration()
     gtk_proc("gtk_main_iteration")
 end procedure
 
-------------------------------------------------------------------------
-export procedure main_iteration_do(integer i)
-------------------------------------------------------------------------
--- used when multi-tasking;
+-----------------------------------------------------------------------------------
+export procedure main_iteration_do(integer i) -- used sometimes when multi-tasking;
+-----------------------------------------------------------------------------------
     gtk_proc("gtk_main_iteration_do",{I},i)
 end procedure
 
 without warning {not_reached}
-------------------------------------------------------------------------
-export function Quit(atom ctl=0, object errcode=0)
-------------------------------------------------------------------------
-    abort(errcode) -- kill the GTK engine;
-return 0
-end function
-export constant main_quit = call_back(routine_id("Quit"))
+    ------------------------------------------------------------------------
+    export function Quit(atom ctl=0, object errcode=0)
+    ------------------------------------------------------------------------
+	abort(errcode) -- kill the GTK engine;
+    return 0
+    end function
+    export constant main_quit = call_back(routine_id("Quit"))
 
-global function gtk_main_quit()
-    abort(0)
-return 0
-end function
+    global function gtk_main_quit()
+	abort(0)
+    return 0
+    end function
+with warning {not_reached}
 
 ------------------------------------------------------------------------
 -- Following are 4 pre-built, easy to use popup dialogs 
@@ -729,68 +774,78 @@ end function
 -- Refer to documentation/dialogs.html for details.
 -- Rewritten for 4.8.8 to preserve images on dialog buttons despite
 -- GTK developers' bland, boring preferences :P
+-- Beginning with EuGTK 4.9.3, dialogs can be non-modal if desired.
 ------------------------------------------------------------------------
-integer retval = 0
 
 public function Info(object parent=0, object title="Info",
 	object pri_txt="", object sec_txt="",
 	object btns=GTK_BUTTONS_OK,
 	object image="dialog-information", 
-	object icon="dialog-information")
-	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+	object icon="dialog-information",
+	integer modal=1)
+	return Dialog(parent,title,pri_txt,sec_txt,btns,image,icon,modal)
 end function
 
 public function Warn(object parent=0, object title="Warning",
 	object pri_txt="", object sec_txt="",
 	object btns=GTK_BUTTONS_CLOSE,
 	object image="dialog-warning", 
-	object icon="dialog-warning")
-	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+	object icon="dialog-warning",
+	integer modal=1)
+	return Dialog(parent,title,pri_txt,sec_txt,btns,image,icon,modal)
 end function
 
 public function Error(object parent=0, object title="Error",
 	object pri_txt="", object sec_txt="",
 	object btns=GTK_BUTTONS_OK_CANCEL,
 	object image="dialog-error", 
-	object icon="dialog-error")
-	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+	object icon="dialog-error",
+	integer modal=1)
+	return Dialog(parent,title,pri_txt,sec_txt,btns,image,icon,modal)
 end function
 
 public function Question(object parent=0, object title="Question",
 	object pri_txt="", object sec_txt="",
 	object btns=GTK_BUTTONS_YES_NO,
 	object image="dialog-question", 
-	object icon="dialog-question")
-	return dialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+	object icon="dialog-question",
+	integer modal=1)
+	return Dialog(parent,title,pri_txt,sec_txt,btns,image,icon,modal)
 end function
 
-------------------------------------------------------------------------
-public function dialog(object parent=0, object title="dialog", 
+public function Dialog(object parent=0, object title="dialog", 
     object pri_txt="", object sec_txt="",
     object btns=GTK_BUTTONS_OK, 
     object image=0,
-    object icon=0)
-------------------------------------------------------------------------
+    object icon=0,
+    integer modal=1)
+	if modal = -1 then 
+		return NonModalDialog(parent,title,pri_txt,sec_txt,btns,image,icon)
+	end if
+	
     atom dlg = create(GtkDialog)
+
     if string(parent) then
 		parent = get(builder,"object",parent)
 	end if
-    set(dlg,"transient for",parent)
-    set(dlg,"title",title)
-    set(dlg,"border width",10)
-    set(dlg,"position",GTK_WIN_POS_MOUSE)
+
+    set(dlg,{
+	{"transient for",parent},
+	{"title",title},
+	{"border width",10},
+	{"position",GTK_WIN_POS_MOUSE}})
 
     if atom(icon) and icon = 0 and parent > 0 then 
-			icon = get(parent,"icon name")
-	end if
+	icon = get(parent,"icon name")
+    end if
 	
-	if atom(icon) and icon > 0 then 
-		set(dlg,"icon",icon)
-	end if
+    if atom(icon) and icon > 0 then 
+	set(dlg,"icon",icon)
+    end if
 	
-	if string(icon) then 
-		set(dlg,"icon",icon)
-	end if
+    if string(icon) then 
+	set(dlg,"icon",icon)
+    end if
 	
     object ca = get(dlg,"content area")
     object panel = create(GtkBox,HORIZONTAL,10)
@@ -807,6 +862,13 @@ public function dialog(object parent=0, object title="dialog",
 		end if
 		add(left,image)
 	end if
+		
+	if atom(modal) and modal > 1 then
+		atom addon = create(GtkButtonBox,HORIZONTAL)
+		add(ca,addon)
+		add(addon,modal)
+		show_all(addon)
+	end if
 	
 	object lbl1 = create(GtkLabel)
 	set(lbl1,"markup",text:format("<b>[]</b>\n[]",{pri_txt,sec_txt}))
@@ -819,7 +881,7 @@ public function dialog(object parent=0, object title="dialog",
 	object btn = repeat(0,2)
 	
 	switch btns do	
-		case GTK_BUTTONS_NONE then -- do nothing
+		case GTK_BUTTONS_NONE then skip() -- do nothing
 		
 		case GTK_BUTTONS_OK then
 			btn[1] = create(GtkButton,"gtk-ok#_OK")
@@ -838,7 +900,6 @@ public function dialog(object parent=0, object title="dialog",
 			btn[1] = create(GtkButton,"gtk-close#_Close")
 			set(btn[1],"can default",TRUE)
 			set(dlg,"add action widget",btn[1],MB_CLOSE)
-			set(dlg,"default response",MB_CLOSE)
 			show(btn[1])
 
 		case GTK_BUTTONS_YES_NO then
@@ -853,14 +914,105 @@ public function dialog(object parent=0, object title="dialog",
 			set(btn[1],"can default",TRUE)
 			show(btn[1])
 			set(dlg,"add action widget",btn[1],MB_OK)
-			set(dlg,"default response",MB_OK)
+			
 	end switch
 
-	atom result = get(dlg,"run")
-	set(dlg,"destroy")
+	atom result = get(dlg,"run") set(dlg,"destroy")
+
 	return result
 end function
 
+global integer dialog_return_value = 0
+
+function close_dialog(object ctl, object dlg)
+    dlg = unpack(dlg)
+    dialog_return_value = dlg[2] 
+    set(dlg[1],"destroy")
+return 1
+end function
+
+--------------------------------------------------------------------------------------------
+export function NonModalDialog(object parent=0, object title="?",
+	object pri_txt="", object sec_txt="",
+	object btns=0,
+	object image="dialog-info", 
+	object icon="dialog-info",
+	object modal=0)
+-------------------------------------------------------------------------------------------	
+atom dlg = create(GtkWindow)
+	
+	integer closedlg = call_back(routine_id("close_dialog"))
+	
+    set(dlg,"title",title)
+    set(dlg,"border width",10)
+    set(dlg,"position",GTK_WIN_POS_MOUSE)
+
+    if atom(icon) and icon = 0 and parent > 0 then 
+			icon = get(parent,"icon name")
+	end if
+	
+	if atom(icon) and icon > 0 then 
+		set(dlg,"icon",icon)
+	end if
+	
+	if string(icon) then 
+		set(dlg,"icon",icon)
+	end if
+	
+    object panel = create(GtkBox,VERTICAL)
+    add(dlg,panel)
+    
+    object ca = create(GtkBox,HORIZONTAL,10)
+    add(panel,ca)
+    
+    object left = create(GtkBox,VERTICAL,5)
+	object right = create(GtkBox,VERTICAL,5)
+	add(ca,{left,right})
+	
+	if atom(modal) and modal > 1 then
+		if classid(modal) != GtkButtonBox then
+			atom addon = create(GtkButtonBox,HORIZONTAL)
+			pack(panel,addon)
+			add(addon,modal)
+		else
+			pack(panel,modal)
+		end if
+	end if
+	
+	object btnbox = create(GtkButtonBox)
+	pack(panel,-btnbox)
+	
+	if sequence(btns) and not atom(btns[1]) then
+		for i = 1 to length(btns) do
+			while length(btns[i]) < 3 do btns[i] &= 0 end while
+			if atom(btns[i][2]) and btns[i][2] = 0 then btns[i][2] = closedlg end if
+			if atom(btns[i][3]) and btns[i][3] = 0 then btns[i][3] = {dlg,MB_CANCEL} end if
+			btns[i] = create(GtkButton,btns[i][1],btns[i][2],btns[i][3])
+		end for
+	add(btnbox,btns)
+	end if
+
+	label "images"
+	if string(image) then 
+		add(left,create(GtkImage,image))
+	elsif image > 0 then
+		if classid(image) = GdkPixbuf then
+			image = create(GtkImage,image)
+		end if
+		add(left,image)
+	end if
+	
+	object lbl1 = create(GtkLabel)
+	set(lbl1,"markup",text:format("<b>[]</b>\n[]",{pri_txt,sec_txt}))
+	set(lbl1,"halign",0)
+	
+	add(right,lbl1)
+	
+	show_all(dlg)
+	
+return 0
+end function
+	
 ------------------------------------------------------------------------
 -- Following functions register and initialize class methods
 ------------------------------------------------------------------------
@@ -886,12 +1038,13 @@ object name, params, retval
 
     ifdef INIT then 
         display("\nInit class:[] []",{class,widget[class][$]}) 
+        display(widget[class])
     end ifdef
 
 	if initialized[class] then return end if
 	
     for method = 3 to length(widget[class])-1 do
-
+		
         name = sprintf("%s_%s",{widget[class][NAME],widget[class][method][NAME]})
         widget[class][method] = pad_tail(widget[class][method],5,0)
         params = widget[class][method][PARAMS]
@@ -907,10 +1060,12 @@ object name, params, retval
                 case F then
                     if class = GtkAspectFrame then -- do nothing
                     else switch widget[class][method][NAME] do
-                            case "add_mark","set_fraction","set_alignment" then -- do nothing
+                            case "add_mark","set_fraction","set_alignment" then
+								skip() -- do nothing
                             case else params[i] = P
                         end switch
                     end if
+                case else -- do nothing                    
             end switch        
         end for
     
@@ -948,6 +1103,9 @@ object name, params, retval
 
 end procedure /*init*/
 
+procedure skip()
+end procedure
+
 export object registry = {}
 ------------------------------------------------------------------------
 -- The registry associates a control's handle with its class,
@@ -962,7 +1120,7 @@ integer x = find(handle,vslice(registry,1))
     if x > 0 then -- handle already exists, 
     -- update it in case handle has been recycled.
 		ifdef REG_DUP then
-			display("Note: [] [] handle [] already  registered to []",
+			display("Note: [] [] handle [] [] already  registered to []",
 				{name,widget[class][$],handle,registry[x][3]})
 		end ifdef
         registry[x] = {handle,class,widget[class][$],name,v}
@@ -971,7 +1129,7 @@ integer x = find(handle,vslice(registry,1))
     
     -- else, add the widget to the registry;
     registry = append(registry,{handle,class,widget[class][$],name,v})
-      
+  
     -- initialize class if this is the first use of that class;
     if not initialized[class] then init(class) end if
 
@@ -1001,7 +1159,6 @@ end procedure
 public function classid(object handle)
 ------------------------------------------------------------------------
     return vlookup(handle,registry,1,2,-1)
-return -1
 end function
 
 -- returns classname as a string (e.g. "GtkWindow") for a given handle;
@@ -1022,7 +1179,7 @@ end function
 ------------------------------------------------------------------------
 public function pointer(object name)
 ------------------------------------------------------------------------
-	return vlookup(name,registry,4,1,0)
+return vlookup(name,registry,4,1,0)
 end function
 
 ------------------------------------------------------------------------
@@ -1031,10 +1188,13 @@ function lookup_method(integer class, sequence prop)
 -- Finds the method to set or get a property for a given class,
 -- if not found, ancestors of that class are checked until the method
 -- is located. 
+
   if class = -1 then return 0 end if
   
+	ifdef LOOK then display("Look []->[]",{widget[class][$],prop}) end ifdef
     object method = lookup(prop,vslice(widget[class],NAME),widget[class],0)
-
+	ifdef LOOKUP then display(widget[class][$]) end ifdef
+	
     if atom(method) then -- try sans the set_ or get_ prefix;
         method = lookup(prop[5..$],vslice(widget[class],NAME),widget[class],0)
     end if
@@ -1051,15 +1211,18 @@ function lookup_method(integer class, sequence prop)
             if not initialized[ancestor] then 
                 init(ancestor) 
             end if
-            ifdef LOOK then
-                display(widget[ancestor])
-            end ifdef        
+            
+            ifdef LOOKUP then
+                display("trying ancestor: []",{widget[ancestor][$]})
+            end ifdef   
+                 
             method = lookup(prop,vslice(widget[ancestor],NAME),widget[ancestor],0)
             if atom(method) then
                 method = lookup(prop[5..$],vslice(widget[ancestor],NAME),widget[ancestor],0)
             end if
             
             if sequence(method) then
+				ifdef LOOKUP then display("\t []",{method[1]}) end ifdef
                 return method
             end if
             
@@ -1073,13 +1236,15 @@ public function connect(object ctl, object sig, object fn=0, object data=0,
     atom closure=0, integer flags=0)
 -----------------------------------------------------------------------------
 -- tells control to call fn, sending data along for the ride,
--- whenever that control receives signal 'sig'
+-- whenever that control gets the signal 'sig' 
 
-    if atom(fn) and fn = 0 then
+    if string(ctl) then ctl = pointer(ctl) end if -- convert name to pointer
+	
+    if atom(fn) and fn = 0 then -- no point in calling null functions!
          return 0
     end if
     
-    if string(fn) then
+    if string(fn) then -- if interpreted, can call functions by name if in scope.
     
         ifdef COMPILE then -- do compile test if requested;
             display("Connecting [] Signal '[]' Data []",{classname(ctl),sig,data})
@@ -1089,7 +1254,7 @@ public function connect(object ctl, object sig, object fn=0, object data=0,
         end ifdef
         
         atom rid = routine_id(fn)
-        if rid > 0 then -- named func is in scope;
+        if rid > 0 then 	-- named func is in scope;
             fn = call_back(rid) -- so obtain a callback;
         else
             printf(1,"\n\tError: function %s is not in scope\n\t****** (make it global or link via routine_id)\n",{fn})
@@ -1134,13 +1299,13 @@ end procedure
 export function unpack(object data)
 ------------------------------------------------------------------------
 -- retrieves data passed in a control's data space; 
-if atom(data) and data = 0 then return 0 end if
-object result = deserialize(peek_wstring(data)-1)
-    switch result[1][1] do
-        case "ATOM","STR","INT" then return result[1][2]
-        case "SEQ" then return result[1][2..$]
-    end switch
-return result
+	if atom(data) and data = 0 then return 0 end if
+	object result = deserialize(peek_wstring(data)-1)
+	switch result[1][1] do
+      case "ATOM","STR","INT" then return result[1][2]
+      case "SEQ" then return result[1][2..$]
+      case else return result
+	end switch
 end function
 
 ------------------------------------------------------------------------
@@ -1159,6 +1324,7 @@ for i = 1 to length(method[PARAMS]) do
                 end if
                 args[i] = args[i]
             end if
+		case else -- do not convert
     end switch
 end for
 return args
@@ -1190,14 +1356,38 @@ integer n
 return text:format("\n[]\n\tCall: []->[]\n\tParams: []\n\tReturn type: []\n\tVector: []",z)
 end function
 
-------------------------------------------------------------------------
--- "helper" routine to get icon images from various sources;
+----------------------------------------------------------------
+export function valid_icon(object list)
+----------------------------------------------------------------
+-- check a list of possible icon names, 
+-- return an image made from first one that is valid
+object result = 0
+for i = 1 to length(list) do
+	result = get_icon_image(list[i])
+	if result > 0 then return result end if
+end for
+return result
+end function
+
+---------------------------------------------------------------
+export function valid_icon_name(object list)
+---------------------------------------------------------------
+-- check a list of possible icon names, return name of first valid
+for i = 1 to length(list) do
+	--display("Checking []",{list[i]})
+	if valid_icon({list[i]}) > 0 then
+		return list[i]
+	end if
+end for
+return "gtk-missing-image"
+end function
+
 ------------------------------------------------------------------------
 function get_icon_image(object icon, integer size=6)
 ------------------------------------------------------------------------
+-- get image from a variety of sources;
 atom img = 0, ani = 0, default_theme
 
--- first, see if it's a stock icon; GtkImage
     if string(icon) then
         if find(icon,stock_list) then
             img = gtk_func("gtk_image_new_from_stock",{P,I},
@@ -1206,7 +1396,13 @@ atom img = 0, ani = 0, default_theme
         end if
     end if
     
--- next, see if there's a named icon;
+    if to_number(icon) > 0 then
+		icon = gtk_func("gdk_pixbuf_scale_simple",{P,I,I,I},{to_number(icon),30,30,GDK_INTERP_BILINEAR})
+		img = create(GtkImage)
+		set(img,"from pixbuf",icon)
+		return img
+	end if
+	
     img = 0
     default_theme = gtk_func("gtk_icon_theme_get_default",{})
     if gtk_func("gtk_icon_theme_has_icon",{P,P},
@@ -1216,11 +1412,10 @@ atom img = 0, ani = 0, default_theme
         return img
     end if
     
--- no, maybe it's an image from a file;
     img = 0
     icon = canonical_path(icon)
-    if file_exists(icon) then
-		size *= 6 -- e.g. 30 pixels
+    if file_exists(icon) then -- image from file
+		size *= 6 
 		img = create(GtkImage)
 		ani = create(GdkPixbufAnimation,icon)
 		if gtk_func("gdk_pixbuf_animation_is_static_image",{P},{ani}) then
@@ -1251,6 +1446,8 @@ public function to_sequence(atom glist, integer fmt=0) -- mostly internal
             case 1 then s = append(s,data)
             case 2 then s = append(s,gtk_str_func("gtk_tree_path_to_string",{P},{data}))
             case 3 then s = append(s,to_number(gtk_str_func("gtk_tree_path_to_string",{P},{data})))
+            case else Warn(,,"Converting glist to_sequence",
+				"invalid format supplied,\nvalues are 0 to 3")
         end switch
     end for
 return s
@@ -1259,6 +1456,8 @@ end function
 ------------------------------------------------------------------------
 -- Color handling routines - most are used internally
 ------------------------------------------------------------------------
+
+----------------------------------------
 export function to_rgba(object color) 
 ----------------------------------------
 -- converts a color description to rgba ptr;
@@ -1273,21 +1472,22 @@ export function to_rgba(object color)
 return rgba
 end function
 
--- converts rgba ptr to usable description;
 ----------------------------------------------------
 export function from_rgba(object rgba, object fmt=0) 
 ----------------------------------------------------
+-- converts rgba ptr to usable description;
 object result = gtk_str_func("gdk_rgba_to_string",{P},{rgba})
  if fmt=0 then return result 
  else return fmt_color(result,fmt) 
  end if
 end function
 
--- Convert color to various usable formats - this can be used 
--- by the programmer, refer to ~/demos/documentation/HowItWorks.html#colors
+
 ------------------------------------------------------------------------
-function fmt_color(object s, integer fmt)
+function fmt_color(object s, integer fmt=0)
 ------------------------------------------------------------------------
+-- Convert color to various usable formats - this can be used by the
+-- programmer, refer to ~/demos/documentation/HowItWorks.html#colors
  if atom(s) then
     if string(peek_string(s)) then
         s = peek_string(s)
@@ -1314,6 +1514,7 @@ object w
         case 6 then return sprintf("rgba(%d,%d,%d,%2.2f)",w[2..$])
         case 7 then return {w[2]/255,w[3]/255,w[4]/255,w[5]}
         case 8 then return sprintf("r=#%x, g=#%x, b=#%x, alpha=#%x",w[2..5])
+        case else -- do nothing
     end switch
 return s
 end function
@@ -1322,12 +1523,12 @@ end function
 -- METHOD DECLARATIONS:
 ------------------------------------------------------------------------
 
-sequence initialized = repeat(0,GtkFinal)
+sequence initialized = repeat(0,1000)
 -- This is a set of flags which are set to 1 when a given widget has 
 -- been initialized. This prevents having to initialize a widget's
 -- methods repeatedly.
 
-sequence widget = repeat(0,GtkFinal)
+export sequence widget = repeat(0,GtkFinal)
 -- This structure holds prototypes for each GTK method call,
 -- organized by widget. When each widget is initialized,
 -- vectors are added pointing to the routine_ids needed
@@ -1358,7 +1559,7 @@ widget[GObject] = {"g_object",
 
     function setProperty(object handle, object a, object b)
     --------------------------------------------------------------
-    ifdef OBJ_SET then 
+    ifdef OBJ then 
         display("Handle []",handle)
         display("Prop []",{a})
         display("Value  []",b)
@@ -1443,7 +1644,7 @@ widget[GtkWidgetPath] = {"gtk_widget_path",
 "GtkWidgetPath"}
 
 widget[GtkWidget] = {"gtk_widget",
-{GtkWidgetPath,GtkAccessible,GtkBuildable,GObject},
+{GtkBuildable,GObject},
 -- aliases to fix awkward overrides; ordinarily you will use one of these 4;
     {"set_font",{P,S},-routine_id("setFont")},
     {"set_color",{P,P},-routine_id("setFg")}, 
@@ -1562,7 +1763,7 @@ widget[GtkWidget] = {"gtk_widget",
     {"unregister_window",{P,P}}, -- GTK 3.8+
     {"get_allocated_width",{P},I},
     {"get_allocated_height",{P},I},
-    {"get_allocation",{P,P}},
+    {"get_allocation",{P},-routine_id("getWidgetAllocation")},
     {"set_allocation",{P,P}},
     {"get_allocated_baseline",{P},I},
     {"get_app_paintable",{P},B},
@@ -1641,8 +1842,18 @@ widget[GtkWidget] = {"gtk_widget",
     {"set_clip",{P},P}, -- 3.14
     {"get_action_group",{P,S},P,0,GActionGroup}, -- 3.16
     {"list_action_prefixes",{P},A}, -- 3.16
+    {"signal",{P,P,P,P,P,P},-routine_id("connect")},
 "GtkWidget"}
 
+	function getWidgetAllocation(atom obj)
+	atom al = allocate(4*4)
+	gtk_func("gtk_widget_get_allocation",{P,P},{obj,al})
+	integer x,y,w,h
+	{x,y,w,h} = peek4u({al,4})
+	free(al)
+	return {x,y,w,h}
+	end function
+	
 	function widget_set_name(atom ctl, object name)
 	gtk_proc("gtk_widget_set_name",{P,P},{ctl,name})
 	integer x = find(ctl,vslice(registry,1))
@@ -1702,6 +1913,10 @@ widget[GtkAccessible] = {"gtk_accessible",
     {"get_widget",{P},P,0,GtkWidget},
 "GtkAccessible"}
 
+widget[GtkActivatable] = {"gtk_activatable",
+{GObject},
+"GtkActivatable"}
+
 widget[GActionGroup] = {"g_action_group",
 {0},
 "GActionGroup"}
@@ -1760,12 +1975,12 @@ widget[GtkBin] = {"gtk_bin",
 "GtkBin"}
 
 widget[GtkModelButton] = {"gtk_model_button", -- new in 3.16
-{GtkButton,GtkBin,GtkContainer,GtkWidget,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
 	{"new",{},P},
 "GtkModelButton"}
 
 widget[GtkButton] = {"gtk_button",
-{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{P},-routine_id("newBtn")},
     {"set_relief",{P,I}},
     {"get_relief",{P},I},
@@ -1791,73 +2006,56 @@ widget[GtkButton] = {"gtk_button",
     -- handles creation of buttons with icons from various sources;
     -- this function modified greatly from earlier versions
     ---------------------------------------------------------------
-    Button btn = gtk_func("gtk_button_new")
-    Container box = gtk_func("gtk_box_new",{I,I},{0,5})
-    object img = 0
-    Label lbl = gtk_func("gtk_label_new",{P},{0})
-    gtk_proc("gtk_container_add",{P,P},{btn,box})
-
+    atom btn 
 	object tmp, icon, title
+	atom child
+	
+	if atom(cap) and cap = 0 then
+		return gtk_func("gtk_button_new",{})
+	end if
 	
     if string(cap) then
 		
-		if match("gtk-",cap) = 1 then
-		
-			if match("#",cap) then
-				tmp = split(cap,'#')
-				cap = tmp[1]
-				title = tmp[2]
-				btn = gtk_func("gtk_button_new_with_mnemonic",{P},
-					{allocate_string(title)})
-			else
-				title = proper(cap[5..$])
-				if not match("_",title) then
-					title = "_" & title
-				end if
-				btn = gtk_func("gtk_button_new_with_mnemonic",{P},
-					{allocate_string(title)})
+		if match("#",cap) > 0 then
+			tmp = split(cap,'#')
+			icon = get_icon_image(tmp[1],GTK_ICON_SIZE_BUTTON)
+			title = tmp[2]
+			btn = gtk_func("gtk_button_new_with_mnemonic",{P},{title})
+			register(btn,GtkButton)
+			if icon > 0 then 
+				set(btn,"image",icon) 
+				set(btn,"always show image",TRUE)
 			end if
-			
-			img = get_icon_image(cap,GTK_ICON_SIZE_BUTTON)
-			if img > 0 then
-				gtk_proc("gtk_button_set_image",{P,P},{btn,img})
-				set(btn,"property","always-show-image",TRUE)
-			end if
-			
 			return btn
-			
-		end if --gtk-
+		end if
+	
+		if match("gtk-",cap) then
+			btn = gtk_func("gtk_button_new_with_mnemonic",{P},
+				{allocate_string('_'&proper(cap[5..$]))})
+			register(btn,GtkButton)
+			icon = get_icon_image(cap,GTK_ICON_SIZE_BUTTON)
+			if icon > 0 then set(btn,"image",icon) end if
+			set(btn,"always show image",TRUE)
+			return btn
+		end if
 		
-        if match("#",cap) then
-            tmp = split(cap,'#') 
-            icon = tmp[1] 
-            if to_number(icon) > 0 then 
-				icon = to_number(icon)
-				icon = gtk_func("gdk_pixbuf_scale_simple",{P,I,I,I},{icon,30,30,GDK_INTERP_BILINEAR})
-				img = create(GtkImage)
-				set(img,"from pixbuf",icon)
-			else
-				--ifdef LINUX then
-					img = get_icon_image(icon,GTK_ICON_SIZE_BUTTON)
-				--end ifdef
-			end if
-            title = tmp[2]
-            set(lbl,"markup with mnemonic",title)
-            if img > 0 then
-				gtk_proc("gtk_container_add",{P,P},{box,img})
-            end if
-            gtk_proc("gtk_container_add",{P,P},{box,lbl})
-        else
-			set(lbl,"markup with mnemonic",cap)
-			gtk_proc("gtk_box_pack_end",{P,P,B,B,I},{box,lbl,1,1,0})
-        end if 
-    end if
-   
-    return btn      
+		btn = gtk_func("gtk_button_new_with_mnemonic",{P},{allocate_string(cap)})
+		register(btn,GtkButton)
+		return btn
+	
+	else
+	
+		btn = gtk_func("gtk_button_new")
+		register(btn,GtkButton)
+		return btn
+		
+	end if
+				
+	return btn
     end function
 
 widget[GtkBox] = {"gtk_box",
-{GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkOrientable,GtkBuildable,GObject},
     {"new",{I,I},P},
     {"pack_start",{P,P,B,B,I}},
     {"pack_end",{P,P,B,B,I}},
@@ -1870,12 +2068,12 @@ widget[GtkBox] = {"gtk_box",
     {"set_child_packing",{P,P,B,B,I,I}},
     {"set_baseline_position",{P,I}},
     {"get_baseline_position",{P},I},
-    {"get_center_widget",{P},P}, -- GTK 3.12.1
+    {"get_center_widget",{P},P,0,GtkWidget}, -- GTK 3.12.1
     {"set_center_widget",{P,P}}, -- GTK 3.12.1
 "GtkBox"}
 
 widget[GtkButtonBox] = {"gtk_button_box",
-{GtkBox,GtkContainer,GtkWidget,GtkBuilder,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuilder,GtkOrientable,GObject},
     {"new",{I},P},
     {"set_layout",{P,I}},
     {"get_layout",{P},I},
@@ -1885,6 +2083,16 @@ widget[GtkButtonBox] = {"gtk_button_box",
     {"get_child_non_homogeneous",{P,P},P},
 "GtkButtonBox"}
 
+widget[GtkWindowGroup] = {"gtk_window_group",
+{GObject},
+	{"new",{},P},
+	{"add_window",{P,P}},
+	{"remove_window",{P,P}},
+	{"list_windows",{P},P,0,GList},
+	{"get_current_grab",{P},P,0,GtkWidget},
+	{"get_current_grab_device",{P,P},P,0,GtkWidget},
+"GtkWindowGroup"}
+
 widget[GtkWindow] = {"gtk_window",
 {GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{I},P},
@@ -1893,6 +2101,7 @@ widget[GtkWindow] = {"gtk_window",
     {"set_resizable",{P,B}},
     {"get_resizable",{P},B},
     {"get_size",{P,I,I}},
+    {"set_default",{P,P}},
     {"set_default_size",{P,I,I}},
     {"get_default_size",{P,I,I}},
     {"set_position",{P,I}},
@@ -1908,9 +2117,9 @@ widget[GtkWindow] = {"gtk_window",
     {"set_gravity",{P,I}},
     {"get_gravity",{P},I},
     {"set_transient_for",{P,P}},
-    {"get_transient_for",{P},P},
+    {"get_transient_for",{P},P,0,GtkWindow},
     {"set_attached_to",{P,P}},
-    {"get_attached_to",{P},P},
+    {"get_attached_to",{P},P,0,GtkWidget},
     {"set_destroy_with_parent",{P,B}},
     {"get_destroy_with_parent",{P},B},
     {"set_hide_titlebar_when_maximized",{P,B}},
@@ -1918,6 +2127,7 @@ widget[GtkWindow] = {"gtk_window",
     {"set_screen",{P,P}},
     {"get_screen",{P},P,0,GdkScreen},
     {"is_active",{P},B},
+    {"list_toplevels",{P},P,0,GSList},
     {"has_toplevel_focus",{P},B},
     {"add_mnemonic",{P,I,P}},
     {"remove_mnemonic",{P,I,P}},
@@ -1926,11 +2136,11 @@ widget[GtkWindow] = {"gtk_window",
     {"mnemonic_activate",{P,I,I},B},
     {"activate_key",{P,P},B},
     {"propagate_key_event",{P,P},B},
-    {"get_focus",{P},P},
+    {"get_focus",{P},P,0,GtkWidget},
     {"set_focus",{P,P}},
     {"set_focus_visible",{P,B}},
     {"get_focus_visible",{P},B},
-    {"get_default_widget",{P},P},
+    {"get_default_widget",{P},P,0,GtkWidget},
     {"set_default",{P,P}},
     {"present",{P}},
     {"present_with_time",{P,P}},
@@ -1969,7 +2179,9 @@ widget[GtkWindow] = {"gtk_window",
     {"get_role",{P},S},
     {"get_icon",{P},P,0,GdkPixbuf},
     {"get_icon_name",{P},S},
-    {"get_group",{P},P},
+    {"get_icon_list",{P},P,0,GList},
+    {"get_default_icon_list",{P},P,0,GList},
+    {"get_group",{P},P,0,GtkWindowGroup},
     {"has_group",{P},B},
     {"get_window_type",{P},I},
     {"move",{P,I,I}},
@@ -1988,6 +2200,7 @@ widget[GtkWindow] = {"gtk_window",
     {"set_opacity",{P,D}},
     {"is_maximized",{P},B}, -- 3.12
     {"set_interactive_debugging",{B}}, -- 3.14
+    {"get_application",{P},P,0,GtkApplication},
 "GtkWindow"}
 
  -- this replaces a handy but deprecated GTK function which 
@@ -2070,7 +2283,7 @@ widget[GtkLabel] = {"gtk_label",
     {"select_region",{P,I,I}},
     {"get_selection_bounds",{P,I,I},B},
     {"set_mnemonic_widget",{P,P}},
-    {"get_mnemonic_widget",{P},P},
+    {"get_mnemonic_widget",{P},P,0,GtkWidget},
     {"get_label",{P},S},
     {"get_layout",{P},P,0,PangoLayout},
     {"get_line_wrap_mode",{P},I},
@@ -2112,16 +2325,6 @@ widget[GtkImage] = {"gtk_image",
     {"get_icon_size",{P},-routine_id("getIconSize")},
 "GtkImage"}
 
-export function valid_icon(object list)
-	IconTheme theme = create(GtkIconTheme)
-	for i = 1 to length(list) do
-		if get(theme,"has icon",list[i]) then
-			return list[i]
-		end if
-	end for
-	return "missing"
-	end function
-	
 	-- create an image from a variety of source formats
    function newImage(object icon=0, integer size=6, integer h, integer w)
     -------------------------------------------------------------
@@ -2169,6 +2372,7 @@ export function valid_icon(object list)
             img = gtk_func("gtk_image_new_from_gicon",{P,I},{icon,size})
         case CairoSurface_t then
             img = gtk_func("gtk_image_new_from_surface",{P},{icon})
+        case else -- no conversion needed
     end switch
     
     return img
@@ -2329,12 +2533,12 @@ widget[GdkPixbuf] = {"gdk_pixbuf",
 "GdkPixbuf"}
 
  -- creates a pixbuf from a variety of sources
-    function newPixbuf(object name, integer w=0, integer h=0, integer ratio=0)
+    function newPixbuf(object name, integer w=0, integer h=0, atom ratio=0)
     --------------------------------------------------------------------------
     atom err = allocate(32) err = 0
     atom fn, fx 
-    object path, temp=0
-
+    object path, pix
+	
     if string(name) then
         path = canonical_path(name) 
         if file_exists(path) then
@@ -2346,28 +2550,22 @@ widget[GdkPixbuf] = {"gdk_pixbuf",
             path = icon_info(name) 
             path = allocate_string(path[3])
             goto "build"
+        else return 0
         end if      
     end if -- string name;
-    
-    return 0
-    
+
     label "build"
-    
-        if h = 0 and w = 0 then -- return at original size;
-            return gtk_func("gdk_pixbuf_new_from_file",{P,P},{path,err})
-        end if
-        if w > 0 and h = 0 then
-            h = -1
-            return gtk_func("gdk_pixbuf_new_from_file_at_scale",{P,I,I,B,P},{path,w,h,ratio,err})
-        end if
-        if w = 0 and h > 0 then
-            w = -1
-            return gtk_func("gdk_pixbuf_new_from_file_at_scale",{P,I,I,B,P},{path,w,h,ratio,err})
-        end if
-        if w > 0 and h > 0 then
-            return gtk_func("gdk_pixbuf_new_from_file_at_scale",{P,I,I,B,P},{path,w,h,ratio,err})
-        end if
-        
+		
+	if h = 0 and w = 0 then -- return at original size;
+			return gtk_func("gdk_pixbuf_new_from_file",{P,P},{path,err})
+			
+	else -- if one or other dimension given, scale it, otherwise size it;
+		if w > 0 and h = 0 then h = -1 end if
+		if w = 0 and h > 0 then w = -1 end if
+		return gtk_func("gdk_pixbuf_new_from_file_at_scale",{P,I,I,B,P},
+			{path,w,h,ratio,err})
+	end if
+		
     return 0
     end function
 
@@ -2401,15 +2599,15 @@ widget[GtkDialog] = {"gtk_dialog",
     {"new",{},P},
     {"run",{P},I},
     {"response",{P,I}},
-    {"add_button",{P,S,I},P,0,GtkButton},
-    {"get_action_area",{P},P,0,GtkBox}, -- Deprecated 3.12
+    {"add_button",{P,S,I},P,0,GtkWidget},
+    {"get_action_area",{P},P,0,GtkWidget}, -- Deprecated 3.12
     {"add_action_widget",{P,P,I}},
-    {"get_content_area",{P},P,0,GtkBox},
+    {"get_content_area",{P},P,0,GtkWidget},
     {"set_default_response",{P,I}},
     {"set_response_sensitive",{P,I,B}},
     {"get_response_for_widget",{P,P},I},
-    {"get_widget_for_response",{P,I},P},
-    {"get_header_bar",{P},P},-- GTK 3.12
+    {"get_widget_for_response",{P,I},P,0,GtkWidget},
+    {"get_header_bar",{P},P,0,GtkWidget},-- GTK 3.12
 "GtkDialog"}
    
 widget[GtkMessageDialog] = {"gtk_message_dialog",
@@ -2418,18 +2616,19 @@ widget[GtkMessageDialog] = {"gtk_message_dialog",
     {"new_with_markup",{P,I,I,I,S,S},P},
     {"set_markup",{P,S}},
     {"set_image",{P,P}}, -- Deprecated 3.12
-    {"get_image",{P},P}, -- Deprecated 3.12
+    {"get_image",{P},P,0,GtkImage}, -- Deprecated 3.12
     {"format_secondary_text",{P,S,S}},
     {"format_secondary_markup",{P,S,S}},
+    {"get_message_area",{P},P,0,GtkWidget},
 "GtkMessageDialog"}
 
 widget[GtkSeparator] = {"gtk_separator",
-{GtkWidget,GtkBuildable,GObject},
+{GtkWidget,GObject,GtkBuildable,GtkOrientable},
     {"new",{I},P},
 "GtkSeparator"}
 
 widget[GtkEditable] = {"gtk_editable",
-{GObject},
+{0},
     {"select_region",{P,I,I}},
     {"get_selection_bounds",{P,I,I}},
     {"insert_text",{P,S,I,I}},
@@ -2446,7 +2645,7 @@ widget[GtkEditable] = {"gtk_editable",
 "GtkEditable"}
 
 widget[GtkEntry] = {"gtk_entry",
-{GtkWidget,GtkEditable,GtkCellEditable,GObject},
+{GtkWidget,GtkEditable,GtkCellEditable,GtkBuildable,GObject},
     {"new",{},P},
     {"get_buffer",{P},P,0,GtkEntryBuffer},
     {"set_buffer",{P,P}},
@@ -2503,7 +2702,7 @@ widget[GtkEntry] = {"gtk_entry",
 "GtkEntry"}
 
 widget[GtkSpinButton] = {"gtk_spin_button",
-{GtkEditable,GtkEntry,GtkWidget,GtkBuildable,GObject},
+{GtkEntry,GtkWidget,GtkEditable,GtkCellEditable,GtkOrientable,GtkBuildable,GObject},
     {"set_adjustment",{P,P}},
     {"get_adjustment",{P},P,0,GtkAdjustment},
     {"set_digits",{P,I}},
@@ -2550,7 +2749,7 @@ widget[GtkOrientable] = {"gtk_orientable",
 "GtkOrientable"}
 
 widget[GtkRange] = {"gtk_range",
-{GtkOrientable,GtkWidget,GtkBuildable,GObject},
+{GtkWidget,GtkOrientable,GtkBuildable,GObject},
     {"set_fill_level",{P,D}},
     {"get_fill_level",{P},D},
     {"set_restrict_to_fill_level",{P,B}},
@@ -2581,7 +2780,7 @@ widget[GtkRange] = {"gtk_range",
 "GtkRange"}
 
 widget[GtkScale] = {"gtk_scale",
-{GtkOrientable,GtkRange,GtkWidget,GtkBuildable,GObject},
+{GtkRange,GtkWidget,GtkOrientable,GtkBuildable,GObject},
     {"set_digits",{P,I}},
     {"get_digits",{P},I},
     {"set_draw_value",{P,B}},
@@ -2600,6 +2799,9 @@ widget[GtkScale] = {"gtk_scale",
  -- create scale from range or adjustment;
     function newScale(integer orient, atom min=0, atom max=0, atom step=0)
     ----------------------------------------------------------------------
+    if orient = 0 and min = 0 and max = 0 and step = 0 then
+		return gtk_func("gtk_scale_new",{I,P},{0,0})
+	end if
     if classid(min) = GtkAdjustment then
         return gtk_func("gtk_scale_new",{I,P},{orient,min})
     else
@@ -2810,7 +3012,7 @@ widget[GtkThemedIcon] = {"gtk_themed_icon",
 widget[GEmblem] = {"g_emblem",
 {GObject},
     {"new",{P},P},
-    {"get_icon",{P},P},
+    {"get_icon",{P},P,0,GIcon},
 "GEmblem"}
 
 widget[GEmblemedIcon] = {"g_emblemed_icon",
@@ -2826,14 +3028,14 @@ widget[GdkDeviceManager] = {"gdk_device_manager",
 "GdkDeviceManager"}
 
 widget[GtkAppChooser] = {"gtk_app_chooser",
-{GtkWidget,GObject},
+{GtkWidget},
     {"get_app_info",{P},P,0,GAppInfo},
     {"get_content_type",{P},S},
     {"refresh",{P}},
 "GtkAppChooser"}
 
 widget[GtkAppChooserButton] = {"gtk_app_chooser_button",
-{GtkAppChooserDialog,GtkAppChooser,GtkComboBox,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkComboBox,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkCellLayout,GtkCellEditable,GObject},
     {"new",{S},P},
     {"append_custom_item",{P,S,S,P}},
     {"append_separator",{P}},
@@ -2863,9 +3065,9 @@ widget[GtkApplication] = {"gtk_application",
     {"inhibit",{P,P,I,S},I},
     {"uninhibit",{P,I}},
     {"is_inhibited",{P,I},B},
-    {"get_app_menu",{P},P},
+    {"get_app_menu",{P},P,0,GMenuModel},
     {"set_app_menu",{P,P}},
-    {"get_menubar",{P},P},
+    {"get_menubar",{P},P,0,GMenuModel},
     {"set_menubar",{P,P}},
     {"add_accelerator",{P,S,S,P}},
     {"remove_accelerator",{P,S,P}},
@@ -2875,7 +3077,7 @@ widget[GtkApplication] = {"gtk_application",
     {"set_accels_for_action",{P,S,S}},
     {"list_action_descriptions",{P},P,0,GSList},
     {"get_actions_for_accel",{P,S},P}, -- 3.14
-    {"get_menu_by_id",{P,S},P}, -- 3.14
+    {"get_menu_by_id",{P,S},P,0,GMenu}, -- 3.14
     {"prefers_app_menu",{},B}, -- 3.14
 "GtkApplication"}
 
@@ -2915,18 +3117,28 @@ widget[GtkApplicationWindow] = {"gtk_application_window",
     {"get_id",{P},I},
 "GtkApplicationWindow"}
 
+widget[GtkActionable] = {"gtk_actionable",
+{GtkWidget},
+	{"get_action_name",{P},S},
+	{"set_action_name",{P,S}},
+	{"get_action_target_value",{P},P},
+	{"set_action_target_value",{P,P}},
+	{"set_action_target",{P,S,P}},
+	{"set_detailed_action_name",{P,S}},
+"GtkActionable"}
+
 widget[GtkAppLaunchContext] = {"gtk_app_launch_context",
 {0},
 "GtkAppLaunchContext"}
 
 widget[GtkAspectFrame] = {"gtk_aspect_frame",
-{GtkFrame,GtkBin,GtkContainer,GtkWidget,GtkBuilder,GObject},
+{GtkFrame,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S,F,F,F,B},P},
     {"set",{P,F,F,F,B}},
 "GtkAspectFrame"}
 
 widget[GtkAssistant] = {"gtk_assistant",
-{GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuilder,GObject},
+{GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{},P},
     {"set_current_page",{P,I}},
     {"get_current_page",{P},I},
@@ -2951,8 +3163,12 @@ widget[GtkAssistant] = {"gtk_assistant",
     {"previous_page",{P}},
 "GtkAssistant"}
 
+widget[GtkDrag] = {"gtk_drag",
+	{"cancel",{P}},
+"GtkDrag"}
+
 widget[GtkCssProvider] = {"gtk_css_provider",
-{GtkStyleProvider,GObject},
+{GObject},
     {"new",{P},-routine_id("newProvider")},
     {"get_default",{},P,0,GtkCssProvider},
     {"get_named",{S,S},P,0,GtkCssProvider},
@@ -3020,7 +3236,7 @@ widget[GtkStatusIcon] = {"gtk_status_icon", -- Deprecated 3.14
     {"get_gicon",{P},P},
     {"get_size",{P},I},
     {"set_screen",{P,P}},
-    {"get_screen",{P},P},
+    {"get_screen",{P},P,0,GdkScreen},
     {"set_tooltip_text",{P,S}},
     {"get_tooltip_text",{P},S},
     {"set_tooltip_markup",{P,S}},
@@ -3047,7 +3263,10 @@ widget[GtkStatusIcon] = {"gtk_status_icon", -- Deprecated 3.14
     end function 
      
 widget[GtkOffscreenWindow] = {"gtk_offscreen_window",
-{GtkBuildable,GObject},
+{GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+	{"new",{},P},
+	{"get_surface",{P},P,0,CairoSurface_t},
+	{"get_pixbuf",{P},P,0,GdkPixbuf},
 "GtkOffscreenWindow"}
 
 widget[GtkAlignment] = {"gtk_alignment", -- deprecated 3.14
@@ -3059,7 +3278,7 @@ widget[GtkAlignment] = {"gtk_alignment", -- deprecated 3.14
 "GtkAlignment"}
 
 widget[GtkComboBox] = {"gtk_combo_box",
-{GtkCellLayout,GtkBin,GtkContainer,GtkWidget,GtkCellLayout,GtkCellEditable,GtkBuildable,GObject},
+{GtkBin,GtkContainer,GtkWidget,GtkCellLayout,GtkCellEditable,GtkBuildable,GObject},
     {"new",{P},-routine_id("newComboBox")},
     {"set_wrap_width",{P,I}},
     {"get_wrap_width",{P},I},
@@ -3074,7 +3293,7 @@ widget[GtkComboBox] = {"gtk_combo_box",
     {"set_active_id",{P,S}},
     {"get_active_id",{P},S},
     {"set_model",{P,P}},
-    {"get_model",{P},P},
+    {"get_model",{P},P,0,GtkTreeModel},
     {"popup_for_device",{P,P}},
     {"popup",{P}},
     {"popdown",{P}},
@@ -3094,7 +3313,15 @@ widget[GtkComboBox] = {"gtk_combo_box",
     {"get_entry_text_column",{P},I},
     {"set_popup_fixed_width",{P,B}},
     {"get_popup_fixed_width",{P},B},
+    {"set_activates_default",{P,B},-routine_id("setActivatesDefault")},
 "GtkComboBox"}
+
+	function setActivatesDefault(atom box, boolean z)
+	atom x = get(box,"child")
+	register(x,GtkEntry) 
+	set(x,"property","activates-default",z)
+	return 1
+	end function
 
  -- create a combo box either empty or from a model
     function newComboBox(object x=0)
@@ -3108,7 +3335,7 @@ widget[GtkComboBox] = {"gtk_combo_box",
     end function
 
 widget[GtkComboBoxText] = {"gtk_combo_box_text",
-{GtkComboBox,GtkBin,GtkContainer,GtkWidget,GtkCellLayout,GtkBuildable,GObject},
+{GtkComboBox,GtkBin,GtkContainer,GtkWidget,GtkCellLayout,GtkCellEditable,GtkBuildable,GObject},
     {"new",{},P},
     {"new_with_entry",{},P},
     {"append",{P,P},-routine_id("appComboBoxText")},
@@ -3120,8 +3347,15 @@ widget[GtkComboBoxText] = {"gtk_combo_box_text",
     {"remove",{P,I}},
     {"remove_all",{P}},
     {"get_active_text",{P},S},
+    {"get_entry",{P},-routine_id("getComboEntry")},
 "GtkComboBoxText"}
-
+	
+	function getComboEntry(atom box)
+	atom x = get(box,"child")
+	register(x,GtkEntry) 
+	return x
+	end function
+	
 	constant cbtadd = define_proc("gtk_combo_box_text_append",{P,P,P})
 	
 	function appComboBoxText(object box, object txt)
@@ -3154,13 +3388,13 @@ widget[GtkFrame] = {"gtk_frame",
     {"set_label_align",{P,F,F}},
     {"get_label_align",{P,F,F}},
     {"set_label_widget",{P,P}},
-    {"get_label_widget",{P},P},
+    {"get_label_widget",{P},P,0,GtkWidget},
     {"set_shadow_type",{P,I}},
     {"get_shadow_type",{P},I},
 "GtkFrame"}
 
 widget[GtkToggleButton] = {"gtk_toggle_button",
-{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{P},-routine_id("newToggleBtn")},
     {"new_with_label",{S},P},
     {"new_with_mnemonic",{S},P},
@@ -3177,7 +3411,7 @@ widget[GtkToggleButton] = {"gtk_toggle_button",
  -- this function modified greatly from GTK versions prior to 10
     function newToggleBtn(object cap = 0)
     ---------------------------------------------------------------
-    atom btn = 0, img = 0, default_theme = 0
+    atom btn = 0, img = 0
 
     if atom(cap) and cap = 0 then  -- return a blank button;
         return gtk_func("gtk_toggle_button_new")
@@ -3209,13 +3443,15 @@ widget[GtkToggleButton] = {"gtk_toggle_button",
     end function
     
 widget[GtkCheckButton] = {"gtk_check_button",
-{GtkToggleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToggleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{P},-routine_id("newCheckBtn")},
+    {"new_with_label",{S},P,0,GtkWidget},
+    {"new_with_mnemonic",{S},P,0,GtkWidget},
 "GtkCheckButton"}
 
     function newCheckBtn(object cap = 0)
 ---------------------------------------------------------------
-    atom btn = 0, img = 0, default_theme = 0
+    atom btn = 0, img = 0
 
     if atom(cap) and cap = 0 then  -- return a blank button;
         return gtk_func("gtk_check_button_new")
@@ -3247,16 +3483,16 @@ widget[GtkCheckButton] = {"gtk_check_button",
     end function
     
 widget[GtkRadioButton] = {"gtk_radio_button",
-{GtkCheckButton,GtkToggleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkCheckButton,GtkToggleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{P,P},-routine_id("newRadioBtn")},
     {"set_group",{P,P}},
-    {"get_group",{P,P}},
+    {"get_group",{P},P,0,GSList},
     {"join_group",{P,P}},
 "GtkRadioButton"}
 
     function newRadioBtn(atom group, object cap = 0)
 ---------------------------------------------------------------
-    atom btn = 0, img = 0, default_theme = 0
+    atom btn = 0, img = 0
 
     if atom(cap) and cap = 0 then  -- return a blank button;
         return gtk_func("gtk_radio_button_new_from_widget",{P},{group})
@@ -3288,7 +3524,7 @@ widget[GtkRadioButton] = {"gtk_radio_button",
     end function
     
 widget[GtkColorButton] = {"gtk_color_button",
-{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkColorChooser,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkColorChooser,GtkActionable,GtkActivatable,GObject},
     {"new",{P},-routine_id("new_color_button")},
     {"set_title",{P,S}},
     {"get_title",{P},S},
@@ -3302,7 +3538,7 @@ widget[GtkColorButton] = {"gtk_color_button",
 	end function
 	
 widget[GtkFontButton] = {"gtk_font_button",
-{GtkFontChooser,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkFontChooser,GtkActionable,GtkActivatable,GtkBuildable,GObject},
     {"new",{P,P,P},-routine_id("new_font_button")},
     {"set_font_name",{P,S}},
     {"get_font_name",{P},S},
@@ -3330,7 +3566,7 @@ widget[GtkFontButton] = {"gtk_font_button",
 	end function
 	
 widget[GtkLinkButton] = {"gtk_link_button",
-{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{S,S},-routine_id("newLinkButton")},
     {"set_uri",{P,S}},
     {"get_uri",{P},S},
@@ -3346,22 +3582,22 @@ widget[GtkLinkButton] = {"gtk_link_button",
     end function
 
 widget[GtkLockButton] = {"gtk_lock_button", -- unable to make this work!
-{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{P},P},
     {"set_permission",{P,P}},
     {"get_permission",{P},P},
 "GtkLockButton"}
 
 widget[GtkScaleButton] = {"gtk_scale_button",
-{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkOrientable,GtkBuildable,GObject},
+{GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkActionable,GtkActivatable,GObject},
     {"new",{I,D,D,D,P},P},
     {"set_adjustment",{P,P}},
     {"get_adjustment",{P},P,0,GtkAdjustment},
     {"set_value",{P,D}},
     {"get_value",{P},D},
-    {"get_popup",{P},P},
-    {"get_plus_button",{P},P},
-    {"get_minus_button",{P},P},
+    {"get_popup",{P},P,0,GtkWidget},
+    {"get_plus_button",{P},P,0,GtkWidget},
+    {"get_minus_button",{P},P,0,GtkWidget},
     {"set_icons",{P,P},-routine_id("setScaleButtonIcons")},
 "GtkScaleButton"}
 
@@ -3378,16 +3614,17 @@ widget[GtkMenu] = {"gtk_menu",
     {"new_from_model",{P},P},
     {"attach",{P,P,I,I,I,I}},
     {"attach_to_widget",{P,P,P}},
-    {"get_attach_widget",{P},P},
+    {"get_attach_widget",{P},P,0,GtkWidget},
+    {"get_for_attach_widget",{P},P,0,GSList},
     {"detach",{P}},
     {"popup",{P,P,P,P,P,I,I}},
     {"popdown",{P}},
     {"reposition",{P}},
     {"set_active",{P,I}},
-    {"get_active",{P},P},
+    {"get_active",{P},P,0,GtkWidget},
     {"popup_for_device",{P,P,P,P,P,P,P,I,I}},
     {"set_accel_group",{P,P}},
-    {"get_accel_group",{P},P},
+    {"get_accel_group",{P},P,0,GtkAccelGroup},
     {"set_accel_path",{P,S}},
     {"get_accel_path",{P},S},
     {"set_title",{P,S}}, -- Deprecated 3.10
@@ -3454,7 +3691,7 @@ widget[GMenuItem] = {"g_menu_item",
 "GMenuItem"}
 
 widget[GtkMenuButton] = {"gtk_menu_button", --3.6
-{GtkToggleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToggleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{},P},
     {"set_popup",{P,P}},
     {"get_popup",{P},P,0,GtkMenu},
@@ -3469,167 +3706,303 @@ widget[GtkMenuButton] = {"gtk_menu_button", --3.6
     {"set_use_popover",{P,B}}, -- 3.12
     {"get_use_popover",{P},B}, -- 3.12
 "GtkMenuButton"}
-
+   
 widget[GtkMenuItem] = {"gtk_menu_item",
-{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
     {"new",{P,P,P,P},-routine_id("newMenuItem")},
     {"new_with_label",{S},P},
     {"new_with_mnemonic",{S},P},
-    {"set_label",{P,S},P},
-    {"get_label",{P},S},
-    {"set_use_underline",{P,B}},
-    {"get_use_underline",{P},B},
+    {"set_label",{P,S},-routine_id("setMenuItemLabel")},
+    {"get_label",{P},-routine_id("getMenuItemLabel")},
+    {"set_image",{P,P},-routine_id("setMenuItemImage")},
+    {"get_image",{P},-routine_id("getMenuItemImage")},
+    {"set_use_underline",{P,B},-routine_id("setMenuItemUseUnderline")},
+    {"get_use_underline",{P},-routine_id("getMenuItemUseUnderline")},
     {"set_submenu",{P,P}},
-    {"get_submenu",{P},P},
-    {"set_accel_path",{P,S}},
-    {"get_accel_path",{P},S},
+    {"get_submenu",{P},P,0,GtkWidget},
     {"select",{P}},
     {"deselect",{P}},
     {"activate",{P}},
     {"toggle_size_allocate",{P,I}},
     {"set_reserve_indicator",{P,B}},
     {"get_reserve_indicator",{P},B},
+    {"add_accelerator",{P,P,P},-routine_id("addMenuAccel")},
 "GtkMenuItem"}
 
-export function add_accels(object item, object accels)
+	function addMenuAccel(atom item, object accels, object img = 0)
 	atom x = allocate(8)
-	if sequence(accels) then
-		if length(accels) < 3 then 
-			accels &= 0 
-		end if
-		if string(accels[2])then 
-			gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(accels[2], 1), x, x+4})
-			accels[2] = peek4u(x)
-			accels[3] = peek4u(x+4)
-		end if
+	integer key, mods
+	
+	object child = get(item,"child") 
+	
+	if atom(img) and img = 0 then
+		-- do nothing
+	else 
+		img = get_icon_image(img,4)
 	end if
+	
+		if  sequence(accels) then
+	
+			gtk_proc("gtk_accelerator_parse", {P,P,P}, 
+				{allocate_string(accels[2],1),x,x+4})
+		
+			key = peek4u(x) mods = peek4u(x+4)
 
-	atom child = get(item,"child")
-	set(item,"add accelerator","activate",accels[1],accels[2],accels[3],GTK_ACCEL_VISIBLE)
-
+			gtk_proc("gtk_widget_add_accelerator",{P,P,P,I,I,I},
+				{item,allocate_string("activate"),accels[1],key,mods,GTK_ACCEL_VISIBLE})
+	
+			if classid(child) = -1 then
+			gtk_proc("gtk_accel_label_set_accel_widget",{P,P},{child,item})
+			
+			gtk_proc("gtk_accel_label_set_accel",{P,I,I},
+				{child,key,mods})
+			end if
+			
+		end if
+				
+		gtk_proc("g_object_ref",{P},{child})
+		gtk_proc("gtk_container_remove",{P,P},{item,child})
+		
+		atom box = create(GtkButtonBox)
+		 set(box,"layout",GTK_BUTTONBOX_START)
+		 
+		if img > 0 then 
+			add(box,img) 
+			register(img,GtkImage)
+			set(box,"child non_homogeneous",img,TRUE)
+		end if
+		
+		register(child,GtkAccelLabel)
+		add(box,child) -- put the label back
+		set(box,"child non_homogeneous",child,TRUE)
+		
+		if sequence(accels) then
+			object txt = gtk_str_func("gtk_accelerator_get_label",{I,I},{key,mods})
+			if string(txt) then
+				atom acc = create(GtkLabel)
+				set(acc,"font","italic 10")
+				set(acc,"text",txt)
+				add(box,acc) 
+				set(box,"child secondary",acc,TRUE)
+				set(box,"child non_homogeneous",acc,TRUE)
+			end if
+		end if
+			
+		add(item,box)	
+		
+	free(x)
+		
 	return item
-end function
-
-	-----------------------------------------------------------------------------
-    function newMenuItem(object stk=0, object fn=0, atom data=0, object accels=0)
-    -----------------------------------------------------------------------------
-	MenuItem item
-	AccelLabel child 
-	atom icon, lbl
-
-		atom x = allocate(8)
-	if sequence(accels) then
-		if length(accels) < 3 then 
-			accels &= 0 
-		end if
-		if string(accels[2])then 
-			gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(accels[2], 1), x, x+4})
-			accels[2] = peek4u(x)
-			accels[3] = peek4u(x+4)
-		end if
-	end if
+	end function
+			
+	-------------------------------------------------------------------------------
+    function newMenuItem(object stk=0, object fn=0, object data=0, object accels=0)
+    -------------------------------------------------------------------------------  
+	object item, img = 0
 	
 	if match("#",stk) then
 		stk = split(stk,'#')
-		icon = create(GtkImage,stk[1],GTK_ICON_SIZE_MENU)
-		item = gtk_func("gtk_menu_item_new")
-		atom box = create(GtkBox,HORIZONTAL,5)
-		if sequence(accels) then
-			lbl = create(GtkAccelLabel,"")
-			set(lbl,"markup",stk[2])
-			set(lbl,"accel",accels[2],accels[3])
-		end if
-		add(box,{icon,lbl})
-		add(item,box)
+		img = stk[1]
+		stk = stk[2]
+		goto "next"
+	end if	
 	
-	else
-	
-	-- string caption with or without accels;	
-		item = gtk_func("gtk_menu_item_new_with_mnemonic",{P},{allocate_string(stk)})
-		child = get(item,"child")
-
-		if sequence(accels) and accels[2] > 0 then
-			set(child,"accel",accels[2],accels[3])
-			set(item,"add accelerator","activate",accels[1],accels[2],accels[3],GTK_ACCEL_VISIBLE)
+	if not match("#",stk) then
+		if match("gtk-",stk) then 
+			img = stk
+			stk = "_" & proper(stk[5..$])
 		end if
-		
 	end if
-	free(x)
+	
+	label "next"
+	
+	item = gtk_func("gtk_menu_item_new_with_mnemonic",{P},{allocate_string(stk)})
+	register(item,GtkRadioMenuItem)
+
+	if atom(img) and img = 0 then
+		item = addMenuAccel(item,accels)
+	else
+		item = addMenuAccel(item,accels,img)
+	end if
+	
+	return item
+    end function
+ 
+	function setMenuItemLabel(atom item, object lbl)
+	if string(lbl) then lbl = allocate_string(lbl) end if
+	atom b = get(item,"child")
+	object l = get(b,"children")
+	l = to_sequence(l,1)
+	for i = 1 to length(l) do
+		if classid(l[i]) = GtkAccelLabel then
+			gtk_proc("gtk_label_set_text",{P,P},{l[i],lbl})
+			return 1
+		end if
+	end for
+	return 1
+	end function
+	 
+	function getMenuItemLabel(atom item)
+	atom b = get(item,"child") 
+	object l = get(b,"children")
+	l = to_sequence(l,1)
+	for i = 1 to length(l) do
+		if classid(l[i]) = GtkAccelLabel then
+			return gtk_str_func("gtk_label_get_text",{P},{l[i]})
+		end if
+	end for
+	return 1
+	end function
+	
+	function setMenuItemImage(atom item, object img)
+	if string(img) then img = get_icon_image(img) end if
+	img = get(img,"pixbuf")
+	atom b = get(item,"child")
+	object l = get(b,"children")
+	l = to_sequence(l,1)
+	for i = 1 to length(l) do
+		if classid(l[i]) = GtkImage then
+			gtk_proc("gtk_image_set_from_pixbuf",{P,P},{l[i],img})
+			return 1
+		end if
+	end for
+	return 1
+	end function
+	 
+	function getMenuItemImage(atom item)
+	atom b = get(item,"child") 
+	object l = get(b,"children")
+	l = to_sequence(l,1)
+	for i = 1 to length(l) do
+		if classid(l[i]) = GtkImage then
+			return l[i]
+		end if
+	end for
+	return 1
+	end function
+	
+	function setMenuItemUseUnderline(atom item, boolean use)
+	atom b = get(item,"child")
+	object l = get(b,"children")
+	l = to_sequence(l,1)
+	for i = 1 to length(l) do
+		if classid(l[i]) = GtkAccelLabel then
+			gtk_proc("gtk_label_set_use_underline",{P,B},{l[i],use})
+			return 1
+		end if
+	end for
+	return 1
+	end function
+	 
+	function getMenuItemUseUnderline(atom item)
+	atom b = get(item,"child") 
+	object l = get(b,"children")
+	l = to_sequence(l,1)
+	for i = 1 to length(l) do
+		if classid(l[i]) = GtkAccelLabel then
+			return gtk_func("gtk_label_get_use_underline",{P},{l[i]})
+		end if
+	end for
+	display(l)
+	return 1
+	end function
+	
+widget[GtkImageMenuItem] = {"gtk_image_menu_item",
+{GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+	{"new",{P,P,P,P},-routine_id("newMenuItem")},
+"GtkImageMenuItem"}
+  
+widget[GtkRadioMenuItem] = {"gtk_radio_menu_item",
+{GtkCheckMenuItem,GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
+    {"new",{P,P,P,P,P},-routine_id("newRadioMenuItem")},
+    {"set_group",{P,P}},
+    {"get_group",{P},P,0,GSList},
+"GtkRadioMenuItem"}
+
+	--------------------------------------------------------------------------------------
+    function newRadioMenuItem(atom group, object stk, object fn, object data, object accels=0)
+    --------------------------------------------------------------------------------------
+	object item, img = 0
+	
+	if match("#",stk) then
+		stk = split(stk,'#')
+		img = stk[1]
+		stk = stk[2]
+		goto "next"
+	end if	
+		
+	if not match("#",stk) then
+		if match("gtk-",stk) then
+			img = stk
+		end if
+	end if
+	
+	label "next"
+	
+	if group = 0 then
+	item = gtk_func("gtk_radio_menu_item_new_with_mnemonic",{P,P},
+		{group,allocate_string(stk)})
+	else
+	item = gtk_func("gtk_radio_menu_item_new_with_mnemonic_from_widget",
+		{P,P},{group,allocate_string(stk)})
+	end if
+	register(item,GtkMenuItem)
+
+	if atom(img) and img = 0 then
+		item = addMenuAccel(item,accels)
+	else
+		item = addMenuAccel(item,accels,img)
+	end if
+	
+	return item
+    end function
+
+widget[GtkCheckMenuItem] = {"gtk_check_menu_item",
+{GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
+    {"new",{P,P,P,P},-routine_id("newCheckMenuItem")},
+    {"set_active",{P,B}},
+    {"get_active",{P},B},
+    {"toggled",{P}},
+    {"set_inconsistent",{P,B}},
+    {"get_inconsistent",{P},B},
+    {"set_draw_as_radio",{P,B}},
+    {"get_draw_as_radio",{P},B},
+"GtkCheckMenuItem"}
+
+	-------------------------------------------------------------------------------
+    function newCheckMenuItem(object stk,object fn, object data, object accels=0)
+    -------------------------------------------------------------------------------
+	object item, img = 0
+	
+	if match("#",stk) then
+		stk = split(stk,'#')
+		img = stk[1]
+		stk = stk[2]
+		goto "next"
+	end if	
+			
+	if not match("#",stk) then
+		if match("gtk-",stk) then
+			img = stk
+		end if
+	end if
+	
+	label "next"
+	
+	item = gtk_func("gtk_check_menu_item_new_with_mnemonic",{P},{allocate_string(stk)})
+	register(item,GtkCheckMenuItem)
+
+	if atom(img) and img = 0 then
+		item = addMenuAccel(item,accels)
+	else
+		item = addMenuAccel(item,accels,img)
+	end if
+	
 	return item
     end function
     
-widget[GtkImageMenuItem] = {"gtk_image_menu_item", -- warning: deprecated in 3.10
-{GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{P,I,P,P},-routine_id("newImageMenuItem")},
-    {"set_image",{P,P}},
-    {"get_image",{P},P},
-    {"set_always_show_image",{P,B}},
-    {"get_always_show_image",{P},B},
-    {"set_accel_group",{P,P}},
-"GtkImageMenuItem"}
-
-	-----------------------------------------------------------------------------
-    function newImageMenuItem(object stk, atom accel=0, object fn=0, atom data=0)
-    -----------------------------------------------------------------------------
-    MenuItem item
-    object img=0, tmp, title=0, default_theme
-    stk = split(stk,'#')
-
-    if length(stk) = 2 then 
-        title = stk[2]
-        stk = stk[1]
-    else
-        stk = stk[1]
-        title = 0
-    end if
-    
-    if string(stk) then
-    
-        if begins("gtk-",stk) then
-            item = gtk_func("gtk_image_menu_item_new_from_stock",{S,I},{stk,accel})
-            return item
-        end if
-    
-		ifdef UNIX then
-        -- see if there's an icon;
-        default_theme = gtk_func("gtk_icon_theme_get_default",{})
-        tmp = allocate_string(stk) 
-        if gtk_func("gtk_icon_theme_has_icon",{P,P},{default_theme,tmp}) then
-                img = gtk_func("gtk_image_new_from_icon_name",{P,P},{tmp,1}) 
-                if string(title) then
-                    item = gtk_func("gtk_image_menu_item_new_with_mnemonic",{P},{title})
-                else
-                    item = gtk_func("gtk_image_menu_item_new")
-                end if
-                gtk_proc("gtk_image_menu_item_set_image",{P,P},{item,img})
-                return item
-        end if
-		end ifdef
-		
-        -- no, maybe it's an image from a file;
-        if img = 0 then
-            tmp = canonical_path(stk)  
-            if file_exists(tmp) then
-                img = create(GtkImage,tmp)
-                if string(title) then
-                    item = gtk_func("gtk_image_menu_item_new_with_mnemonic",{P},{title})
-                else
-                    item = gtk_func("gtk_image_menu_item_new")
-                end if
-                gtk_proc("gtk_image_menu_item_set_image",{P,P},{item,img})
-                return item
-            end if
-        end if
-        
-    end if
-    -- failed to find any image;
-    item = gtk_func("gtk_menu_item_new_with_mnemonic",{P},{title})
-    
-    return item
-    end function
-    
 widget[GtkNumerableIcon] = {"gtk_numerable_icon", -- Deprecated 3.14
-{GIcon,GEmblemedIcon,GObject},
+{GEmblemedIcon,GObject},
     {"new",{P},P,0,GIcon},
     {"new_with_style_context",{P,P},P,0,GIcon},
     {"get_background_gicon",{P},P,0,GIcon},
@@ -3683,7 +4056,7 @@ widget[GtkExpander] = {"gtk_expander",
     end function
     
 widget[GtkToolItem] = {"gtk_tool_item",
-{GtkBin,GtkContainer,GtkWidget,GObject},
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GObject},
     {"new",{},P},
     {"set_homogeneous",{P,B}},
     {"get_homogeneous",{P},B},
@@ -3715,7 +4088,7 @@ widget[GtkToolItem] = {"gtk_tool_item",
 "GtkToolItem"}
 
 widget[GtkToolButton] = {"gtk_tool_button",
-{GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
     {"new",{P,P},-routine_id("newTB")},
     {"set_label",{P,S}},
     {"get_label",{P},S},
@@ -3726,9 +4099,9 @@ widget[GtkToolButton] = {"gtk_tool_button",
     {"set_icon_name",{P,S}},
     {"get_icon_name",{P},S},
     {"set_icon_widget",{P,P}},
-    {"get_icon_widget",{P},P},
+    {"get_icon_widget",{P},P,0,GtkWidget},
     {"set_label_widget",{P,P}},
-    {"get_label_widget",{P},P},
+    {"get_label_widget",{P},P,0,GtkWidget},
 "GtkToolButton"}
 
     function newTB(object icn=0, object lbl=0)
@@ -3747,10 +4120,10 @@ widget[GtkToolButton] = {"gtk_tool_button",
     end function
 
 widget[GtkMenuToolButton] = {"gtk_menu_tool_button",
-{GtkToolButton,GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToolButton,GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
     {"new",{P,P},-routine_id("newMenuTB")},
     {"set_menu",{P,P}},
-    {"get_menu",{P},P},
+    {"get_menu",{P},P,0,GtkWidget},
     {"set_arrow_tooltip_text",{P,S}},
     {"set_arrow_tooltip_markup",{P,S}},
 "GtkMenuToolButton"}
@@ -3767,7 +4140,7 @@ widget[GtkMenuToolButton] = {"gtk_menu_tool_button",
     end function
     
 widget[GtkToggleToolButton] = {"gtk_toggle_tool_button",
-{GtkToolButton,GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToolButton,GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
     {"new",{S},-routine_id("newToggleToolButton")},
     {"set_active",{P,B}},
     {"get_active",{P},B},
@@ -3779,10 +4152,10 @@ widget[GtkToggleToolButton] = {"gtk_toggle_tool_button",
     end function
 
 widget[GtkRadioToolButton] = {"gtk_radio_tool_button",
-{GtkToggleToolButton,GtkToolButton,GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToggleToolButton,GtkToolButton,GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
     {"new",{P},-routine_id("newRadioToolButton")},
     {"set_group",{P,P}},
-    {"get_group",{P},P},
+    {"get_group",{P},P,0,GSList},
 "GtkRadioToolButton"}
 
     function newRadioToolButton(atom id)
@@ -3795,7 +4168,7 @@ widget[GtkRadioToolButton] = {"gtk_radio_tool_button",
     end function
 
 widget[GtkSeparatorToolItem] = {"gtk_separator_tool_item",
-{GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkToolItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GObject},
     {"new",{},P},
     {"set_draw",{P,B}},
     {"get_draw",{P},B},
@@ -3827,8 +4200,8 @@ widget[GtkScrolledWindow] = {"gtk_scrolled_window",
     {"get_hadjustment",{P},P,0,GtkAdjustment},
     {"set_vadjustment",{P,P}},
     {"get_vadjustment",{P},P,0,GtkAdjustment},
-    {"get_hscrollbar",{P},P},
-    {"get_vscrollbar",{P},P},
+    {"get_hscrollbar",{P},P,0,GtkWidget},
+    {"get_vscrollbar",{P},P,0,GtkWidget},
     {"set_policy",{P,I,I}},
     {"get_policy",{P,I,I}},
     {"set_placement",{P,I}},
@@ -3933,6 +4306,7 @@ widget[GtkTextBuffer] = {"gtk_text_buffer",
     {"serialize",{P,P,P,P,P,I},I},
     {"unregister_deserialize_format",{P,P}},
     {"unregister_serialize_format",{P,P}},
+    {"insert_markup",{P,P,S,I}},
 "GtkTextBuffer"}
 
     constant 
@@ -3982,6 +4356,7 @@ widget[GtkTextBuffer] = {"gtk_text_buffer",
 widget[GtkClipboard] = {"gtk_clipboard",
 {GObject},
     {"new",{I},-routine_id("newClipBoard")},
+    {"get_default",{P},P,0,GtkClipboard},
     {"get_for_display",{P,I},P,0,GtkClipboard},
     {"get_display",{P},P,0,GdkDisplay},
     {"set_with_data",{P,P,I,P,P,P},B},
@@ -4050,7 +4425,7 @@ widget[GtkCellArea] = {"gtk_cell_area",
     {"event",{P,P,P,P,P,I},I},
     {"render",{P,P,P,P,P,P,I,B}},
     {"get_cell_allocation",{P,P,P,P,P,P}},
-    {"get_cell_at_position",{P,P,P,P,I,I,P},P},
+    {"get_cell_at_position",{P,P,P,P,I,I,P},P,0,GtkCellRenderer},
     {"create_context",{P},P,0,GtkCellAreaContext},
     {"copy_context",{P,P},P,0,GtkCellAreaContext},
     {"get_request_mode",{P},I},
@@ -4069,6 +4444,7 @@ widget[GtkCellArea] = {"gtk_cell_area",
     {"add_focus_sibling",{P,P,P}},
     {"remove_focus_sibling",{P,P,P}},
     {"is_focus_sibling",{P,P,P},B},
+    {"get_focus_siblings",{P,P},P,0,GSList},
     {"get_focus_from_sibling",{P,P},P,0,GtkCellRenderer},
     {"get_edited_cell",{P},P,0,GtkCellRenderer},
     {"get_edit_widget",{P},P,0,GtkCellEditable},
@@ -4083,7 +4459,7 @@ widget[GtkCellAreaCell] = {"gtk_cell_area_cell",
 "GtkCellAreaCell"}
 
 widget[GtkCellAreaBox] = {"gtk_cell_area_box",
-{GtkCellLayout,GtkOrientable,GtkBuildable},
+{GtkCellArea,GtkCellLayout,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"pack_start",{P,P,B,B,B}},
     {"pack_end",{P,P,B,B,B}},
@@ -4106,7 +4482,7 @@ widget[GtkCellAreaContext] = {"gtk_cell_area_context",
 "GtkCellAreaContext"}
 
 widget[GtkCellEditable] = {"gtk_cell_editable",
-{0},
+{GtkWidget},
     {"start_editing",{P,P}},
     {"editing_done",{P}},
     {"remove_widget",{P}},
@@ -4200,7 +4576,7 @@ widget[GtkCellRendererToggle] = {"gtk_cell_renderer_toggle",
 "GtkCellRendererToggle"}
 
 widget[GtkTreeModelFilter] = {"gtk_tree_model_filter",
-{GObject},
+{GtkTreeModel,GtkTreeDragSource,GObject},
     {"new",{P,P},P},
     {"set_visible_func",{P,P,P,P}},
     {"set_modify_func",{P,I,P,P,P,P}},
@@ -4215,7 +4591,7 @@ widget[GtkTreeModelFilter] = {"gtk_tree_model_filter",
 "GtkTreeModelFilter"}
 
 widget[GtkTreeModelSort] = {"gtk_tree_model_sort",
-{GtkTreeModel,GtkTreeSortable,GtkTreeDragSource},
+{GtkTreeModel,GtkTreeSortable,GtkTreeDragSource,GObject},
     {"new_with_model",{P},P},
     {"get_model",{P},P,0,GtkTreeModel},
     {"convert_child_path_to_path",{P,P},P,0,GtkTreePath},
@@ -4306,7 +4682,6 @@ constant
     
     function setListRowData(atom store, integer row, object data)
     -----------------------------------------------------------
-    atom iter = allocate(32)
     integer max_col = nListCols(store)
     for col = 1 to math:min({length(data),max_col}) do 
         setListColData(store,row,col,data[col])
@@ -4400,10 +4775,14 @@ constant
 		
     switch col_type do
         case gSTR then 
-            if peek4u(x) > 0 then result = peek_string(peek4u(x))
-            else result = peek4u(x)
-				
-            end if
+			ifdef BITS64 then -- thanks pete eberlein
+				result = peek8u(x)
+			elsedef 
+				result = peek4u(x)
+			end ifdef
+			if result > 0 then
+				result = peek_string(result)
+			end if
         case gINT then result = peek4u(x)
         case gBOOL then result = peek(x)
         case gDBL then result = float64_to_atom(peek({x,8}))
@@ -4603,7 +4982,6 @@ widget[GtkTreeStore] = {"gtk_tree_store",
     
     function setTreeRowData(atom store, object data, object parent = 0)
     --------------------------------------------------------------------------
-    integer max_col = nTreeCols(store) 
     atom iter1 = allocate(32) 
     atom iter2 = allocate(32)
     atom iter3 = allocate(32)
@@ -4662,6 +5040,8 @@ widget[GtkTreeStore] = {"gtk_tree_store",
         case gBOOL then prototype = {P,P,I,I,I}
         case gSTR then prototype = {P,P,I,P,I}
             if atom(item) then item = sprintf("%g",item) end if
+        case else Warn(,,"Unknown column type",
+			"Expecting gSTR, gBOOL, gINT, gDBL, gFLT, or gPIX") 
     end switch
 
     if string(item[1]) then item = item[1] end if
@@ -4935,7 +5315,6 @@ widget[GtkTreeSortable] = {"gtk_tree_sortable",
     
     function TSgetSortColID(atom mdl)
     ---------------------------------
-    boolean success = FALSE
     integer col = allocate(32), order = allocate(32)
     if c_func(TS1,{mdl,col,order}) then
         return peek4u(col)+1
@@ -4946,7 +5325,6 @@ widget[GtkTreeSortable] = {"gtk_tree_sortable",
         
     function TSgetSortOrder(atom mdl)
     ---------------------------------
-    boolean success = FALSE
     integer col = allocate(32), order = allocate(32)
     if c_func(TS1,{mdl,col,order}) then
         return peek4u(order)
@@ -4956,7 +5334,7 @@ widget[GtkTreeSortable] = {"gtk_tree_sortable",
     end function
     
 widget[GtkViewport] = {"gtk_viewport",
-{GtkScrollable,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkScrollable,GObject},
     {"new",{P,P},P},
     {"set_shadow_type",{P,I}},
     {"get_shadow_type",{P},I},
@@ -4965,7 +5343,7 @@ widget[GtkViewport] = {"gtk_viewport",
 "GtkViewport"}
 
 widget[GtkAppChooserWidget] = {"gtk_app_chooser_widget",
-{GtkAppChooser,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkAppChooser,GObject},
     {"new",{S},P},
     {"set_show_default",{P,B}},
     {"get_show_default",{P},B},
@@ -4982,12 +5360,12 @@ widget[GtkAppChooserWidget] = {"gtk_app_chooser_widget",
 "GtkAppChooserWidget"}
 
 widget[GtkVolumeButton] = {"gtk_volume_button",
-{GtkOrientable,GtkScaleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkScaleButton,GtkButton,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkActionable,GtkActivatable,GObject},
     {"new",{},P},
 "GtkVolumeButton"}
 
 widget[GtkColorChooserWidget] = {"gtk_color_chooser_widget",
-{GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkColorChooser,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkColorChooser,GObject},
     {"new",{},P},
 "GtkColorChooserWidget"}
 
@@ -5030,7 +5408,7 @@ widget[GtkColorChooser] = {"gtk_color_chooser",
     end function
 
 widget[GtkColorSelection] =  {"gtk_color_selection", -- Deprecated
-{GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"set_has_opacity_control",{P,B}},
     {"get_has_opacity_control",{P},B},
@@ -5087,7 +5465,7 @@ widget[GtkColorSelection] =  {"gtk_color_selection", -- Deprecated
     end function
 
 widget[GtkFileChooser] = {"gtk_file_chooser",
-{GObject},
+{GtkWidget},
     {"set_action",{P,I}},
     {"get_action",{P},I},
     {"set_local_only",{P,B}},
@@ -5115,11 +5493,11 @@ widget[GtkFileChooser] = {"gtk_file_chooser",
     {"get_uri",{P},S},
     {"select_uri",{P,S}},
     {"unselect_uri",{P,S}},
-    {"get_uris",{P},A},
+    {"get_uris",{P},P,0,GSList},
     {"set_current_folder_uri",{P,S}},
     {"get_current_folder_uri",{P},S},
     {"set_preview_widget",{P,P}},
-    {"get_preview_widget",{P},P},
+    {"get_preview_widget",{P},P,0,GtkWidget},
     {"set_preview_widget_active",{P,B}},
     {"get_preview_widget_active",{P},B},
     {"set_use_preview_label",{P,B}},
@@ -5127,7 +5505,7 @@ widget[GtkFileChooser] = {"gtk_file_chooser",
     {"get_preview_filename",{P},S},
     {"get_preview_uri",{P},S},
     {"set_extra_widget",{P,P}},
-    {"get_extra_widget",{P},P},
+    {"get_extra_widget",{P},P,0,GtkWidget},
     {"add_filter",{P,P}},
     {"remove_filter",{P,P}},
     {"list_filters",{P},A},
@@ -5135,13 +5513,13 @@ widget[GtkFileChooser] = {"gtk_file_chooser",
     {"get_filter",{P},P,0,GtkFileFilter},
     {"add_shortcut_folder",{P,S,P},B},
     {"remove_shortcut_folder",{P,S,P},B},
-    {"list_shortcut_folders",{P},A},
+    {"list_shortcut_folders",{P},P,0,GSList},
     {"add_shortcut_folder_uri",{P,S,P},B},
     {"remove_shortcut_folder_uri",{P,S,P},B},
     {"list_shortcut_folder_uris",{P},A},
     {"get_current_folder_file",{P},P,0,GFile},
     {"get_file",{P},P,0,GFile},
-    {"get_files",{P},A},
+    {"get_files",{P},P,0,GSList},
     {"get_preview_file",{P},P,0,GFile},
     {"select_file",{P,P,P},B},
     {"set_current_folder_file",{P,P,P},B},
@@ -5150,7 +5528,7 @@ widget[GtkFileChooser] = {"gtk_file_chooser",
 "GtkFileChooser"}
 
 widget[GtkFileChooserButton] = {"gtk_file_chooser_button",
-{GtkFileChooser,GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkFileChooser,GObject},
     {"new",{S,I},P},
     {"new_with_dialog",{P},P},
     {"set_title",{P,S}},
@@ -5162,7 +5540,7 @@ widget[GtkFileChooserButton] = {"gtk_file_chooser_button",
 "GtkFileChooserButton"}
 
 widget[GtkFileChooserWidget] = {"gtk_file_chooser_widget",
-{GtkFileChooser,GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkFileChooser,GObject},
     {"new",{I},P},
 "GtkFileChooserWidget"}
 
@@ -5196,15 +5574,15 @@ widget[GtkFontChooser] = {"gtk_font_chooser",
 "GtkFontChooser"}
 
 widget[GtkFontChooserWidget] = {"gtk_font_chooser_widget",
-{GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject,GtkFontChooser},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkFontChooser,GObject},
     {"new",{},P},
 "GtkFontChooserWidget"}
 
 widget[GtkInfoBar] = {"gtk_info_bar",
-{GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"add_action_widget",{P,P,I}},
-    {"add_button",{P,S,I},P},
+    {"add_button",{P,S,I},P,0,GtkWidget},
     {"set_response_sensitive",{P,I,B}},
     {"set_default_response",{P,I}},
     {"response",{P,I}},
@@ -5252,12 +5630,13 @@ widget[GtkRecentChooser] = {"gtk_recent_chooser",
 "GtkRecentChooser"}
 
 widget[GtkRecentChooserWidget] = {"gtk_recent_chooser_widget",
-{GtkRecentChooser,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkRecentChooser,GObject},
     {"new",{},P},
+    {"new_for_manager",{P},P},
 "GtkRecentChooserWidget"}
 
 widget[GtkStatusbar] = {"gtk_statusbar",
-{GtkOrientable,GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"get_context_id",{P,S},I},
     {"push",{P,I,S},I},
@@ -5275,11 +5654,11 @@ widget[GtkFixed] = {"gtk_fixed",
 "GtkFixed"}
 
 widget[GtkGrid] = {"gtk_grid",
-{GtkOrientable,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"attach",{P,P,I,I,I,I}},
     {"attach_next_to",{P,P,P,I,I,I}},
-    {"get_child_at",{P,I,I},P},
+    {"get_child_at",{P,I,I},P,0,GtkWidget},
     {"insert_row",{P,I}},
     {"remove_row",{P,I}}, --3.10
     {"insert_column",{P,I}},
@@ -5300,14 +5679,14 @@ widget[GtkGrid] = {"gtk_grid",
 "GtkGrid"}
 
 widget[GtkPaned] = {"gtk_paned",
-{GtkOrientable,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{I},P},
     {"add1",{P,P}},
     {"add2",{P,P}},
     {"pack1",{P,P,B,B}},
     {"pack2",{P,P,B,B}},
-    {"get_child1",{P},P},
-    {"get_child2",{P},P},
+    {"get_child1",{P},P,0,GtkWidget},
+    {"get_child2",{P},P,0,GtkWidget},
     {"set_position",{P,I}},
     {"get_position",{P},I},
     {"get_handle_window",{P},P,0,GdkWindow},
@@ -5404,11 +5783,12 @@ widget[GtkIconTheme] = {"gtk_icon_theme",
     end function
 
 widget[GtkIconView] = {"gtk_icon_view",
-{GtkScrollable,GtkCellLayout,GtkContainer,GtkWidget,GtkBuildable,GObject,GtkScrollable,GtkCellLayout},
+{GtkContainer,GtkWidget,GtkBuildable,GtkCellLayout,GtkScrollable,GObject},
     {"new",{},P},
     {"new_with_area",{P},P},
     {"new_with_model",{P},P},
     {"set_model",{P,P}},
+    {"get_model",{P},P,0,GtkTreeModel},
     {"set_text_column",{P,I}},
     {"get_text_column",{P},I},
     {"set_markup_column",{P,I}},
@@ -5467,7 +5847,7 @@ widget[GtkIconView] = {"gtk_icon_view",
 "GtkIconView"}
 
 widget[GtkLayout] = {"gtk_layout",
-{GtkScrollable,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkScrollable,GObject},
     {"new",{P,P},P},
     {"put",{P,P,I,I}},
     {"move",{P,P,I,I}},
@@ -5477,12 +5857,12 @@ widget[GtkLayout] = {"gtk_layout",
 "GtkLayout"}
 
 widget[GtkSeparatorMenuItem] = {"gtk_separator_menu_item",
-{GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkActivatable,GtkActionable,GObject},
     {"new",{},P},
 "GtkSeparatorMenuItem"}
 
 widget[GtkRecentChooserMenu] = {"gtk_recent_chooser_menu",
-{GtkRecentChooser,GtkMenu,GtkMenuShell,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkMenu,GtkMenuShell,GtkContainer,GtkWidget,GtkBuildable,GtkRecentChooser,GtkActivatable,GObject},
     {"new",{},P},
     {"new_for_manager",{P},P},
     {"set_show_numbers",{P,B}},
@@ -5626,41 +6006,6 @@ widget[GtkTextTagTable] = {"gtk_text_tag_table",
     {"get_size",{P},I},
 "GtkTextTagTable"}
 
-widget[GtkCheckMenuItem] = {"gtk_check_menu_item",
-{GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{S},-routine_id("newCheckMenuItem")},
-    {"set_active",{P,B}},
-    {"get_active",{P},B},
-    {"toggled",{P}},
-    {"set_inconsistent",{P,B}},
-    {"get_inconsistent",{P},B},
-    {"set_draw_as_radio",{P,B}},
-    {"get_draw_as_radio",{P},B},
-"GtkCheckMenuItem"}
-
-    function newCheckMenuItem(object txt)
-    -------------------------------------
-    return gtk_func("gtk_check_menu_item_new_with_mnemonic",{S},{txt})
-    end function
-  
-widget[GtkRadioMenuItem] = {"gtk_radio_menu_item",
-{GtkCheckMenuItem,GtkMenuItem,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{P,S},-routine_id("newRadioMenuItem")},
-    {"set_group",{P,P}},
-    {"get_group",{P},P},
-"GtkRadioMenuItem"}
-
-    function newRadioMenuItem(atom group, atom txt)
-    -----------------------------------------------
-    object item
-    if group = 0 then
-        item = gtk_func("gtk_radio_menu_item_new_with_mnemonic",{P,S},{group,txt})
-    else
-        item = gtk_func("gtk_radio_menu_item_new_with_mnemonic_from_widget",{P,S},{group,txt})
-    end if
-    return item
-    end function
-    
 widget[GtkMenuShell] = {"gtk_menu_shell",
 {GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"append",{P,P},-routine_id("appendMenuShell")},
@@ -5716,13 +6061,13 @@ widget[GtkNotebook] = {"gtk_notebook",
     {"popup_enable",{P}},
     {"popup_disable",{P}},
     {"get_current_page",{P},I},
-    {"set_menu_label",{P,P}},
+    {"set_menu_label",{P,P},0,GtkWidget},
     {"get_menu_label",{P,P},P},
     {"get_menu_label_text",{P,P},S},
     {"get_n_pages",{P},I},
-    {"get_nth_page",{P,I},P},
+    {"get_nth_page",{P,I},P,0,GtkWidget},
     {"set_tab_label",{P,P}},
-    {"get_tab_label",{P,P},P},
+    {"get_tab_label",{P,P},P,0,GtkWidget},
     {"set_tab_label_text",{P,P,S}},
     {"get_tab_label_text",{P,P},S},
     {"set_tab_detachable",{P,P,B}},
@@ -5731,7 +6076,8 @@ widget[GtkNotebook] = {"gtk_notebook",
     {"set_group_name",{P,S}},
     {"get_group_name",{P},S},
     {"set_action_widget",{P,P,I}},
-    {"get_action_widget",{P,I},P},
+    {"get_action_widget",{P,I},P,0,GtkWidget},
+    {"detach_tab",{P,P}},
 "GtkNotebook"}
 
 widget[GtkSocket] = {"gtk_socket",
@@ -5743,7 +6089,7 @@ widget[GtkSocket] = {"gtk_socket",
 "GtkSocket"}
 
 widget[GtkPlug] = {"gtk_plug",
-{GObject},
+{GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{I},P},
     {"get_id",{P},I},
     {"get_embedded",{P},B},
@@ -5751,7 +6097,7 @@ widget[GtkPlug] = {"gtk_plug",
 "GtkPlug"}
 
 widget[GtkToolPalette] = {"gtk_tool_palette",
-{GtkOrientable,GtkContainer,GtkWidget,GtkScrollable,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GtkScrollable,GObject},
     {"new",{},P},
     {"set_exclusive",{P,P,B}},
     {"get_exclusive",{P,P},B},
@@ -5772,7 +6118,7 @@ widget[GtkToolPalette] = {"gtk_tool_palette",
 "GtkToolPalette"}
 
 widget[GtkTextView] = {"gtk_text_view",
-{GtkContainer,GtkWidget,GtkScrollable,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkScrollable,GObject},
     {"new",{},P},
     {"new_with_buffer",{P},P},
     {"set_buffer",{P,P}},
@@ -5871,7 +6217,7 @@ widget[GtkToolbar] = {"gtk_toolbar",
 "GtkToolbar"}
 
 widget[GtkToolItemGroup] = {"gtk_tool_item_group",
-{GtkToolShell,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkToolShell,GObject},
     {"new",{S},P},
     {"set_collapsed",{P,B}},
     {"get_collapsed",{P},B},
@@ -5903,7 +6249,7 @@ widget[GtkTooltip] = {"gtk_tooltip",
 "GtkTooltip"}
 
 widget[GtkTreeView] = {"gtk_tree_view",
-{GtkContainer,GtkScrollable,GtkWidget,GtkBuildable,GObject},
+{GtkContainer,GtkWidget,GtkBuildable,GtkScrollable,GObject},
     {"new",{},P},
     {"new_with_model",{P},P},
     {"set_model",{P,P}},
@@ -6204,7 +6550,7 @@ widget[GtkTreeSelection] = {"gtk_tree_selection",
 	end function
 	
 widget[GtkActionBar] = {"gtk_action_bar", -- GTK 3.12
-{GtkBox,GtkWidget,GtkBuildable,GObject}, 
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject}, 
     {"new",{},P},
     {"pack_start",{P,P}},
     {"pack_end",{P,P}},
@@ -6402,7 +6748,7 @@ widget[GtkCalendar] = {"gtk_calendar",
     end function
 
 widget[GtkCellView] = {"gtk_cell_view",
-{GtkCellLayout,GtkOrientable,GtkWidget,GtkBuildable,GObject},
+{GtkWidget,GtkBuildable,GtkCellLayout,GtkOrientable,GObject},
     {"new",{},P},
     {"new_with_context",{P},P},
     {"new_with_text",{S},P},
@@ -6424,12 +6770,13 @@ widget[GtkDrawingArea] = {"gtk_drawing_area",
 "GtkDrawingArea"}
 
 widget[GtkSearchEntry] = {"gtk_search_entry", --3.6
-{GtkEditable,GtkEntry,GtkWidget,GtkBuildable,GObject},
+{GtkEntry,GtkWidget,GtkBuildable,GtkEditable,GtkCellEditable,GObject},
     {"new",{},P},
+    {"handle_event",{P,P},B},
 "GtkSearchEntry"}
 
 widget[GtkEntryBuffer] = {"gtk_entry_buffer",
-{GtkBuildable,GObject},
+{GObject},
     {"new",{S,I},P},
     {"get_text",{P},S},
     {"set_text",{P,S,I}},
@@ -6475,7 +6822,7 @@ widget[GtkEntryCompletion] = {"gtk_entry_completion",
 "GtkEntryCompletion"}
 
 widget[GtkRevealer] = {"gtk_revealer", -- new in GTK 3.10
-{GtkContainer,GtkBuildable,GtkWidget},
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{},P},
     {"set_reveal_child",{P,B}},
     {"get_reveal_child",{P},B},
@@ -6520,16 +6867,23 @@ widget[GtkStack] = {"gtk_stack", -- new in GTK 3.10
     {"get_vhomogeneous",{P},B}, -- 3.16
     {"set_vhomogeneous",{P,B}}, -- 3.16
 "GtkStack"}
-    
+  
+widget[GtkStackSidebar] = {"gtk_stack_sidebar",
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+	{"new",{},P},
+	{"set_stack",{P,P}},
+	{"get_stack",{P},P,0,GtkStack},
+"GtkStackSidebar"}
+
 widget[GtkStackSwitcher] = {"gtk_stack_switcher",
-{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkBox,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"set_stack",{P,P}},
     {"get_stack",{P},P,0,GtkStack},
 "GtkStackSwitcher"}
 
 widget[GtkScrollbar] = {"gtk_scrollbar",
-{GtkOrientable,GtkRange,GtkWidget,GtkBuildable,GObject},
+{GtkRange,GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{I,P},P},
 "GtkScrollbar"}
 
@@ -6540,46 +6894,9 @@ widget[GtkInvisible] = {"gtk_invisible",
     {"set_screen",{P,P}},
     {"get_screen",{P},P,0,GdkScreen},
 "GtkInvisible"}
-
-widget[PangoFont] = {"pango_font",
-{0},
-    {"get_metrics",{P,P},P},
-    {"get_font_map",{P},P,0,PangoFontMap},
-"PangoFont"}
-
-widget[PangoFontDescription] = {"pango_font_description",
-{PangoFont},
-    {"new",{P},-routine_id("newPangoFontDescription")},
-    {"set_family",{P,S}},
-    {"get_family",{P},S},
-    {"set_style",{P,P}},
-    {"get_style",{P},P},
-    {"set_variant",{P,I}},
-    {"get_variant",{P},P},
-    {"set_weight",{P,I}},
-    {"get_weight",{P},I},
-    {"set_stretch",{P,I}},
-    {"get_stretch",{P},I},
-    {"set_size",{P,I}},
-    {"get_size",{P},I},
-    {"set_absolute_size",{P,D}},
-    {"get_size_is_absolute",{P},B},
-    {"set_gravity",{P,I}},
-    {"get_gravity",{P},I},
-    {"to_string",{P},S},
-    {"to_filename",{P},S},
-"PangoFontDescription"}
-
-    function newPangoFontDescription(object name=0)
-    ---------------------------------------------
-    if atom(name) then
-		return gtk_func("pango_font_description_new")
-    end if
-    return gtk_func("pango_font_description_from_string",{S},{name})
-    end function
-
+	
 widget[GtkProgressBar] = {"gtk_progress_bar",
-{GtkOrientable,GtkWidget,GtkBuildable,GObject},
+{GtkWidget,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"pulse",{P}},
     {"set_fraction",{P,D}},
@@ -6604,7 +6921,7 @@ widget[GtkSpinner] = {"gtk_spinner",
 "GtkSpinner"}
 
 widget[GtkSwitch] = {"gtk_switch",
-{GtkWidget,GtkBuildable,GObject},
+{GtkWidget,GtkBuildable,GtkActionable,GtkActivatable,GObject},
     {"new",{},P},
     {"set_active",{P,B}},
     {"get_active",{P},B},
@@ -6613,7 +6930,7 @@ widget[GtkSwitch] = {"gtk_switch",
 "GtkSwitch"}
 
 widget[GtkLevelBar] = {"gtk_level_bar",-- GTK3.6+
-{GtkOrientable,GtkWidget,GtkBuildable},
+{GtkWidget,GtkBuildable,GtkBuildable,GtkOrientable,GObject},
     {"new",{},P},
     {"new_for_interval",{D,D},P},
     {"set_mode",{P,I}},
@@ -6668,7 +6985,7 @@ widget[GtkAboutDialog] = {"gtk_about_dialog",
 "GtkAboutDialog"}
 
 widget[GtkAppChooserDialog] = {"gtk_app_chooser_dialog",
-{GtkAppChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkAppChooser,GObject},
     {"new",{P,I,P},-routine_id("newforURI")},
     {"new_for_uri",{P,I,S},-routine_id("newforURI")},
     {"new_for_file",{P,I,P},-routine_id("newforFIL")},
@@ -6692,7 +7009,7 @@ widget[GtkAppChooserDialog] = {"gtk_app_chooser_dialog",
     end function
 
 widget[GtkColorChooserDialog] = {"gtk_color_chooser_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkColorChooser,GObject},
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S,P},P},
 "GtkColorChooserDialog"}
 
@@ -6703,12 +7020,12 @@ widget[GtkColorSelectionDialog] = {"gtk_color_selection_dialog",
 "GtkColorSelectionDialog"}
 
 widget[GtkFileChooserDialog] = {"gtk_file_chooser_dialog",
-{GtkFileChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkFileChooser,GObject},
     {"new",{S,P,I,S},P},
 "GtkFileChooserDialog"}
 
 widget[GtkFontChooserDialog] = {"gtk_font_chooser_dialog",
-{GtkFontChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkFontChooser,GObject},
     {"new",{S,P},P},
 "GtkFontChooserDialog"}
 
@@ -6716,21 +7033,13 @@ widget[GtkStock] = {"gtk_stock",
 {GObject},
 "GtkStock"}
 
-widget[GtkRcStyle] = {"gtk_rc_style",
-{GObject},
-"GtkRcStyle"}
-
-widget[GtkStyle] = {"gtk_style", -- deprecated
-{GObject},
-"GtkStyle"}
-
 widget[GtkStyleProvider] = {"gtk_style_provider",
 {0},
     {"get_style_property",{P,P,I,P,P},B},
 "GtkStyleProvider"}
 
 widget[GtkStyleContext] = {"gtk_style_context",
-{GtkStyleProvider,GObject},
+{GObject},
     {"new",{},P},
     {"add_provider",{P,P,I}},
     {"add_provider_for_screen",{P,P,P,I},-routine_id("addProvider")},
@@ -6784,10 +7093,760 @@ widget[GtkStyleContext] = {"gtk_style_context",
     end function
     
 widget[GtkRecentChooserDialog] = {"gtk_recent_chooser_dialog",
-{GtkRecentChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkRecentChooser,GObject},
     {"new",{S,P,P},P},
     {"new_for_manager",{S,P,P,P},P},
 "GtkRecentChooserDialog"}
+
+widget[GtkPrintSettings] = {"gtk_print_settings",
+{GObject},
+    {"new",{},P},
+    {"new_from_file",{S,P},P,0,GtkPrintSettings},
+    {"new_from_key_file",{S,P},P,0,GtkPrintSettings},
+    {"load_file",{P,S,P},B},
+    {"to_file",{P,S,P},B},
+    {"load_key_file",{P,P,S,P},B},
+    {"to_key_file",{P,P,S}},
+    {"copy",{P},P,0,GtkPrintSettings},
+    {"has_key",{P,S},B},
+    {"get",{P,S},S},
+    {"set",{P,S,S}},
+    {"unset",{P,S}},
+    {"foreach",{P,P,P}},
+    {"get_bool",{P,S},B},
+    {"set_bool",{P,S,B}},
+    {"get_double",{P,S},D},
+    {"get_double_with_default",{P,S,D},D},
+    {"set_double",{P,S,D}},
+    {"get_length",{P,S,I},D},
+    {"set_length",{P,S,D,I}},
+    {"get_int",{P,S},I},
+    {"get_int_with_default",{P,S,I},I},
+    {"set_int",{P,S,I}},
+    {"get_printer",{P},S},
+    {"set_printer",{P,S}},
+    {"get_orientation",{P},I},
+    {"set_orientation",{P,I}},
+    {"get_paper_size",{P},P,0,GtkPaperSize},
+    {"set_paper_size",{P,P}},
+    {"get_paper_width",{P,I},D},
+    {"set_paper_width",{P,D,I}},
+    {"get_paper_height",{P,I},D},
+    {"set_paper_height",{P,D,I}},
+    {"get_use_color",{P},B},
+    {"set_use_color",{P,B}},
+    {"get_collate",{P},B},
+    {"set_collate",{P,B}},
+    {"get_reverse",{P},B},
+    {"set_reverse",{P,B}},
+    {"get_duplex",{P},I},
+    {"set_duplex",{P,I}},
+    {"get_quality",{P},I},
+    {"set_quality",{P,I}},
+    {"get_n_copies",{P},I},
+    {"set_n_copies",{P,I}},
+    {"get_number_up",{P},I},
+    {"set_number_up",{P,I}},
+    {"get_number_up_layout",{P},I},
+    {"set_number_up_layout",{P,I}},
+    {"get_resolution",{P},I},
+    {"set_resolution",{P,I}},
+    {"get_resolution_x",{P},I},
+    {"get_resolution_y",{P},I},
+    {"get_printer_lpi",{P},D},
+    {"set_printer_lpi",{P,D}},
+    {"get_scale",{P},D},
+    {"set_scale",{P,D}},
+    {"get_print_pages",{P},I},
+    {"set_print_pages",{P,I}},
+    {"get_page_ranges",{P,I},P,0,GtkPageRange},
+    {"set_page_ranges",{P,P},-routine_id("setPageRanges")},
+    {"get_page_set",{P},I},
+    {"set_page_set",{P,I}},
+    {"get_default_source",{P},S},
+    {"set_default_source",{P,S}},
+    {"get_media_type",{P},S},
+    {"set_media_type",{P,S}},
+    {"get_dither",{P},S},
+    {"set_dither",{P,S}},
+    {"get_finishings",{P},S},
+    {"set_finishings",{P,S}},
+    
+    {"get_output_bin",{P},S},
+    {"set_output_bin",{P,S}},
+"GtkPrintSettings"}
+
+    function setPageRanges(atom x, object r)
+    ----------------------------------------
+	atom m = allocate_data(8)
+	poke(m,r[1])
+	poke(m+4,r[2])
+	
+    gtk_proc("gtk_print_settings_set_pages_ranges",{P,P,I},{x,m,2})
+    return 1
+    end function
+
+widget[GtkPaperSize] = {"gtk_paper_size",
+{0},
+    {"new",{S},P},
+    {"new_from_ppd",{S,S,D,D},P},
+    {"new_from_ipp",{S,D,D},P,0,GtkPaperSize}, -- 3.16
+    {"new_custom",{S,S,D,D,I},P},
+    {"copy",{P},P,0,GtkPaperSize},
+    {"is_equal",{P,P},B},
+    {"get_name",{P},S},
+    {"get_display_name",{P},S},
+    {"get_ppd_name",{P},S},
+    {"get_width",{P,I},D},
+    {"get_height",{P,I},D},
+    {"is_custom",{P},B},
+    {"set_size",{P,D,D,I}},
+    {"get_default_top_margin",{P,I},D},
+    {"get_default_bottom_margin",{P,I},D},
+    {"get_default_left_margin",{P,I},D},
+    {"get_default_right_margin",{P,I},D},
+"GtkPaperSize"}
+
+widget[GtkPageSetup] = {"gtk_page_setup",
+{GObject},
+    {"new",{},P},
+    {"copy",{P},P,0,GtkPageSetup},
+    {"get_orientation",{P},I},
+    {"set_orientation",{P,I}},
+    {"get_paper_size",{P},P,0,GtkPaperSize},
+    {"set_paper_size",{P,P}},
+    {"get_top_margin",{P,I},D},
+    {"set_top_margin",{P,D,I}},
+    {"get_bottom_margin",{P,I},D},
+    {"set_bottom_margin",{P,D,I}},
+    {"get_left_margin",{P,I},D},
+    {"set_left_margin",{P,D,I}},
+    {"get_right_margin",{P,I},D},
+    {"set_right_margin",{P,D,I}},
+    {"set_paper_size_and_default_margins",{P,P}},
+    {"get_paper_width",{P,I},D},
+    {"get_paper_height",{P,I},D},
+    {"get_page_width",{P,I},D},
+    {"get_page_height",{P,I},D},
+    {"new_from_file",{S,P},P,0,GtkPageSetup},
+    {"load_file",{P,S,P},B},
+    {"to_file",{P,S},-routine_id("setPgSetupToFile")},
+"GtkPageSetup"}
+
+    function setPgSetupToFile(atom setup, object filename)
+    ------------------------------------------------------
+    atom err = allocate(8) err = 0
+    return gtk_func("gtk_page_setup_to_file",{P,P,P},{setup,filename,err})
+    end function
+    
+widget[GtkPrintOperation] = {"gtk_print_operation",
+{GObject},
+    {"new",{},P},
+    {"set_allow_async",{P,B}},
+    {"get_error",{P,P}},
+    {"set_default_page_setup",{P,P}},
+    {"get_default_page_setup",{P},P,0,GtkPageSetup},
+    {"set_print_settings",{P,P}},
+    {"get_print_settings",{P},P,0,GtkPrintSettings},
+    {"set_job_name",{P,S}},
+    {"get_job_name",{P},-routine_id("getPrintOpJobName")},
+    {"set_n_pages",{P,I}},
+    {"get_n_pages_to_print",{P},I},
+    {"set_current_page",{P,I}},
+    {"set_use_full_page",{P,B}},
+    {"set_unit",{P,I}},
+    {"set_export_filename",{P,S}},
+    {"set_show_progress",{P,B}},
+    {"set_track_print_status",{P,B}},
+    {"set_custom_tab_label",{P,S}},
+    {"run",{P,P,P,P},I},
+    {"cancel",{P}},
+    {"draw_page_finish",{P}},
+    {"set_defer_drawing",{P}},
+    {"get_status",{P},I},
+    {"get_status_string",{P},S},
+    {"is_finished",{P},B},
+    {"set_support_selection",{P,B}},
+    {"get_support_selection",{P},B},
+    {"set_has_selection",{P,B}},
+    {"get_has_selection",{P},B},
+    {"set_embed_page_setup",{P,B}},
+    {"get_embed_page_setup",{P},B},
+"GtkPrintOperation"}
+
+    function getPrintOpJobName(atom op)
+    -----------------------------------
+    object job = allocate(32), err = allocate(32) err = 0
+    gtk_func("g_object_get",{P,S,P,P},{op,"job name",job,err})
+    return peek_string(peek4u(job))
+    end function
+    
+widget[GtkPrintContext] = {"gtk_print_context",
+{GObject},
+    {"get_cairo_context",{P},P},
+    {"set_cairo_context",{P,P,D,D}},
+    {"get_page_setup",{P},P,0,GtkPageSetup},
+    {"get_width",{P},D},
+    {"get_height",{P},D},
+    {"get_dpi_x",{P},D},
+    {"get_dpi_y",{P},D},
+    {"get_pango_fontmap",{P},P,0,PangoFontMap},
+    {"create_pango_context",{P},P,0,PangoContext},
+    {"create_pango_layout",{P},P,0,PangoLayout},
+    {"get_hard_margins",{P,D,D,D,D},B},
+"GtkPrintContext"}
+
+widget[GtkPrintUnixDialog] = {"gtk_print_unix_dialog",
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{S,P},P},
+    {"set_page_setup",{P,P}},
+    {"get_page_setup",{P},P,0,GtkPageSetup},
+    {"set_current_page",{P,I}},
+    {"get_current_page",{P},I},
+    {"set_settings",{P,P}},
+    {"get_settings",{P},P,0,GtkPrintSettings},
+    {"get_selected_printer",{P},P,0,GtkPrinter},
+    {"add_custom_tab",{P,P,P}},
+    {"set_support_selection",{P,B}},
+    {"get_support_selection",{P},B},
+    {"get_has_selection",{P},B},
+    {"set_embed_page_setup",{P,B}},
+    {"get_embed_page_setup",{P},B},
+    {"set_manual_capabilities",{P,I}},
+    {"get_manual_capabilities",{P},I},
+"GtkPrintUnixDialog"}
+
+widget[GtkPageSetupUnixDialog] = {"gtk_page_setup_unix_dialog",
+{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{S,P},P},
+    {"set_page_setup",{P,P}},
+    {"get_page_setup",{P},P,0,GtkPageSetup},
+    {"set_print_settings",{P,P}},
+    {"get_print_settings",{P},P,0,GtkPrintSettings},
+"GtkPageSetupUnixDialog"}
+
+widget[GtkListBox] = {"gtk_list_box", -- new in GTK 3.10
+{GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{},P},
+    {"prepend",{P,P}},
+    {"insert",{P,P,I}},
+    {"select_row",{P,P}},
+    {"select_all",{P}}, -- 3.14
+    {"unselect_all",{P}}, -- 3.14
+    {"unselect_row",{P,P}}, -- 3.14
+    {"get_selected_row",{P},P},
+    {"get_selected_rows",{P},A},-- 3.14
+    {"row_is_selected",{P},B}, -- 3.14
+    {"selected_foreach",{P,P,P}}, -- 3.14
+    {"set_selection_mode",{P,I}},
+    {"get_selection_mode",{P},I},
+    {"set_activate_on_single_click",{P,B}}, 
+    {"get_activate_on_single_click",{P},B}, 
+    {"set_adjustment",{P,P}},
+    {"get_adjustment",{P},P,0,GtkAdjustment},
+    {"set_placeholder",{P,P}},
+    {"get_row_at_index",{P,I},P,0,GtkListBoxRow},
+    {"get_row_at_y",{P,I},P,0,GtkListBoxRow},
+    {"invalidate_filter",{P}},
+    {"invalidate_headers",{P}},
+    {"invalidate_sort",{P}},
+    {"set_filter_func",{P,P,P,P}},
+    {"set_header_func",{P,P,P,P}},
+    {"set_sort_func",{P,P,P,P}},
+    {"drag_highlight_row",{P,P}}, 
+    {"drag_unhighlight_row",{P}}, 
+    {"bind_model",{P,P,P,P,P}},
+"GtkListBox"}
+
+widget[GtkListBoxRow] = {"gtk_list_box_row",
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{},P},
+    {"changed",{P}},
+    {"get_header",{P},P,0,GtkWidget},
+    {"get_type",{},I},
+    {"set_header",{P,P}},
+    {"get_index",{P},I},
+    {"set_activatable",{P,B}},
+    {"set_selectable",{P,B}},
+    {"get_selectable",{P},B},
+"GtkListBoxRow"}
+
+widget[GtkPopover] = {"gtk_popover", -- new in GTK 3.12
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{P},P},
+    {"new_from_model",{P,P},P},
+    {"bind_model",{P,P,S}},
+    {"set_relative_to",{P,P}},
+    {"get_relative_to",{P},P,0,GtkWidget},
+    {"set_pointing_to",{P,P}},
+    {"get_pointing_to",{P,P},B},
+    {"set_position",{P,I}},
+    {"get_position",{P},I},
+    {"set_modal",{P,B}},
+    {"get_modal",{P},B},
+    {"get_transitions_enabled",{P},B},
+    {"set_transitions_enabled",{P,B}},
+"GtkPopover"}
+
+widget[GtkPopoverMenu] = {"gtk_popover_menu", -- 3.16
+{GtkPopover,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{},P},
+    {"open_submenu",{P,S}},
+"GtkPopoverMenu"}
+
+widget[GtkPlacesSidebar] = {"gtk_places_sidebar", -- new 3.10
+{GtkScrolledWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{},P},
+    {"set_open_flags",{P,I}},
+    {"get_open_flags",{P},I},
+    {"set_location",{P,P}},
+    {"get_location",{P},P,0,GFile},
+    {"set_show_desktop",{P,B}},
+    {"get_show_desktop",{P},B},
+    {"add_shortcut",{P,P}},
+    {"remove_shortcut",{P,P}},
+    {"list_shortcuts",{P},P,0,GSList},
+    {"get_nth_bookmark",{P,I},P,0,GFile},
+    {"get_show_connect_to_server",{P},B},
+    {"set_show_connect_to_server",{P,B}},
+    {"set_local_only",{P,B}}, -- 3.12
+    {"get_local_only",{P},B}, -- 3.12
+    {"get_show_enter_location",{P},B}, --3.14
+    {"set_show_enter_location",{P,B}}, --3.14
+"GtkPlacesSidebar"}
+
+widget[GtkHeaderBar] = {"gtk_header_bar", -- new in GTK 3.10
+{GtkContainer,GtkWidget,GtkBuildable,GObject},
+    {"new",{},P},
+    {"set_title",{P,S}},
+    {"get_title",{P},S},
+    {"set_subtitle",{P,S}},
+    {"get_subtitle",{P},S},
+    {"set_has_subtitle",{P,B}}, -- 3.12
+    {"get_has_subtitle",{P},B}, -- 3.12
+    {"set_custom_title",{P,P}},
+    {"get_custom_title",{P},P,0,GtkWidget},
+    {"pack_start",{P,P}},
+    {"pack_end",{P,P}},
+    {"set_show_close_button",{P,B}},
+    {"get_show_close_button",{P},B},
+    {"set_decoration_layout",{P,S}}, -- 3.12
+    {"get_decoration_layout",{P},S}, -- 3.12
+"GtkHeaderBar"}
+
+widget[GtkPrinter] = {"gtk_printer",
+{GObject},
+    {"new",{S,P,B},P},
+    {"get_backend",{P},P},
+    {"get_name",{P},S},
+    {"get_state_message",{P},S},
+    {"get_description",{P},S},
+    {"get_location",{P},S},
+    {"get_icon_name",{P},S},
+    {"get_job_count",{P},I},
+    {"is_active",{P},B},
+    {"is_paused",{P},B},
+    {"is_accepting_jobs",{P},B},
+    {"is_virtual",{P},B},
+    {"is_default",{P},B},
+    {"accepts_ps",{P},B},
+    {"accepts_pdf",{P},B},
+    {"list_papers",{P},P,0,GList},
+    {"compare",{P,P},I},
+    {"has_details",{P},B},
+    {"request_details",{P}},
+    {"get_capabilities",{P},I},
+    {"get_default_page_size",{P},P,0,GtkPageSetup},
+    {"get_hard_margins",{P,D,D,D,D},B},
+"GtkPrinter"}
+
+widget[GtkPrintJob] = {"gtk_print_job",
+{GObject},
+    {"new",{S,P,P,P},P},
+    {"get_settings",{P},P,0,GtkPrintSettings},
+    {"get_printer",{P},P,0,GtkPrinter},
+    {"get_title",{P},S},
+    {"get_status",{P},I},
+    {"set_source_file",{P,S,P},B},
+    {"get_surface",{P,P},P,0,CairoSurface_t},
+    {"send",{P,P,P,P}},
+    {"set_track_print_status",{P,B}},
+    {"get_track_print_status",{P},B},
+    {"get_pages",{P},I},
+    {"set_pages",{P,I}},
+    {"get_page_ranges",{P,I},P,0,GtkPageRange},
+    {"set_page_ranges",{P,P},-routine_id("setPageRanges")},
+    {"get_page_set",{P},I},
+    {"set_page_set",{P,I}},
+    {"get_num_copies",{P},I},
+    {"set_num_copies",{P,I}},
+    {"get_scale",{P},D},
+    {"set_scale",{P,D}},
+    {"get_n_up",{P},I},
+    {"set_n_up",{P,I}},
+    {"get_n_up_layout",{P},I},
+    {"set_n_up_layout",{P,I}},
+    {"get_rotate",{P},B},
+    {"set_rotate",{P,B}},
+    {"get_collate",{P},B},
+    {"set_collate",{P,B}},
+    {"get_reverse",{P},B},
+    {"set_reverse",{P,B}},
+"GtkPrintJob"}
+
+widget[GtkFlowBox] = {"gtk_flow_box", -- GTK 3.12
+{GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
+    {"new",{},P},
+    {"insert",{P,P,I}},
+    {"get_child_at_index",{P,I},P,0,GtkFlowBoxChild},
+    {"set_hadjustment",{P,P}},
+    {"set_vadjustment",{P,P}},
+    {"set_homogeneous",{P,B}},
+    {"get_homogeneous",{P},B},
+    {"set_row_spacing",{P,I}},
+    {"get_row_spacing",{P},I},
+    {"set_column_spacing",{P,I}},
+    {"get_column_spacing",{P},I},
+    {"set_min_children_per_line",{P,I}},
+    {"get_min_children_per_line",{P},I},
+    {"set_max_children_per_line",{P,I}},
+    {"get_max_children_per_line",{P},I},
+    {"set_activate_on_single_click",{P,B}},
+    {"get_activate_on_single_click",{P},B},
+    {"selected_foreach",{P,P,P}},
+    {"get_selected_children",{P},P,0,GList},
+    {"select_child",{P,P}},
+    {"unselect_child",{P,P}},
+    {"select_all",{P}},
+    {"unselect_all",{P}},
+    {"set_selection_mode",{P,I}},
+    {"get_selection_mode",{P},I},
+    {"set_filter_func",{P,P,P,P}},
+    {"invalidate_filter",{P}},
+    {"set_sort_func",{P,P,P,P}},
+    {"invalidate_sort",{P}},
+"GtkFlowBox"}
+
+widget[GtkFlowBoxChild] = {"gtk_flow_box_child", -- GTK 3.12
+{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkOrientable,GObject},
+    {"new",{},P},
+    {"get_index",{P},I},
+    {"is_selected",{P},B},
+    {"changed",{P}},
+"GtkFlowBoxChild"}
+
+widget[GtkMountOperation]  = {"gtk_mount_operation",
+{GObject},
+    {"new",{P},P},
+    {"is_showing",{P},B},
+    {"set_parent",{P,P}},
+    {"get_parent",{P},P,0,GtkWindow},
+    {"set_screen",{P,P}},
+    {"get_screen",{P},P,0,GdkScreen},
+"GtkMountOperation"}
+
+-- stocklist is not a GTK widget, we just fake it for convenience
+widget[GtkStockList] = {"gtk_stocklist", -- deprecated in GTK 3.12+
+{0}, 
+"GtkStockList"}
+
+    function newStockList()
+    -----------------------
+    object list = gtk_func("gtk_stock_list_ids")
+    return to_sequence(list)
+    end function
+
+widget[GtkEventController] = {"gtk_event_controller",
+{GObject},
+    {"get_propagation_phase",{P},I},
+    {"set_propagation_phase",{P,I}},
+    {"handle_event",{P,P},B},
+    {"get_widget",{P},P,0,GtkWidget},
+    {"reset",{P}},
+"GtkEventController"}
+
+widget[GtkGesture] = {"gtk_gesture", --GTK3.14
+{GtkEventController,GObject},
+    {"get_device",{P},P},
+    {"get_window",{P},P},
+    {"set_window",{P,P}},
+    {"is_active",{P},B},
+    {"is_recognized",{P},B},
+    {"get_sequence_state",{P,P},I},
+    {"set_sequence_state",{P,P,I},B},
+    {"set_state",{P,I},B},
+    {"get_sequences",{P},A},
+    {"handles_sequence",{P,P},B},
+    {"get_last_updated_sequence",{P},P},
+    {"get_last_event",{P,P},P},
+    {"get_point",{P,P,D,D},B},
+    {"get_bounding_box",{P,P},B},
+    {"get_bounding_box_center",{P,D,D},B},
+    {"group",{P,P}},
+    {"ungroup",{P}},
+    {"get_group",{P},A},
+    {"is_grouped_with",{P,P},B},
+"GtkGesture"}
+
+widget[GtkGestureSingle] = {"gtk_gesture_single",
+{GtkGesture,GtkEventController,GObject},
+    {"get_exclusive",{P},B},
+    {"set_exclusive",{P,B}},
+    {"get_touch_only",{P},B},
+    {"set_touch_only",{P,B}},
+    {"get_button",{P},I},
+    {"set_button",{P,I}},
+    {"get_current_button",{P},I},
+    {"get_current_sequence",{P},P},
+"GtkGestureSingle"}
+
+widget[GtkGestureRotate] = {"gtk_gesture_rotate",
+{GtkGesture,GtkEventController,GObject},
+    {"new",{P},P},
+    {"get_angle_delta",{P},D},
+"GtkGestureRotate"}
+
+widget[GtkGestureZoom] = {"gtk_gesture_zoom",
+{GtkGesture,GtkEventController,GObject},
+    {"new",{P},P},
+    {"get_scale_delta",{P},D},
+"GtkGestureZoom"}
+
+widget[GtkGestureDrag] = {"gtk_gesture_drag", -- 3.14
+{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
+    {"new",{P},P},
+    {"get_start_point",{P,D,D},B},
+    {"get_offset",{P,D,D},B}, 
+"GtkGestureDrag"}
+
+widget[GtkGesturePan] = {"gtk_gesture_pan",
+{GtkGestureDrag,GtkGestureSingle,GtkGesture,GtkEventController,GObject},
+    {"new",{P,I},P},
+    {"get_orientation",{P},I},
+    {"set_orientation",{P,I}},
+"GtkGesturePan"}
+
+widget[GtkGestureSwipe] = {"gtk_gesture_swipe",
+{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
+    {"new",{P},P},
+    {"get_velocity",{P,D,D},B},
+"GtkGestureSwipe"}
+
+widget[GtkGestureLongPress] = {"gtk_gesture_long_press",
+{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
+    {"new",{P},P},
+"GtkGestureLongPress"}
+
+widget[GtkGestureMultiPress] = {"gtk_gesture_multi_press",
+{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
+    {"new",{P},P},
+    {"get_area",{P,P},B},
+    {"set_area",{P,P}},
+"GtkGestureMultiPress"}
+
+widget[GdkGLProfile] = {"gdk_gl_profile",
+ {},
+"GdkGLProfile"}
+
+widget[GtkGLArea] = {"gtk_gl_area", -- GTK 3.16
+{GtkWidget,GtkBuildable,GObject},
+    {"new",{},P},
+    {"get_context",{P},P},
+    {"set_has_alpha",{P,B}},
+    {"get_has_alpha",{P},B},
+    {"set_has_depth_buffer",{P,B}},
+    {"get_has_depth_buffer",{P},B},
+    {"make_current",{P}},
+    {"get_auto_render",{P},B},
+    {"set_auto_render",{P,B}},
+    {"get_error",{P},P},
+    {"set_error",{P,P}},
+    {"queue_render",{P}},
+    {"set_profile",{P,P}},
+    {"get_profile",{P},P,0,GdkGLProfile},
+    {"get_has_stencil_buffer",{P},B},
+    {"set_has_stencil_buffer",{P,B}},
+    {"attach_buffers",{P}},
+    {"get_required_version",{P,I,I}},
+    {"set_required_version",{P,I,I}},
+"GtkGLArea"}
+
+widget[GdkFrameClock] = {"gdk_frame_clock",
+{GObject},
+    {"get_frame_time",{P},I},
+    {"request_phase",{P,P}},
+    {"begin_updating",{P}},
+    {"end_updating",{P}},
+    {"get_frame_counter",{P},I},
+    {"get_history_start",{P},I},
+    {"get_timings",{P,I},P},
+    {"get_current_timings",{P},P,0,GdkFrameTimings},
+    {"get_refresh_info",{P,I,I,I}},
+"GdkFrameClock"}
+
+widget[GdkFrameTimings] = {"gdk_frame_timings",
+{GObject},
+    {"get_frame_counter",{P},I},
+    {"get_complete",{P},B},
+    {"get_frame_time",{P},I},
+    {"get_presentation_time",{P},I},
+    {"get_refresh_interval",{P},I},
+    {"get_predicted_presentation_time",{P},I},
+"GdkFrameTimings"}
+
+widget[GdkEvent] = {"gdk_event",
+{GObject},
+    {"new",{},P},
+    {"peek",{},P,0,GdkEvent},
+    {"get",{},P,0,GdkEvent},
+    {"put",{P}},
+    {"copy",{P},P,0,GdkEvent},
+    {"get_axis",{P,I,D},B},
+    {"get_button",{P,P},B},
+    {"get_keycode",{P,P},B},
+    {"get_keyval",{P,P},B},
+    {"get_root_coords",{P,D,D},B},
+    {"get_scroll_direction",{P,P},B},
+    {"get_scroll_deltas",{P,D,D},B},
+    {"get_state",{P,P},B},
+    {"get_time",{P},I},
+    {"get_window",{P},P,0,GdkWindow},
+    {"get_event_type",{P},I},
+    {"get_event_sequence",{P},P,0,GdkEventSequence},
+    {"request_motions",{P}},
+    {"get_click_count",{P,P},B},
+    {"get_coords",{P,D,D},B},
+    {"triggers_context_menu",{P},B},
+    {"handler_set",{P,P,P}},
+    {"set_screen",{P,P}},
+    {"get_screen",{P},P,0,GdkScreen},
+    {"set_device",{P,P}},
+    {"get_device",{P},P,0,GdkDevice},
+    {"set_source_device",{P,P}},
+    {"get_source_device",{P},P,0,GdkDevice},
+"GdkEvent"}
+
+widget[GdkEventSequence] = {"gdk_event_sequence",
+{GdkEvent},
+"GdkEventSequence"}
+
+widget[GdkX11Display] = {"gdk_x11_display",
+{GObject},
+    {"get_user_time",{P},I},
+    {"broadcase_startup_message",{P,S,S,I}},
+    {"get_startup_notification_id",{P},S},
+    {"set_startup_notification_id",{P,S}},
+    {"get_xdisplay",{P},P},
+    {"grab",{P}},
+    {"ungrab",{P}},
+    {"set_cursor_theme",{P,S,I}},
+    {"set_window_scale",{P,I}},
+    {"get_glx_version",{P,I,I},B},
+"GdkX11Display"}
+
+widget[GdkX11Screen] = {"gdk_x11_screen",
+{GObject},
+    {"get_screen_number",{P},I},
+    {"get_xscreen",{P},P},
+    {"get_window_manager_name",{P},S},
+    {"get_monitor_output",{P,I},I},
+    {"lookup_visual",{P,I},P,0,GdkVisual},
+    {"get_number_of_desktops",{P},I},
+    {"get_current_desktop",{P},I},
+"GdkX11Screen"}
+
+widget[GdkX11Window] = {"gdk_x11_window",
+{GObject},
+    {"lookup_for_display",{P,P},P,0,GdkWindow},
+    {"get_xid",{P},P},
+    {"move_to_current_desktop",{P}},
+    {"move_to_desktop",{P,I}},
+    {"get_desktop",{P},I},
+"GdkX11Window"}
+
+widget[GdkGLContext] = {"gdk_gl_context",
+{GObject},
+    {"new",{},-routine_id("glContext")},
+    {"get_current",{},-routine_id("glContext")},
+    {"clear_current",{}},
+    {"make_current",{P}},
+    {"get_window",{P},P,0,GdkWindow},
+    {"get_visual",{P},P,0,GdkVisual},
+"GdkGLContext"}
+
+    function glContext()
+    return c_func("gdk_gl_context_get_current")
+    end function
+
+widget[GtkBindingSet] = {"gtk_binding_set",
+{GObject},
+	{"new",{S},P},
+	{"by_class",{P},P},
+	{"find",{S},P},
+	{"activate",{P,I,I,P},B},
+	{"add_path",{P,P,S,I}},
+"GtkBindingSet"}
+
+widget[GtkBindingEntry] = {"gtk_binding_entry",
+{GtkBindingSet},
+	{"add_signal",{P,I,I,S,P}},
+	{"add_signal_from_string",{P,S},I},
+	{"skip",{P,I,I}},
+	{"remove",{P,I,I}},
+"GtkBindingEntry"}
+
+widget[GdkPixbufAnimation] = {"gdk_pixbuf_animation",
+{GdkPixbuf,GObject},
+	{"new",{P},-routine_id("newPixbufAni")},
+"GdkPixbufAnimation"}
+
+	function newPixbufAni(object name)
+	atom err = allocate(32) err = 0
+	return gtk_func("gdk_pixbuf_animation_new_from_file",{P,P},
+		{allocate_string(name),err})
+	end function
+
+widget[PangoFont] = {"pango_font",
+{0},
+    {"get_metrics",{P,P},P},
+    {"get_font_map",{P},P,0,PangoFontMap},
+"PangoFont"}
+
+widget[PangoFontDescription] = {"pango_font_description",
+{PangoFont},
+    {"new",{P},-routine_id("newPangoFontDescription")},
+    {"set_family",{P,S}},
+    {"get_family",{P},S},
+    {"set_style",{P,I}},
+    {"get_style",{P},I},
+    {"set_variant",{P,I}},
+    {"get_variant",{P},P},
+    {"set_weight",{P,I}},
+    {"get_weight",{P},I},
+    {"set_stretch",{P,I}},
+    {"get_stretch",{P},I},
+    {"set_size",{P,I}},
+    {"get_size",{P},I},
+    {"set_absolute_size",{P,D}},
+    {"get_size_is_absolute",{P},B},
+    {"set_gravity",{P,I}},
+    {"get_gravity",{P},I},
+    {"to_string",{P},-routine_id("pfdtoStr")},
+    {"to_filename",{P},S},
+"PangoFontDescription"}
+
+    function newPangoFontDescription(object name=0)
+    -----------------------------------------------
+    if atom(name) then
+	return gtk_func("pango_font_description_new")
+    end if
+    return gtk_func("pango_font_description_from_string",{S},{name})
+    end function
+	
+    function pfdtoStr(atom fd)
+    --------------------------
+    return gtk_str_func("pango_font_description_to_string",{P},{fd})
+    end function
 
 widget[PangoContext] = {"pango_context",
 {GObject},
@@ -6919,10 +7978,10 @@ widget[PangoLayout] = {"pango_layout",
     {"get_iter",{P},P,0,PangoLayoutIter},
 "PangoLayout"}
 
-	function plSetTxt(atom layout, object txt)
+    function plSetTxt(atom layout, object txt)
 	gtk_proc("pango_layout_set_text",{P,P,I},{layout,allocate_string(txt),length(txt)})
-	return 1
-	end function
+    return 1
+    end function
 	
 widget[PangoLayoutLine] = {"pango_layout_line",
 {0},
@@ -6966,6 +8025,87 @@ widget[PangoTabArray] = {"pango_tab_array",
 {0},
 "PangoTabArray"}
 
+widget[PangoLanguage] = {"pango_language",
+{GObject},
+    {"new",{S},-routine_id("newPangoLanguage")},
+    {"get_default",{P},-routine_id("getDefaultLanguage")},
+    {"get_sample_string",{P},-routine_id("getSampleStr")},
+    {"to_string",{P},S},
+    {"matches",{P,S},B},
+    {"includes_script",{P,P},B},
+"PangoLanguage"}
+
+    function newPangoLanguage(object s)
+    -----------------------------------
+    return gtk_func("pango_language_from_string",{S},{s})
+    end function
+
+    function getDefaultLanguage(object junk)
+    ----------------------------------------
+    return gtk_str_func("pango_language_get_default")
+    end function
+
+    function getSampleStr(object x)
+    -------------------------------
+        return gtk_str_func("pango_language_get_sample_string",{P},{x})
+    end function
+    
+widget[PangoLayout] = {"pango_layout",
+{GObject},
+    {"new",{P},P},
+    {"set_text",{P,P},-routine_id("plSetTxt")},
+    {"get_text",{P},S},
+    {"set_markup",{P,S,I}},
+    {"set_font_description",{P,P}},
+    {"get_font_description",{P},P},
+    {"set_width",{P,I}},
+    {"get_width",{P},I},
+    {"set_height",{P,I}},
+    {"get_height",{P},I},
+    {"set_wrap",{P,I}},
+    {"get_wrap",{P},I},
+    {"is_wrapped",{P},B},
+    {"set_ellipsize",{P,I}},
+    {"get_ellipsize",{P},I},
+    {"is_ellipsized",{P},B},
+    {"set_indent",{P,I}},
+    {"get_extents",{P,P,P}},
+    {"get_indent",{P},I},
+    {"get_pixel_size",{P,I,I}},
+    {"get_size",{P,I,I}},
+    {"set_spacing",{P,I}},
+    {"get_spacing",{P},I},
+    {"set_justify",{P,B}},
+    {"get_justify",{P},B},
+    {"set_auto_dir",{P,B}},
+    {"get_auto_dir",{P},B},
+    {"set_alignment",{P,P}},
+    {"get_alignment",{P},P},
+    {"set_tabs",{P,A}},
+    {"get_tabs",{P},A},
+    {"set_single_paragraph_mode",{P,B}},
+    {"get_single_paragraph_mode",{P},B},
+    {"get_unknown_glyphs_count",{P},I},
+    {"get_log_attrs",{P,P,I}},
+    {"get_log_attrs_readonly",{P,I},P},
+    {"index_to_pos",{P,I,P}},
+    {"index_to_line",{P,I,B,I,I}},
+    {"xy_to_line",{P,I,I,I,I},B},
+    {"get_cursor_pos",{P,I,P,P}},
+    {"move_cursor_visually",{P,B,I,I,I,I,I}},
+    {"get_extents",{P,P,P}},
+    {"get_pixel_extents",{P,P,P}},
+    {"get_size",{P,I,I}},
+    {"get_pixel_size",{P,I,I}},
+    {"get_baseline",{P},I},
+    {"get_line_count",{P},I},
+    {"get_line",{P,I},P,0,PangoLayoutLine},
+    {"get_line_readonly",{P,I},P,0,PangoLayoutLine},
+    {"get_lines",{P},P,0,GSList},
+    {"get_lines_readonly",{P},P,0,GSList},
+    {"get_iter",{P},P,0,PangoLayoutIter},
+"PangoLayout"}
+
 widget[GdkCairo_t] = {"gdk_cairo",
 {Cairo_t},
     {"new",{P},-routine_id("newGdkCairo")},
@@ -6986,7 +8126,7 @@ widget[GdkCairo_t] = {"gdk_cairo",
     end function
     
     ----------------------------------------------------------------
-    -- to use the (awkward) Cairo color specs, where colors are 0.0 => 1.0
+    -- to use the Cairo color specs, where colors are 0.0 => 1.0
     ----------------------------------------------------------------------
     function setCairoRGBA(atom cr, atom r, atom g, atom b, atom a=1)
         gtk_proc("cairo_set_source_rgba",{P,D,D,D,D},{cr,r,g,b,a})
@@ -7255,730 +8395,8 @@ widget[PangoCairoLayout] = {"pango_cairo",
     gtk_proc("pango_cairo_show_layout",{P,P},{cr,pl})
     return 1
     end function
-
-widget[GtkPrintSettings] = {"gtk_print_settings",
-{GObject},
-    {"new",{},P},
-    {"new_from_file",{S,P},P,0,GtkPrintSettings},
-    {"new_from_key_file",{S,P},P,0,GtkPrintSettings},
-    {"load_file",{P,S,P},B},
-    {"to_file",{P,S,P},B},
-    {"load_key_file",{P,P,S,P},B},
-    {"to_key_file",{P,P,S}},
-    {"copy",{P},P,0,GtkPrintSettings},
-    {"has_key",{P,S},B},
-    {"get",{P,S},S},
-    {"set",{P,S,S}},
-    {"unset",{P,S}},
-    {"foreach",{P,P,P}},
-    {"get_bool",{P,S},B},
-    {"set_bool",{P,S,B}},
-    {"get_double",{P,S},D},
-    {"get_double_with_default",{P,S,D},D},
-    {"set_double",{P,S,D}},
-    {"get_length",{P,S,I},D},
-    {"set_length",{P,S,D,I}},
-    {"get_int",{P,S},I},
-    {"get_int_with_default",{P,S,I},I},
-    {"set_int",{P,S,I}},
-    {"get_printer",{P},S},
-    {"set_printer",{P,S}},
-    {"get_orientation",{P},I},
-    {"set_orientation",{P,I}},
-    {"get_paper_size",{P},P,0,GtkPaperSize},
-    {"set_paper_size",{P,P}},
-    {"get_paper_width",{P,I},D},
-    {"set_paper_width",{P,D,I}},
-    {"get_paper_height",{P,I},D},
-    {"set_paper_height",{P,D,I}},
-    {"get_use_color",{P},B},
-    {"set_use_color",{P,B}},
-    {"get_collate",{P},B},
-    {"set_collate",{P,B}},
-    {"get_reverse",{P},B},
-    {"set_reverse",{P,B}},
-    {"get_duplex",{P},I},
-    {"set_duplex",{P,I}},
-    {"get_quality",{P},I},
-    {"set_quality",{P,I}},
-    {"get_n_copies",{P},I},
-    {"set_n_copies",{P,I}},
-    {"get_number_up",{P},I},
-    {"set_number_up",{P,I}},
-    {"get_number_up_layout",{P},I},
-    {"set_number_up_layout",{P,I}},
-    {"get_resolution",{P},I},
-    {"set_resolution",{P,I}},
-    {"get_resolution_x",{P},I},
-    {"get_resolution_y",{P},I},
-    {"get_printer_lpi",{P},D},
-    {"set_printer_lpi",{P,D}},
-    {"get_scale",{P},D},
-    {"set_scale",{P,D}},
-    {"get_print_pages",{P},I},
-    {"set_print_pages",{P,I}},
-    {"get_page_ranges",{P,I},P,0,GtkPageRange},
-    {"set_page_ranges",{P,P},-routine_id("setPageRanges")},
-    {"get_page_set",{P},I},
-    {"set_page_set",{P,I}},
-    {"get_default_source",{P},S},
-    {"set_default_source",{P,S}},
-    {"get_media_type",{P},S},
-    {"set_media_type",{P,S}},
-    {"get_dither",{P},S},
-    {"set_dither",{P,S}},
-    {"get_finishings",{P},S},
-    {"set_finishings",{P,S}},
-    {"get_output_bin",{P},S},
-    {"set_output_bin",{P,S}},
-"GtkPrintSettings"}
-
-    function setPageRanges(atom x, object r)
-    ----------------------------------------
-    gtk_proc("gtk_print_settings_set_pages_ranges",{P,P,I},{x,r,length(r)})
-    return 1
-    end function
-
-widget[GtkPaperSize] = {"gtk_paper_size",
-{GObject},
-    {"new",{S},P},
-    {"new_from_ppd",{S,S,D,D},P},
-    {"new_from_ipp",{S,D,D},P,0,GtkPaperSize}, -- 3.16
-    {"new_custom",{S,S,D,D,I},P},
-    {"copy",{P},P,0,GtkPaperSize},
-    {"is_equal",{P,P},B},
-    {"get_name",{P},S},
-    {"get_display_name",{P},S},
-    {"get_ppd_name",{P},S},
-    {"get_width",{P,I},D},
-    {"get_height",{P,I},D},
-    {"is_custom",{P},B},
-    {"set_size",{P,D,D,I}},
-    {"get_default_top_margin",{P,I},D},
-    {"get_default_bottom_margin",{P,I},D},
-    {"get_default_left_margin",{P,I},D},
-    {"get_default_right_margin",{P,I},D},
-"GtkPaperSize"}
-
-widget[GtkPageSetup] = {"gtk_page_setup",
-{GObject},
-    {"new",{},P},
-    {"copy",{P},P,0,GtkPageSetup},
-    {"get_orientation",{P},I},
-    {"set_orientation",{P,I}},
-    {"get_paper_size",{P},P,0,GtkPaperSize},
-    {"set_paper_size",{P,P}},
-    {"get_top_margin",{P,I},D},
-    {"set_top_margin",{P,D,I}},
-    {"get_bottom_margin",{P,I},D},
-    {"set_bottom_margin",{P,D,I}},
-    {"get_left_margin",{P,I},D},
-    {"set_left_margin",{P,D,I}},
-    {"get_right_margin",{P,I},D},
-    {"set_right_margin",{P,D,I}},
-    {"set_paper_size_and_default_margins",{P,P}},
-    {"get_paper_width",{P,I},D},
-    {"get_paper_height",{P,I},D},
-    {"get_page_width",{P,I},D},
-    {"get_page_height",{P,I},D},
-    {"new_from_file",{S,P},P,0,GtkPageSetup},
-    {"load_file",{P,S,P},B},
-    {"to_file",{P,S},-routine_id("setPgSetupToFile")},
-"GtkPageSetup"}
-
-    function setPgSetupToFile(atom setup, object filename)
-    ------------------------------------------------------
-    atom err = allocate(8) err = 0
-    return gtk_func("gtk_page_setup_to_file",{P,P,P},{setup,filename,err})
-    end function
     
-widget[GtkPrintOperation] = {"gtk_print_operation",
-{GObject},
-    {"new",{},P},
-    {"set_allow_async",{P,B}},
-    {"get_error",{P,P}},
-    {"set_default_page_setup",{P,P}},
-    {"get_default_page_setup",{P},P,0,GtkPageSetup},
-    {"set_print_settings",{P,P}},
-    {"get_print_settings",{P},P,0,GtkPrintSettings},
-    {"set_job_name",{P,S}},
-    {"get_job_name",{P},-routine_id("getPrintOpJobName")},
-    {"set_n_pages",{P,I}},
-    {"get_n_pages_to_print",{P},I},
-    {"set_current_page",{P,I}},
-    {"set_use_full_page",{P,B}},
-    {"set_unit",{P,I}},
-    {"set_export_filename",{P,S}},
-    {"set_show_progress",{P,B}},
-    {"set_track_print_status",{P,B}},
-    {"set_custom_tab_label",{P,S}},
-    {"run",{P,P,P,P},I},
-    {"cancel",{P}},
-    {"draw_page_finish",{P}},
-    {"set_defer_drawing",{P}},
-    {"get_status",{P},I},
-    {"get_status_string",{P},S},
-    {"is_finished",{P},B},
-    {"set_support_selection",{P,B}},
-    {"get_support_selection",{P},B},
-    {"set_has_selection",{P,B}},
-    {"get_has_selection",{P},B},
-    {"set_embed_page_setup",{P,B}},
-    {"get_embed_page_setup",{P},B},
-"GtkPrintOperation"}
-
-    function getPrintOpJobName(atom op)
-    -----------------------------------
-    object job = allocate(32), err = allocate(32) err = 0
-    gtk_func("g_object_get",{P,S,P,P},{op,"job name",job,err})
-    return peek_string(peek4u(job))
-    end function
-    
-widget[GtkPrintContext] = {"gtk_print_context",
-{GObject},
-    {"get_cairo_context",{P},P,0,Cairo_t},
-    {"set_cairo_context",{P,P,D,D}},
-    {"get_page_setup",{P},P,0,GtkPageSetup},
-    {"get_width",{P},D},
-    {"get_height",{P},D},
-    {"get_dpi_x",{P},D},
-    {"get_dpi_y",{P},D},
-    {"get_pango_fontmap",{P},P,0,PangoFontMap},
-    {"create_pango_context",{P},P,0,PangoContext},
-    {"create_pango_layout",{P},P,0,PangoLayout},
-    {"get_hard_margins",{P,D,D,D,D},B},
-"GtkPrintContext"}
-
-widget[GtkPrintUnixDialog] = {"gtk_print_unix_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{S,P},P},
-    {"set_page_setup",{P,P}},
-    {"get_page_setup",{P},P,0,GtkPageSetup},
-    {"set_current_page",{P,I}},
-    {"get_current_page",{P},I},
-    {"set_settings",{P,P}},
-    {"get_settings",{P},P,0,GtkPrintSettings},
-    {"get_selected_printer",{P},P,0,GtkPrinter},
-    {"add_custom_tab",{P,P,P}},
-    {"set_support_selection",{P,B}},
-    {"get_support_selection",{P},B},
-    {"get_has_selection",{P},B},
-    {"set_embed_page_setup",{P,B}},
-    {"get_embed_page_setup",{P},B},
-    {"set_manual_capabilities",{P,I}},
-    {"get_manual_capabilities",{P},I},
-"GtkPrintUnixDialog"}
-
-widget[GtkPageSetupUnixDialog] = {"gtk_page_setup_unix_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{S,P},P},
-    {"set_page_setup",{P,P}},
-    {"get_page_setup",{P},P,0,GtkPageSetup},
-    {"set_print_settings",{P,P}},
-    {"get_print_settings",{P},P,0,GtkPrintSettings},
-"GtkPageSetupUnixDialog"}
-
-widget[GtkListBox] = {"gtk_list_box", -- new in GTK 3.10
-{GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{},P},
-    {"prepend",{P,P}},
-    {"insert",{P,P,I}},
-    {"select_row",{P,P}},
-    {"select_all",{P}}, -- 3.14
-    {"unselect_all",{P}}, -- 3.14
-    {"unselect_row",{P,P}}, -- 3.14
-    {"get_selected_row",{P},P},
-    {"get_selected_rows",{P},A},-- 3.14
-    {"row_is_selected",{P},B}, -- 3.14
-    {"selected_foreach",{P,P,P}}, -- 3.14
-    {"set_selection_mode",{P,I}},
-    {"get_selection_mode",{P},I},
-    {"set_activate_on_single_click",{P,B}}, 
-    {"get_activate_on_single_click",{P},B}, 
-    {"set_adjustment",{P,P}},
-    {"get_adjustment",{P},P,0,GtkAdjustment},
-    {"set_placeholder",{P,P}},
-    {"get_row_at_index",{P,I},P,0,GtkListBoxRow},
-    {"get_row_at_y",{P,I},P,0,GtkListBoxRow},
-    {"invalidate_filter",{P}},
-    {"invalidate_headers",{P}},
-    {"invalidate_sort",{P}},
-    {"set_filter_func",{P,P,P,P}},
-    {"set_header_func",{P,P,P,P}},
-    {"set_sort_func",{P,P,P,P}},
-    {"drag_highlight_row",{P,P}}, 
-    {"drag_unhighlight_row",{P}}, 
-"GtkListBox"}
-
-widget[GtkListBoxRow] = {"gtk_list_box_row",
-{GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{},P},
-    {"changed",{P}},
-    {"get_header",{P},P,0,GtkWidget},
-    {"get_type",{},I},
-    {"set_header",{P,P}},
-    {"get_index",{P},I},
-    {"set_activatable",{P,B}},
-    {"set_selectable",{P,B}},
-    {"get_selectable",{P},B},
-"GtkListBoxRow"}
-
-widget[GtkPopover] = {"gtk_popover", -- new in GTK 3.12
-{GtkBin,GtkContainer,GtkWidget,GObject},
-    {"new",{P},P},
-    {"new_from_model",{P,P},P},
-    {"bind_model",{P,P,S}},
-    {"set_relative_to",{P,P}},
-    {"get_relative_to",{P},P,0,GtkWidget},
-    {"set_pointing_to",{P,P}},
-    {"get_pointing_to",{P,P},B},
-    {"set_position",{P,I}},
-    {"get_position",{P},I},
-    {"set_modal",{P,B}},
-    {"get_modal",{P},B},
-"GtkPopover"}
-
-widget[GtkPopoverMenu] = {"gtk_popover_menu", -- 3.16
-{GtkPopover,GtkBin,GtkContainer,GtkWidget,GObject},
-    {"new",{},P},
-    {"open_submenu",{P,S}},
-"GtkPopoverMenu"}
-
-widget[GtkPlacesSidebar] = {"gtk_places_sidebar", -- new 3.10
-{GtkScrolledWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{},P},
-    {"set_open_flags",{P,I}},
-    {"get_open_flags",{P},I},
-    {"set_location",{P,P}},
-    {"get_location",{P},P,0,GFile},
-    {"set_show_desktop",{P,B}},
-    {"get_show_desktop",{P},B},
-    {"add_shortcut",{P,P}},
-    {"remove_shortcut",{P,P}},
-    {"list_shortcuts",{P},P,0,GSList},
-    {"get_nth_bookmark",{P,I},P,0,GFile},
-    {"get_show_connect_to_server",{P},B},
-    {"set_show_connect_to_server",{P,B}},
-    {"set_local_only",{P,B}}, -- 3.12
-    {"get_local_only",{P},B}, -- 3.12
-    {"get_show_enter_location",{P},B}, --3.14
-    {"set_show_enter_location",{P,B}}, --3.14
-"GtkPlacesSidebar"}
-
-widget[GtkHeaderBar] = {"gtk_header_bar", -- new in GTK 3.10
-{GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{},P},
-    {"set_title",{P,S}},
-    {"get_title",{P},S},
-    {"set_subtitle",{P,S}},
-    {"get_subtitle",{P},S},
-    {"set_has_subtitle",{P,B}}, -- 3.12
-    {"get_has_subtitle",{P},B}, -- 3.12
-    {"set_custom_title",{P,P}},
-    {"get_custom_title",{P},P,0,GtkWidget},
-    {"pack_start",{P,P}},
-    {"pack_end",{P,P}},
-    {"set_show_close_button",{P,B}},
-    {"get_show_close_button",{P},B},
-    {"set_decoration_layout",{P,S}}, -- 3.12
-    {"get_decoration_layout",{P},S}, -- 3.12
-"GtkHeaderBar"}
-
-widget[PangoLanguage] = {"pango_language",
-{GObject},
-    {"new",{S},-routine_id("newPangoLanguage")},
-    {"get_default",{P},-routine_id("getDefaultLanguage")},
-    {"get_sample_string",{P},-routine_id("getSampleStr")},
-    {"to_string",{P},S},
-    {"matches",{P,S},B},
-    {"includes_script",{P,P},B},
-"PangoLanguage"}
-
-    function newPangoLanguage(object s)
-    -----------------------------------
-    return gtk_func("pango_language_from_string",{S},{s})
-    end function
-
-    function getDefaultLanguage(object junk)
-    ----------------------------------------
-    return gtk_str_func("pango_language_get_default")
-    end function
-
-    function getSampleStr(object x)
-    -------------------------------
-        return gtk_str_func("pango_language_get_sample_string",{P},{x})
-    end function
-
-widget[GtkPrinter] = {"gtk_printer",
-{GObject},
-    {"new",{S,P,B},P},
-    {"get_backend",{P},P},
-    {"get_name",{P},S},
-    {"get_state_message",{P},S},
-    {"get_description",{P},S},
-    {"get_location",{P},S},
-    {"get_icon_name",{P},S},
-    {"get_job_count",{P},I},
-    {"is_active",{P},B},
-    {"is_paused",{P},B},
-    {"is_accepting_jobs",{P},B},
-    {"is_virtual",{P},B},
-    {"is_default",{P},B},
-    {"accepts_ps",{P},B},
-    {"accepts_pdf",{P},B},
-    {"list_papers",{P},P,0,GList},
-    {"compare",{P,P},I},
-    {"has_details",{P},B},
-    {"request_details",{P}},
-    {"get_capabilities",{P},I},
-    {"get_default_page_size",{P},P,0,GtkPageSetup},
-    {"get_hard_margins",{P,D,D,D,D},B},
-"GtkPrinter"}
-
-widget[GtkPrintJob] = {"gtk_print_job",
-{GObject},
-    {"new",{S,P,P,P},P},
-    {"get_settings",{P},P,0,GtkPrintSettings},
-    {"get_printer",{P},P,0,GtkPrinter},
-    {"get_title",{P},S},
-    {"get_status",{P},I},
-    {"set_source_file",{P,S,P},B},
-    {"get_surface",{P,P},P,0,CairoSurface_t},
-    {"send",{P,P,P,P}},
-    {"set_track_print_status",{P,B}},
-    {"get_track_print_status",{P},B},
-    {"get_pages",{P},I},
-    {"set_pages",{P,I}},
-    {"get_page_ranges",{P,I},P,0,GtkPageRange},
-    {"set_page_ranges",{P,P,I}},
-    {"get_page_set",{P},I},
-    {"set_page_set",{P,I}},
-    {"get_num_copies",{P},I},
-    {"set_num_copies",{P,I}},
-    {"get_scale",{P},D},
-    {"set_scale",{P,D}},
-    {"get_n_up",{P},I},
-    {"set_n_up",{P,I}},
-    {"get_n_up_layout",{P},I},
-    {"set_n_up_layout",{P,I}},
-    {"get_rotate",{P},B},
-    {"set_rotate",{P,B}},
-    {"get_collate",{P},B},
-    {"set_collate",{P,B}},
-    {"get_reverse",{P},B},
-    {"set_reverse",{P,B}},
-"GtkPrintJob"}
-
-widget[GtkFlowBox] = {"gtk_flow_box", -- GTK 3.12
-{GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
-    {"new",{},P},
-    {"insert",{P,P,I}},
-    {"get_child_at_index",{P,I},P,0,GtkFlowBoxChild},
-    {"set_hadjustment",{P,P}},
-    {"set_vadjustment",{P,P}},
-    {"set_homogeneous",{P,B}},
-    {"get_homogeneous",{P},B},
-    {"set_row_spacing",{P,I}},
-    {"get_row_spacing",{P},I},
-    {"set_column_spacing",{P,I}},
-    {"get_column_spacing",{P},I},
-    {"set_min_children_per_line",{P,I}},
-    {"get_min_children_per_line",{P},I},
-    {"set_max_children_per_line",{P,I}},
-    {"get_max_children_per_line",{P},I},
-    {"set_activate_on_single_click",{P,B}},
-    {"get_activate_on_single_click",{P},B},
-    {"selected_foreach",{P,P,P}},
-    {"get_selected_children",{P},P,0,GList},
-    {"select_child",{P,P}},
-    {"unselect_child",{P,P}},
-    {"select_all",{P}},
-    {"unselect_all",{P}},
-    {"set_selection_mode",{P,I}},
-    {"get_selection_mode",{P},I},
-    {"set_filter_func",{P,P,P,P}},
-    {"invalidate_filter",{P}},
-    {"set_sort_func",{P,P,P,P}},
-    {"invalidate_sort",{P}},
-"GtkFlowBox"}
-
-widget[GtkFlowBoxChild] = {"gtk_flow_box_child", -- GTK 3.12
-{GtkFlowBox},
-    {"new",{},P},
-    {"get_index",{P},I},
-    {"is_selected",{P},B},
-    {"changed",{P}},
-"GtkFlowBoxChild"}
-
-widget[GtkMountOperation]  = {"gtk_mount_operation",
-{GObject},
-    {"new",{P},P},
-    {"is_showing",{P},B},
-    {"set_parent",{P,P}},
-    {"get_parent",{P},P,0,GtkWindow},
-    {"set_screen",{P,P}},
-    {"get_screen",{P},P,0,GdkScreen},
-"GtkMountOperation"}
-
--- stocklist is not a GTK widget, we just fake it for convenience
-widget[GtkStockList] = {"gtk_stocklist", -- deprecated in GTK 3.12+
-{0}, 
-"GtkStockList"}
-
-    function newStockList()
-    -----------------------
-    object list = gtk_func("gtk_stock_list_ids")
-    return to_sequence(list)
-    end function
-
-widget[GtkEventController] = {"gtk_event_controller",
-{GObject},
-    {"get_propagation_phase",{P},I},
-    {"set_propagation_phase",{P,I}},
-    {"handle_event",{P,P},B},
-    {"get_widget",{P},P,0,GtkWidget},
-    {"reset",{P}},
-"GtkEventController"}
-
-widget[GtkGesture] = {"gtk_gesture", --GTK3.14
-{GtkEventController,GObject},
-    {"get_device",{P},P},
-    {"get_window",{P},P},
-    {"set_window",{P,P}},
-    {"is_active",{P},B},
-    {"is_recognized",{P},B},
-    {"get_sequence_state",{P,P},I},
-    {"set_sequence_state",{P,P,I},B},
-    {"set_state",{P,I},B},
-    {"get_sequences",{P},A},
-    {"handles_sequence",{P,P},B},
-    {"get_last_updated_sequence",{P},P},
-    {"get_last_event",{P,P},P},
-    {"get_point",{P,P,D,D},B},
-    {"get_bounding_box",{P,P},B},
-    {"get_bounding_box_center",{P,D,D},B},
-    {"group",{P,P}},
-    {"ungroup",{P}},
-    {"get_group",{P},A},
-    {"is_grouped_with",{P,P},B},
-"GtkGesture"}
-
-widget[GtkGestureSingle] = {"gtk_gesture_single",
-{GtkGesture,GtkEventController,GObject},
-    {"get_exclusive",{P},B},
-    {"set_exclusive",{P,B}},
-    {"get_touch_only",{P},B},
-    {"set_touch_only",{P,B}},
-    {"get_button",{P},I},
-    {"set_button",{P,I}},
-    {"get_current_button",{P},I},
-    {"get_current_sequence",{P},P},
-"GtkGestureSingle"}
-
-widget[GtkGestureRotate] = {"gtk_gesture_rotate",
-{GtkGesture,GtkEventController,GObject},
-    {"new",{P},P},
-    {"get_angle_delta",{P},D},
-"GtkGestureRotate"}
-
-widget[GtkGestureZoom] = {"gtk_gesture_zoom",
-{GtkGesture,GtkEventController,GObject},
-    {"new",{P},P},
-    {"get_scale_delta",{P},D},
-"GtkGestureZoom"}
-
-widget[GtkGestureDrag] = {"gtk_gesture_drag", -- 3.14
-{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
-    {"new",{P},P},
-    {"get_start_point",{P,D,D},B},
-    {"get_offset",{P,D,D},B}, 
-"GtkGestureDrag"}
-
-widget[GtkGesturePan] = {"gtk_gesture_pan",
-{GtkGestureDrag,GtkGestureSingle,GtkGesture,GtkEventController,GObject},
-    {"new",{P,I},P},
-    {"get_orientation",{P},I},
-    {"set_orientation",{P,I}},
-"GtkGesturePan"}
-
-widget[GtkGestureSwipe] = {"gtk_gesture_swipe",
-{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
-    {"new",{P},P},
-    {"get_velocity",{P,D,D},B},
-"GtkGestureSwipe"}
-
-widget[GtkGestureLongPress] = {"gtk_gesture_long_press",
-{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
-    {"new",{P},P},
-"GtkGestureLongPress"}
-
-widget[GtkGestureMultiPress] = {"gtk_gesture_multi_press",
-{GtkGestureSingle,GtkGesture,GtkEventController,GObject},
-    {"new",{P},P},
-    {"get_area",{P,P},B},
-    {"set_area",{P,P}},
-"GtkGestureMultiPress"}
-
-widget[GdkGLProfile] = {"gdk_gl_profile",
- {},
-"GdkGLProfile"}
-
-widget[GtkGLArea] = {"gtk_gl_area", -- GTK 3.16
-{GtkWidget,GObject},
-    {"new",{},P},
-    {"get_context",{P},P},
-    {"set_has_alpha",{P,B}},
-    {"get_has_alpha",{P},B},
-    {"set_has_depth_buffer",{P,B}},
-    {"get_has_depth_buffer",{P},B},
-    {"make_current",{P}},
-    {"get_auto_render",{P},B},
-    {"set_auto_render",{P,B}},
-    {"get_error",{P},P},
-    {"set_error",{P,P}},
-    {"queue_render",{P}},
-    {"set_profile",{P,P}},
-    {"get_profile",{P},P,0,GdkGLProfile},
-    {"get_has_stencil_buffer",{P},B},
-    {"set_has_stencil_buffer",{P,B}},
-"GtkGLArea"}
-
-widget[GdkFrameClock] = {"gdk_frame_clock",
-{GObject},
-    {"get_frame_time",{P},I},
-    {"request_phase",{P,P}},
-    {"begin_updating",{P}},
-    {"end_updating",{P}},
-    {"get_frame_counter",{P},I},
-    {"get_history_start",{P},I},
-    {"get_timings",{P,I},P},
-    {"get_current_timings",{P},P,0,GdkFrameTimings},
-    {"get_refresh_info",{P,I,I,I}},
-"GdkFrameClock"}
-
-widget[GdkFrameTimings] = {"gdk_frame_timings",
-{GObject},
-    {"get_frame_counter",{P},I},
-    {"get_complete",{P},B},
-    {"get_frame_time",{P},I},
-    {"get_presentation_time",{P},I},
-    {"get_refresh_interval",{P},I},
-    {"get_predicted_presentation_time",{P},I},
-"GdkFrameTimings"}
-
-widget[GdkEvent] = {"gdk_event",
-{GObject},
-    {"new",{},P},
-    {"peek",{},P,0,GdkEvent},
-    {"get",{},P,0,GdkEvent},
-    {"put",{P}},
-    {"copy",{P},P,0,GdkEvent},
-    {"get_axis",{P,I,D},B},
-    {"get_button",{P,P},B},
-    {"get_keycode",{P,P},B},
-    {"get_keyval",{P,P},B},
-    {"get_root_coords",{P,D,D},B},
-    {"get_scroll_direction",{P,P},B},
-    {"get_scroll_deltas",{P,D,D},B},
-    {"get_state",{P,P},B},
-    {"get_time",{P},I},
-    {"get_window",{P},P,0,GdkWindow},
-    {"get_event_type",{P},I},
-    {"get_event_sequence",{P},P,0,GdkEventSequence},
-    {"request_motions",{P}},
-    {"get_click_count",{P,P},B},
-    {"get_coords",{P,D,D},B},
-    {"triggers_context_menu",{P},B},
-    {"handler_set",{P,P,P}},
-    {"set_screen",{P,P}},
-    {"get_screen",{P},P,0,GdkScreen},
-    {"set_device",{P,P}},
-    {"get_device",{P},P,0,GdkDevice},
-    {"set_source_device",{P,P}},
-    {"get_source_device",{P},P,0,GdkDevice},
-"GdkEvent"}
-
-widget[GdkEventSequence] = {"gdk_event_sequence",
-{GdkEvent},
-"GdkEventSequence"}
-
-widget[GdkX11Display] = {"gdk_x11_display",
-{GObject},
-    {"get_user_time",{P},I},
-    {"broadcase_startup_message",{P,S,S,I}},
-    {"get_startup_notification_id",{P},S},
-    {"set_startup_notification_id",{P,S}},
-    {"get_xdisplay",{P},P},
-    {"grab",{P}},
-    {"ungrab",{P}},
-    {"set_cursor_theme",{P,S,I}},
-    {"set_window_scale",{P,I}},
-    {"get_glx_version",{P,I,I},B},
-"GdkX11Display"}
-
-widget[GdkX11Screen] = {"gdk_x11_screen",
-{GObject},
-    {"get_screen_number",{P},I},
-    {"get_xscreen",{P},P},
-    {"get_window_manager_name",{P},S},
-    {"get_monitor_output",{P,I},I},
-    {"lookup_visual",{P,I},P,0,GdkVisual},
-    {"get_number_of_desktops",{P},I},
-    {"get_current_desktop",{P},I},
-"GdkX11Screen"}
-
-widget[GdkX11Window] = {"gdk_x11_window",
-{GObject},
-    {"lookup_for_display",{P,P},P,0,GdkWindow},
-    {"get_xid",{P},P},
-    {"move_to_current_desktop",{P}},
-    {"move_to_desktop",{P,I}},
-    {"get_desktop",{P},I},
-"GdkX11Window"}
-
-widget[GdkGLContext] = {"gdk_gl_context",
-{GObject},
-    {"new",{},-routine_id("glContext")},
-    {"get_current",{},-routine_id("glContext")},
-    {"clear_current",{}},
-    {"make_current",{P}},
-    {"get_window",{P},P,0,GdkWindow},
-    {"get_visual",{P},P,0,GdkVisual},
-"GdkGLContext"}
-
-    function glContext()
-    return c_func("gdk_gl_context_get_current")
-    end function
-
-widget[GtkBindingSet] = {"gtk_binding_set",
-{GObject},
-	{"new",{S},P},
-	{"by_class",{P},P},
-	{"find",{S},P},
-	{"activate",{P,I,I,P},B},
-	{"add_path",{P,P,S,I}},
-"GtkBindingSet"}
-
-widget[GtkBindingEntry] = {"gtk_binding_entry",
-{GtkBindingSet},
-	{"add_signal",{P,I,I,S,P}},
-	{"add_signal_from_string",{P,S},I},
-	{"skip",{P,I,I}},
-	{"remove",{P,I,I}},
-"GtkBindingEntry"}
-
-widget[GdkPixbufAnimation] = {"gdk_pixbuf_animation",
-{GdkPixbuf,GObject},
-	{"new",{P},-routine_id("newPixbufAni")},
-"GdkPixbufAnimation"}
-
-	function newPixbufAni(object name)
-	atom err = allocate(32) err = 0
-	return gtk_func("gdk_pixbuf_animation_new_from_file",{P,P},
-		{allocate_string(name),err})
-	end function
-
---WIP: these are not yet implemented;
+--TODO: these are not yet implemented;
 widget[CairoFontOptions] = {0,{0},"CairoFontOptions"}
 widget[CairoContent_t] = {0,{0},"CairoContent_t"}
 widget[CairoStatus_t] = {0,{0},"CairoStatus_t"}
@@ -7987,96 +8405,6 @@ widget[GtkPrintOperationPreview] = {0,{0},"GtkPrintOperationPreview"}
 widget[GtkPageRange] = {0,{0},"GtkPageRange"}
 widget[GdkPixbufAnimationIter] = {0,{0},"GdkPixbufAnimationIter"}
 
-------------------------------------------------------------------------
--- Internet conveniences
-------------------------------------------------------------------------
-------------------------------------
-export function show_uri(object uri)
-------------------------------------
-integer x = find('#',uri)
-object tmp
-if x > 0 then
-    tmp = canonical_path(uri[1..x-1])
-    if file_exists(tmp) then
-        uri = "file:///" & tmp & uri[x..$]
-    end if
-else
-    tmp = canonical_path(uri)
-    if file_exists(tmp) then
-        uri = "file:///" & tmp
-    end if
-end if
-
-atom err = allocate(100) err = 0 
-object result = gtk_func("gtk_show_uri",{P,P,P,P},
-        {0,allocate_string(uri),0,err})
-    free(err)
-    
-return result
-end function
-
---------------------------------
-export function inet_address() -- only works on linux;
---------------------------------
-object ip
-sequence tmp = temp_file(,"MYIP-")
-if system_exec(sprintf("ifconfig |  grep 'inet addr:' | grep -v '127.0.0.1' | cut -d: -f2 | awk '{ print $1}' > %s ",{tmp}),0) = 0 then
-   ip = read_lines(tmp)
-   if length(ip) = 0 then
-       return "127.0.0.1"
-    else
-        return ip[1]
-    end if
-end if
-return -1
-end function
-
----------------------------------
-export function inet_connected()
----------------------------------
-return not equal("127.0.0.1",inet_address())
-end function
-
--- Icon functions
-----------------------------
-export function list_icons()
-----------------------------
-atom theme = gtk_func("gtk_icon_theme_get_default")
-object list = gtk_func("gtk_icon_theme_list_icons",{P,P},{theme,0})
-return to_sequence(list)
-end function
-
-----------------------------------------
-export function has_icon(object name)
-----------------------------------------
-atom theme = gtk_func("gtk_icon_theme_get_default")
-    name = allocate_string(name)
-return gtk_func("gtk_icon_theme_has_icon",{P,P},{theme,name})
-end function
-
---------------------------------------------------------
-export function icon_info(object name, integer size=6)
---------------------------------------------------------
-atom theme = gtk_func("gtk_icon_theme_get_default")
-atom err = allocate(32) err = 0
-
-atom icon_info = gtk_func("gtk_icon_theme_lookup_icon",{P,P,I,I},
-    {theme,name,size,GTK_ICON_LOOKUP_USE_BUILTIN})
-
-object results = repeat(0,5)
-    results[1] = gtk_func("gtk_icon_info_load_icon",{P,P},{icon_info,err})
-    results[2] = gtk_func("gtk_icon_info_get_display_name",{P},{icon_info})
-    results[3] = gtk_str_func("gtk_icon_info_get_filename",{P},{icon_info})
-    results[4] = gtk_func("gtk_icon_info_get_base_size",{P},{icon_info})
-    results[5] = gtk_func("gtk_icon_info_get_base_scale",{P},{icon_info})
-return results
--- returns {pointer to icon_info structure, display name or null,
---          full path to icon file, base size, base scale}
-end function
-    
-------------------------------------------------------------------------
--- BUILDABLE  
-------------------------------------------------------------------------
 widget[GtkBuildable] = {"gtk_buildable",
 {GObject},
     {"set_name",{P,S}},
@@ -8103,14 +8431,21 @@ widget[GtkBuilder] = {"gtk_builder",
     {"set_application",{P,P}}, -- 3.10
     {"get_application",{P},P}, -- 3.10
     {"connect",{P},-routine_id("builder_connect")},
+    {"set_translation_domain",{P,S}},
+    {"get_translation_domain",{P},S},
+    {"set_application",{P,P}},
+    {"get_application",{P},P,0,GtkApplication},
+    {"get_type_from_name",{P,S},I},
 "GtkBuilder"}
 
 export constant builder = create(GtkBuilder)
 object current_builder_file = ""
 
-export sequence class_name_index = repeat(0,GtkFinal)
-    for i = 1 to GtkFinal-1 do
+export sequence class_name_index = repeat(0,length(widget))
+    for i = 1 to length(widget) do
+		if sequence(widget[i]) then
         class_name_index[i] = widget[i][$]
+        end if
     end for
 
     constant bad_from_file = define_func("gtk_builder_add_from_file",{P,P,P},I)
@@ -8144,8 +8479,8 @@ export sequence class_name_index = repeat(0,GtkFinal)
     return result
     end function
     
-    
- -- link signals defined in Glade
+ -- link signals defined in Glade, this starts a 'for' loop, 
+ -- running the builder_connect_function for each control;
     function builder_connect(atom bld)
     ---------------------------------
     gtk_func("gtk_builder_connect_signals_full",{P,P,P},{bld,builder_connect_func,0})
@@ -8235,307 +8570,9 @@ end for
 
 end procedure
 
-------------------------------------------------------------------------
--- SETTINGS - new in EuGTK4.9.1 -  read and write config files
-------------------------------------------------------------------------
-function FilterFn(object a, object f)
-return match(f,a[4])
-end function
-constant filterfn = routine_id("FilterFn")
-	
------------------------------------------------------------------------
-global function get_settings(object self) 
------------------------------------------------------------------------
--- returns settings string for object self
--- object must be a named object
-
--- e.g: MyButton:GtkCheckButton={"active",1}
--- e.g: My Calendar={"date",{YYYY,MM,DD}}
--- 
-if string(self) then 
-	self = vlookup(self,registry,4,1) 
-end if
-
-object name = get(self,"name")
-if find(':',name) then
-	name = split(name,':')
-	name = name[1]
-end if 
-
-object tmp = filter(registry,filterfn,name)
-object index = vslice(registry,1)
-object handles = vslice(tmp,1)
-atom x =-1
-
-for i = 1 to length(tmp) do
-		x = find(tmp[i][1],index)
-		if x = 0 then
-			x = find(name,index)
-		end if
-		if x >  0 then
-		switch tmp[i][2] do
-			case GtkEntry,GtkEntryBuffer then
-				registry[x][5] = {"text",get(tmp[i][4],"text")}
-				
-			case GtkCheckButton,GtkRadioButton,
-				 GtkToggleButton,GtkSwitch,GtkComboBox,GtkComboBoxText,
-				 GtkCheckMenuItem,GtkToggleToolButton then
-				registry[x][5] = {"active",get(tmp[i][4],"active")}
-				
-			case GtkPopover then
-				registry[x][5] = {"position",get(tmp[i][4],"position")}
-				
-			case GtkFontChooser then
-				registry[x][5] = {"font",get(tmp[i][4],"font")}
-				
-			case GtkFontButton then
-				registry[x][5] = {"font name",peek_string(get(tmp[i][4],"font-name"))}
-				
-			case GtkAdjustment,GtkSpinButton,GtkScaleButton,GtkVolumeButton,GtkModelButton,GtkScale then
-				registry[x][5] = {"value",get(tmp[i][4],"value")}
-				
-			case GtkEntryCompletion then
-				registry[x][5] = {"model",get(tmp[i][4],"model")}
-				
-			case GtkSearchEntry then
-				registry[x][5] = {"text",get(tmp[i][4],"text")}
-				
-			case GtkColorButton,GtkColorChooser,GtkColorChooserWidget,GtkColorChooserDialog then
-				registry[x][5] = {"rgba",get(tmp[i][4],"rgba",1)}
-		
-			case GtkLinkButton then
-				registry[x][5] = {"uri",get(tmp[i][4],"uri")}
-				
-			case GtkCalendar then 
-				registry[x][5] = {"date",get(tmp[i][4],"ymd")}
-
-		end switch
-	end if
-end for
-object txt = {}
-index = vslice(registry,1)
-object  prop, params, vals
-for i = 1 to length(handles) do
-	x = find(handles[i],index) 
-	if x > 0 then
-		vals = -1
-		if atom(registry[x][5]) and registry[x][5] = MINF then
-		-- skip, no value available;
-		else
-			params = {registry[x][4]}
-			params &= registry[x][5]
-			txt &= text:format("""[]->[]=[]""",params)
-			ifdef INI then
-				display("""[]->[]=[]""",params)
-			end ifdef
-		end if
-	end if
-end for
-return txt
-end function
-
-------------------------------------------------------------------------
-export function save_settings(sequence inifile, object ctl_list)
-------------------------------------------------------------------------
-atom fn
-object line, comments = {}
-
-if file_exists(inifile) then
-    fn = open(inifile,"u")
-    while 1 do
-	line = gets(fn)
-	    if atom(line) then exit end if
-	    if match("--",line) > 0 or equal("\n",line) then
-		    comments &= line
-	    end if
-    end while
-    close(fn)
-    
-    if length(comments) > 0 then
-		while comments[$] = 10 do
-			comments = comments[1..$-1]
-		end while
-    end if
-    
-end if -- file exists
-
-fn = open(inifile,"w",1)
-writefln(comments,,fn)
-
-ifdef INI then
-	system("clear",0)
-	display(comments) -- show on xterm (optional);
-end ifdef
-
-for x = 1 to length(ctl_list) do
-	ifdef INI then
-		writefln(get_settings(ctl_list[x])) -- show on xterm (optional);
-	end ifdef
-	writefln(get_settings(ctl_list[x]),,fn) -- write to ini;
-end for
-
-return 1
-end function
-
-------------------------------------------------------------------------------------------------
-export function add_setting(object ini, object ctl, sequence prop, object val1=0, object val2=0)
-------------------------------------------------------------------------------------------------
-
-if has_setting(ini,ctl,prop) = TRUE then
-	return update_setting(ini,ctl,prop,val1,val2)
-end if
-
-if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
-
-if val2 != 0 then
-	writefln("""--@[]->[]={[],[]}""",{ctl,prop,val1,val2},{ini,"a"})
-else 
-	writefln("""--@[]->[]=[]""",{ctl,prop,val1},{ini,"a"})
-end if
-
-ifdef INI then
-	display("Append setting [] [] [] []",{ctl,prop,val1,val2})
-end ifdef
-
-return 1
-end function
-
-------------------------------------------------------------------------
-export function remove_setting(object ini, object ctl, sequence prop)
-------------------------------------------------------------------------
-
-if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
-
-object patt = text:format("""--@[]->[]""",{ctl,prop})
-
-object txt = read_lines(ini)
-
-for i = 1 to length(txt) do
-	if match(patt,txt[i]) > 0 then
-		display("removing []",{txt[i]})
-		txt[i] = "-- removed"
-	end if
-end for
-
-io:write_lines(ini,txt)
-
-return 1
-end function
-
-----------------------------------------------------------------------------------------------------
-export function update_setting(object ini, object ctl, sequence prop, object val1=0, object val2=-1)
-----------------------------------------------------------------------------------------------------
-if has_setting(ini,ctl,prop) = FALSE then
-	display("Can't find []",{prop})
-	abort(1)
-	return 0
-end if
-
-if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
-
-object patt = text:format("""--@[]->[]""",{ctl,prop})
-
-object txt = read_lines(ini)
-
-for i = 1 to length(txt) do
-	if match(patt,txt[i]) > 0 then
-		if val2 = -1 then
-			txt[i] = text:format("""--@[]->[]=[]""",{ctl,prop,val1})
-		else
-			txt[i] = text:format("""--@[]->[]={[],[]}""",{ctl,prop,val1,val2})
-		end if
-	end if
-end for
-
-io:write_lines(ini,txt)
-
-return 1
-end function
-
-------------------------------------------------------------------------
-export function has_setting(object ini, object ctl, sequence prop)
-------------------------------------------------------------------------
-if atom(ctl) then ctl = vlookup(ctl,registry,1,4) end if
-
-object patt = text:format("""--@[]->[]""",{ctl,prop})
-
-object txt = read_lines(ini)
-
-if sequence(txt) then
-	for i = 1 to length(txt) do
-		if match(patt,txt[i]) then
-			return TRUE
-		end if
-	end for
-end if
-
-return FALSE
-end function
-
-------------------------------------------------------------------------
-export function load_settings(sequence inifile)
-------------------------------------------------------------------------
-object txt, line, obj, prop, val1=0, val2=0, val3=0, val4=0
-integer x
-if file_exists(inifile) then
-	txt = read_lines(inifile)
-	for i = 1 to length(txt) do
-		line = txt[i]
-		ifdef INI then
-			display(line)
-		end ifdef 
-		if match("--",line) < 4 and match("--!",line) > 0 then
-			line = line[4..$]
-		end if
-		if match("--",line) < 4 and match("--@",line) > 0 then
-			line = line[4..$]
-		end if
-		if match("--",line) then continue -- comment 
-		end if
-		if length(line) > 0  then
-			line = split(line,"->")
-			obj = line[1]
-			line = split(line[2],"=")
-			prop = line[1]
-			
-			if match("date",prop) > 0 then
-				val1 = line[2]
-				set(obj,prop,val1)
-				continue
-			end if
-			
-			if match("active",prop) > 0 then
-				val1 = match("0",line[2])
-				set(obj,prop,val1)
-				continue
-			end if
-
-			if find('{',line[2]) then
-				line[2] = line[2][2..$-1]
-				line = split(line[2],',')
-				val1 = line[1]
-				if length(line) > 1 then
-					val2 = line[2]
-				end if
-				if length(line) > 2 then
-					val3 = line[3]
-				end if
-				if length(line) > 3 then
-					val4 = line[3]
-				end if
-			else val1 = line[2]
-			end if
-			
-			set(obj,prop,val1,val2,val3,val4)
-		end if
-	end for
-end if
-return 1
-end function
-
-------------------------------------------------------------------------------------------
-procedure show_template(object handlr) -- used with Glade
-------------------------------------------------------------------------------------------
+--------------------------------------------------------------------------------------------
+procedure show_template(object handlr) -- used with Glade and GtkBuilder to prompt for missing functions
+--------------------------------------------------------------------------------------------
 printf(1,"""
 ________
 
@@ -8550,6 +8587,103 @@ ________
 
 end procedure
 
+------------------------------------------------------------------------
+-- Internet conveniences
+------------------------------------------------------------------------
+------------------------------------
+export function show_uri(object uri)
+------------------------------------
+if atom(uri) then
+    return 0
+end if
+integer x = find('#',uri)
+object tmp
+if x > 0 then
+    tmp = canonical_path(uri[1..x-1])
+    if file_exists(tmp) then
+        uri = "file:///" & tmp & uri[x..$]
+    end if
+else
+    tmp = canonical_path(uri)
+    if file_exists(tmp) then
+        uri = "file:///" & tmp
+    end if
+end if
+
+atom err = allocate(100) err = 0 
+object result = gtk_func("gtk_show_uri",{P,P,P,P},
+        {0,allocate_string(uri),0,err})
+    free(err)
+    
+return result
+end function
+
+--------------------------------
+export function inet_address() -- only works on linux;
+--------------------------------
+object ip
+sequence tmp = temp_file(,"MYIP-")
+if system_exec(sprintf("ifconfig |  grep 'inet addr:' | grep -v '127.0.0.1' | cut -d: -f2 | awk '{ print $1}' > %s ",{tmp}),0) = 0 then
+   ip = read_lines(tmp)
+   if length(ip) = 0 then
+       return "127.0.0.1"
+    else
+        return ip[1]
+    end if
+end if
+return -1
+end function
+
+---------------------------------
+export function inet_connected()
+---------------------------------
+return not equal("127.0.0.1",inet_address())
+end function
+
+--------------------------------------------------------------------------------------------
+-- Icon functions
+--------------------------------------------------------------------------------------------
+----------------------------
+export function list_icons()
+----------------------------
+atom theme = gtk_func("gtk_icon_theme_get_default")
+object list = gtk_func("gtk_icon_theme_list_icons",{P,P},{theme,0})
+return to_sequence(list)
+end function
+
+----------------------------------------
+export function has_icon(object name)
+----------------------------------------
+atom theme = gtk_func("gtk_icon_theme_get_default")
+    name = allocate_string(name)
+return gtk_func("gtk_icon_theme_has_icon",{P,P},{theme,name})
+end function
+
+--------------------------------------------------------
+export function icon_info(object name, integer size=6)
+--------------------------------------------------------
+atom theme = gtk_func("gtk_icon_theme_get_default")
+atom err = allocate(32) err = 0
+
+atom icon_info = gtk_func("gtk_icon_theme_lookup_icon",{P,P,I,I},
+    {theme,name,size,GTK_ICON_LOOKUP_USE_BUILTIN})
+
+object results = repeat(0,5)
+    results = {
+	gtk_func("gtk_icon_info_load_icon",{P,P},{icon_info,err}),
+	gtk_func("gtk_icon_info_get_display_name",{P},{icon_info}),
+	gtk_str_func("gtk_icon_info_get_filename",{P},{icon_info}),
+	gtk_func("gtk_icon_info_get_base_size",{P},{icon_info}),
+	gtk_func("gtk_icon_info_get_base_scale",{P},{icon_info})
+	}
+return results
+-- returns {1,2,3,4,5}
+-- 1 = pointer to icon_info structure, 
+-- 2 = display name or null,
+-- 3 = full path to icon file, 
+-- 4 = base size, 
+-- 5 = base scale
+end function
 
 ------------------------------------------------------------------------
 -- Following 3 functions simplify method calls; used mostly internally,
@@ -8604,6 +8738,7 @@ export procedure gtk_proc(object name, object params={}, object values={})
 --------------------------------------------------------------------------
 -- syntax: same as above, but no value is returned, used to call GTK procs
 atom fn
+
     if string(values) then values = {values} end if
     for i = 1 to length(params) do
         if not atom(values) and string(values[i]) then 
@@ -8617,7 +8752,7 @@ atom fn
 	    c_proc(fn,{})
 	end if
     else
-	fn = define_proc(name,params)
+	fn = define_proc(name,params) 
 	if fn > 0 then
 	    if atom(values) then values = {values} end if
 	    c_proc(fn,values)
@@ -8625,38 +8760,39 @@ atom fn
     end if
 
 end procedure
-   
+  
+-- The following 2 functions had to be added for Windows, so that we could search 
+-- a list of dlls until we find the function name requested. 
+----------------------------------------------------------------------------------------
 export function define_proc(object name, object params={})
+----------------------------------------------------------------------------------------
 atom x
-	ifdef WINDOWS then
-		for i = 1 to length(LIBS) do
-			x = define_c_proc(LIBS[i],name,params)
-			if x > 0 then
-			    return x end if
-		end for
-		ifdef GTK_ERR then
-		    display("? Proc []",{name})
-		end ifdef
-		return -1
+	for i = 1 to length(LIBS) do
+		x = define_c_proc(LIBS[i],name,params)
+		if x > 0 then
+			return x 
+		end if
+	end for
+	ifdef GTK_ERR then
+	    display("? 9045 Proc []",{name})
 	end ifdef
-	return define_c_proc(LIBS[1],name,params)
+	return -1
 end function
 
+--------------------------------------------------------------------
 export function define_func(object name, object params={}, object values=P)
+--------------------------------------------------------------------
 atom x
-	ifdef WINDOWS then
-		for i = 1 to length(LIBS) do
-			x = define_c_func(LIBS[i],name,params,values)
-			if x > 0  then 
-			  --  display("Func [] []",{name,LIBS[i]})
-			    return x end if
-		end for
-		ifdef GTK_ERR then
-		    display("? Func []",{name})
-		end ifdef
-		return -1
+	for i = 1 to length(LIBS) do
+		x = define_c_func(LIBS[i],name,params,values)
+		if x > 0  then 
+			 return x 
+		end if
+	end for
+	ifdef GTK_ERR then
+		   display("? 9061 Func []",{name})
 	end ifdef
-	return define_c_func(LIBS[1],name,params,values)
+	return -1
 end function
 
 -------------------------
