@@ -45,6 +45,7 @@ constant
     Options_LineNumbers = 602,
     Options_SortedSubs = 603,
     Options_Colors = 604,
+    Options_WordWrap = 605,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -239,16 +240,6 @@ global function ui_get_save_file_name(sequence file_name)
 	current_filter = temp[1]
     return temp[2]
 end function
-
-
-global procedure ui_message_box_ok(sequence title, sequence message)
-    atom result
-    result = c_func(MessageBox, {hMainWnd, 
-	  alloc_string(message),
-	  alloc_string(title),
-	  or_all({MB_APPLMODAL, MB_ICONINFORMATION, MB_OK})})
-    free_strings()
-end procedure
 
 -- returns yes=1 no=0
 global function ui_message_box_yes_no(sequence title, sequence message)
@@ -1191,6 +1182,10 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Options_Colors then
 		choose_colors()
 		return rc
+	    elsif wParam = Options_WordWrap then
+	        word_wrap = not word_wrap
+	        reinit_all_edits()
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_WordWrap, MF_CHECKED*word_wrap})
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -1441,6 +1436,8 @@ procedure WinMain()
 	Options_SortedSubs, alloc_string("&Sort View Subroutines")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Options_Colors, alloc_string("&Colors...")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
+	Options_WordWrap, alloc_string("&Word Wrap")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1485,7 +1482,8 @@ procedure WinMain()
     -- set the checkmark on the Line Numbers menu item
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs}) 
-    
+    c_func(CheckMenuItem, {hoptionsmenu, Options_WordWrap, MF_CHECKED*word_wrap})
+
 -- window creation
     hMainWnd = CreateWindow({
 		    0,                       -- extended style

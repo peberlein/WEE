@@ -497,6 +497,11 @@ function OptionsSortedSubs(atom handle)
     return 0
 end function
 
+function OptionsWordWrap(atom handle)
+    word_wrap = gtk:get(handle, "active")
+    reinit_all_edits()
+    return 0
+end function
 
 function RunStart()
     if save_if_modified(0) = 0 or length(file_name) = 0 then
@@ -771,7 +776,8 @@ add(optionsmenu, {
   createmenuitem("Font...", "OptionsFont"),
   createmenuitem("Line Numbers", "OptionsLineNumbers", 0, line_numbers),
   createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs),
-  createmenuitem("Colors...", "OptionsColors")
+  createmenuitem("Colors...", "OptionsColors"),
+  createmenuitem("Word Wrap", "OptionsWordWrap", 0, word_wrap)
   })
 set(menuOptions, "submenu", optionsmenu)
 
@@ -985,11 +991,6 @@ global function ui_get_save_file_name(sequence filename)
   
   return filename
 end function
-
--- show a message box
-global procedure ui_message_box_ok(sequence title, sequence message)
-  Info(win, title, "", message)
-end procedure
 
 -- returns yes=1 no=0
 global function ui_message_box_yes_no(sequence title, sequence message)
