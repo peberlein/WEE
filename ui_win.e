@@ -45,7 +45,7 @@ constant
     Options_LineNumbers = 602,
     Options_SortedSubs = 603,
     Options_Colors = 604,
-    Options_WordWrap = 605,
+    Options_LineWrap = 605,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -1182,10 +1182,10 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Options_Colors then
 		choose_colors()
 		return rc
-	    elsif wParam = Options_WordWrap then
-	        word_wrap = not word_wrap
+	    elsif wParam = Options_LineWrap then
+	        line_wrap = not line_wrap
 	        reinit_all_edits()
-	        return c_func(CheckMenuItem, {hoptionsmenu, Options_WordWrap, MF_CHECKED*word_wrap})
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_LineWrap, MF_CHECKED*line_wrap})
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -1437,7 +1437,7 @@ procedure WinMain()
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Options_Colors, alloc_string("&Colors...")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
-	Options_WordWrap, alloc_string("&Word Wrap")})
+	Options_LineWrap, alloc_string("Line &Wrap")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1482,7 +1482,7 @@ procedure WinMain()
     -- set the checkmark on the Line Numbers menu item
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs}) 
-    c_func(CheckMenuItem, {hoptionsmenu, Options_WordWrap, MF_CHECKED*word_wrap})
+    c_func(CheckMenuItem, {hoptionsmenu, Options_LineWrap, MF_CHECKED*line_wrap})
 
 -- window creation
     hMainWnd = CreateWindow({

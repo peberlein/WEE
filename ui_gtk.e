@@ -497,8 +497,8 @@ function OptionsSortedSubs(atom handle)
     return 0
 end function
 
-function OptionsWordWrap(atom handle)
-    word_wrap = gtk:get(handle, "active")
+function OptionsLineWrap(atom handle)
+    line_wrap = gtk:get(handle, "active")
     reinit_all_edits()
     return 0
 end function
@@ -777,7 +777,7 @@ add(optionsmenu, {
   createmenuitem("Line Numbers", "OptionsLineNumbers", 0, line_numbers),
   createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs),
   createmenuitem("Colors...", "OptionsColors"),
-  createmenuitem("Word Wrap", "OptionsWordWrap", 0, word_wrap)
+  createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap)
   })
 set(menuOptions, "submenu", optionsmenu)
 

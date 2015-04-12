@@ -68,7 +68,7 @@ global constant
 --  comment/uncomment selected lines (Ctrl+M)
 --  go back (Esc) after doing View Declaration or Goto Error
 --    if there is a selection, it will be deselected first
---  word wrap option
+--  line wrap option
 
 
 --  bugs fixed:
@@ -142,7 +142,7 @@ constant
 global constant max_recent_files = 5
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
-global integer font_height, line_numbers, sorted_subs, word_wrap
+global integer font_height, line_numbers, sorted_subs, line_wrap
 global sequence file_name, run_file_name, ex_err_name, recent_files, interpreter_path
 global integer keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
@@ -210,7 +210,7 @@ global procedure wee_init()
   font_height = 10
   line_numbers = 0
   sorted_subs = 0
-  word_wrap = 0
+  line_wrap = 0
 
   file_name = ""
   hedit = 0
@@ -312,8 +312,8 @@ global procedure load_wee_conf(sequence wee_conf_file)
                 bracelight_color = l[2]
             elsif equal(key, "sorted_subs") then
                 sorted_subs = l[2]
-            elsif equal(key, "word_wrap") then
-                word_wrap = l[2]
+            elsif equal(key, "line_wrap") then
+                line_wrap = l[2]
             end if
         end if
         l = gets(f)
@@ -343,7 +343,7 @@ global procedure save_wee_conf(sequence wee_conf_file)
     printf(f, "linenumber_color=#%06x\n", {linenumber_color})
     printf(f, "bracelight_color=#%06x\n", {bracelight_color})
     printf(f, "sorted_subs=%d\n", {sorted_subs})
-    printf(f, "word_wrap=%d\n", {word_wrap})
+    printf(f, "line_wrap=%d\n", {line_wrap})
     close(f)
 end procedure
 
@@ -425,7 +425,7 @@ global procedure init_edit(atom edit)
     -- get modification events for deletetext
     ssm(SCI_SETMODEVENTMASK, SC_MOD_BEFOREDELETE)
     
-    ssm(SCI_SETWRAPMODE, word_wrap)
+    ssm(SCI_SETWRAPMODE, line_wrap)
 
     ifdef WINDOWS then
 	ssm(SCI_SETEOLMODE, SC_EOL_CRLF)
