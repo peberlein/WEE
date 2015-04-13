@@ -7009,23 +7009,23 @@ widget[GtkAppChooserDialog] = {"gtk_app_chooser_dialog",
     end function
 
 widget[GtkColorChooserDialog] = {"gtk_color_chooser_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkColorChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S,P},P},
 "GtkColorChooserDialog"}
 
 widget[GtkColorSelectionDialog] = {"gtk_color_selection_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
+{GtkColorSelection,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S},P},
     {"get_color_selection",{P},P,0,GtkColorSelection},
 "GtkColorSelectionDialog"}
 
 widget[GtkFileChooserDialog] = {"gtk_file_chooser_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkFileChooser,GObject},
+{GtkFileChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S,P,I,S},P},
 "GtkFileChooserDialog"}
 
 widget[GtkFontChooserDialog] = {"gtk_font_chooser_dialog",
-{GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GtkFontChooser,GObject},
+{GtkFontChooser,GtkDialog,GtkWindow,GtkBin,GtkContainer,GtkWidget,GtkBuildable,GObject},
     {"new",{S,P},P},
 "GtkFontChooserDialog"}
 
