@@ -1363,6 +1363,7 @@ global constant
     CreatePopupMenu = link_c_func(user32, "CreatePopupMenu", {}, C_LONG),
     DestroyMenu = link_c_func(user32, "DestroyMenu", {C_LONG}, C_LONG),
     CheckMenuItem = link_c_func(user32, "CheckMenuItem", {C_LONG, C_LONG, C_LONG}, C_LONG),
+    CheckMenuRadioItem = link_c_func(user32, "CheckMenuRadioItem", {C_LONG, C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
     EnableMenuItem = link_c_func(user32, "EnableMenuItem", {C_LONG, C_LONG, C_LONG}, C_LONG),
     GetSubMenu = link_c_func(user32, "GetSubMenu", {C_LONG, C_LONG}, C_LONG),
     GetMenuItemID = link_c_func(user32, "GetMenuItemID", {C_LONG, C_LONG}, C_LONG),

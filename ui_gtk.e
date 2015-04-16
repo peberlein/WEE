@@ -507,41 +507,44 @@ function OptionsLineWrap(atom handle)
     return 0
 end function
 
-function RunStart()
-    if save_if_modified(0) = 0 or length(file_name) = 0 then
-        return 0 -- cancelled, or no name
-    end if
-    
-    run_file_name = file_name
-    reset_ex_err()
-    -- TODO: make configurable
-    chdir(dirname(run_file_name))
-    system("eui \"" & run_file_name & "\"")
-    --system(cmdline[1] & " " & run_file_name)
-    check_ex_err()
-    return 0
-end function
+function RunStart(atom ctl)
+    object lbl = gtk:get(ctl, "label")
 
-function RunStartWithArguments()
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
     end if
-    if length(get_tab_arguments()) = 0 then
-        RunSetArguments()
+    
+    if match("Start", lbl) = 1 then
+	run_file_name = file_name
+	reset_ex_err()
+	chdir(dirname(run_file_name))
+	if equal(lbl, "Start") then
+	    system(interpreter & " \"" & run_file_name & "\"")
+	else -- with arguments
+	    if length(get_tab_arguments()) = 0 then
+		if RunSetArguments() then
+		    return 0
+		end if
+	    end if
+	    system(interpreter & " \"" & run_file_name & "\" " & get_tab_arguments())
+	end if
+	check_ex_err()
+	
+    elsif equal(lbl, "Bind") then
+	system("eubind \"" & file_name & "\"")
+    elsif equal(lbl, "Shroud") then
+	system("eushroud \"" & file_name & "\"")
+    elsif equal(lbl, "Translate") then
+	system("euc \"" & file_name & "\"")
+    else
+	crash("Unable to get menu label")
     end if
     
-    run_file_name = file_name
-    reset_ex_err()
-    -- TODO: make configurable
-    chdir(dirname(run_file_name))
-    system("eui \"" & run_file_name & "\" " & get_tab_arguments())
-    --system(cmdline[1] & " " & run_file_name)
-    check_ex_err()
     return 0
 end function
 
 function RunSetArguments()
-    atom dialog, content, text_entry
+    atom dialog, content, text_entry, result = -1
     
     dialog = create(GtkDialog)
     --set(dialog, "default size", 200, 200)
@@ -561,30 +564,23 @@ function RunSetArguments()
     show_all(dialog)
     if set(dialog, "run") = GTK_RESPONSE_OK then
 	set_tab_arguments(gtk:get(text_entry, "text"))
+	result = 0
     end if
     hide(dialog)
-    return 0
+    return result
 end function
 
-function RunConvert(atom ctl)
+function RunChooseInterpreter(atom ctl)
     object lbl = gtk:get(ctl, "label")
-
-    if save_if_modified(0) = 0 or length(file_name) = 0 then
-        return 0 -- cancelled, or no name
+    if atom(lbl) or equal(lbl, "") then
+        crash("Unable to get menu label")
     end if
-    
-    chdir(dirname(file_name))
-    if equal(lbl, "Bind") then
-	system("eubind \"" & file_name & "\"")
-    elsif equal(lbl, "Shroud") then
-	system("eushroud \"" & file_name & "\"")
-    elsif equal(lbl, "Translate") then
-	system("euc \"" & file_name & "\"")
-    else
-	crash("Unable to get menu label")
+    if gtk:get(ctl, "active") then
+      interpreter = lbl
     end if
     return 0
 end function
+
 
 function HelpAbout()
   set(about_dialog, "run")
@@ -685,6 +681,7 @@ constant
   menuRun = create(GtkMenuItem, "_Run"),
   menuOptions = create(GtkMenuItem, "_Options"),
   menuHelp = create(GtkMenuItem, "_Help"),
+  menuChooseInterpreter = create(GtkMenuItem, "Choose Interpreter"),
   filemenu = sets(create(GtkMenu), {{"accel group", group}}),
   editmenu = sets(create(GtkMenu), {{"accel group", group}}),
   searchmenu = sets(create(GtkMenu), {{"accel group", group}}),
@@ -692,6 +689,7 @@ constant
   runmenu = sets(create(GtkMenu), {{"accel group", group}}),
   optionsmenu = sets(create(GtkMenu), {{"accel group", group}}),
   helpmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  chooseinterpreter_menu = create(GtkMenu),
   tabmenu = create(GtkMenu)
 
 -- create a menu item with "activate" signal connected to local routine
@@ -767,14 +765,30 @@ set(menuView, "submenu", viewmenu)
 
 add(runmenu, {
   createmenuitem("Start", "RunStart", "F5"),
-  createmenuitem("Start with Arguments", "RunStartWithArguments", "<Shift>F5"),
+  createmenuitem("Start with Arguments", "RunStart", "<Shift>F5"),
   createmenuitem("Set Arguments...", "RunSetArguments"),
+  menuChooseInterpreter,
   create(GtkSeparatorMenuItem),
-  createmenuitem("Bind", "RunConvert"),
-  createmenuitem("Shroud", "RunConvert"),
-  createmenuitem("Translate", "RunConvert")
+  createmenuitem("Bind", "RunStart"),
+  createmenuitem("Shroud", "RunStart"),
+  createmenuitem("Translate", "RunStart")
   })
 set(menuRun, "submenu", runmenu)
+
+constant choose_interpreter_cb = call_back(routine_id("RunChooseInterpreter"))
+sequence interpreters = {"eui", "exu"}
+object tmp = NULL
+for i = 1 to length(interpreters) do
+    tmp = create(GtkRadioMenuItem, tmp, interpreters[i])
+    connect(tmp, "activate", choose_interpreter_cb)
+    if equal(interpreter, interpreters[i]) then
+        set(tmp, "active", 1)
+    end if
+    interpreters[i] = tmp
+end for
+
+add(chooseinterpreter_menu, interpreters)
+set(menuChooseInterpreter, "submenu", chooseinterpreter_menu)
 
 add(optionsmenu, {
   createmenuitem("Font...", "OptionsFont"),

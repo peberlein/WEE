@@ -41,6 +41,10 @@ constant
     Run_Bind = 504,
     Run_Shroud = 505,
     Run_Translate = 506,
+    Run_euiw = 507,
+    Run_eui = 508,
+    Run_exw = 509,
+    Run_ex = 510,
     Options_Font = 601,
     Options_LineNumbers = 602,
     Options_SortedSubs = 603,
@@ -61,7 +65,7 @@ constant file_filters = allocate_string(
 
 atom hMainWnd, hFindDlg, class,
     hmenu, hfilemenu, heditmenu, hsearchmenu, hviewmenu, 
-    hrunmenu, hoptionsmenu, hhelpmenu, htabmenu,
+    hrunmenu, hoptionsmenu, hhelpmenu, htabmenu, hrunintmenu,
     hstatus, htabs, hcode, hedit,
     WM_FIND
 
@@ -628,7 +632,7 @@ procedure run_start(integer with_args)
 
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
-	alloc_string(interpreter_path),
+	alloc_string(interpreter),
 	alloc_string("\"" & run_file_name & "\" " & args),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
@@ -1048,6 +1052,18 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Run_Translate then
 	        run_convert("Translate", "euc")
 	        return rc
+	    elsif wParam = Run_euiw then
+	        interpreter = "euiw"
+		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
+	    elsif wParam = Run_eui then
+	        interpreter = "eui"
+		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
+	    elsif wParam = Run_exw then
+	        interpreter = "exw"
+		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
+	    elsif wParam = Run_ex then
+	        interpreter = "ex"
+		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
 	    elsif wParam = Options_Font then
 		choose_font()
 		return rc
@@ -1290,6 +1306,16 @@ procedure WinMain()
 	View_Error, alloc_string("Goto &Error\tF4")})
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_GoBack, alloc_string("Go &Back\tEsc")})
+-- run choose interpreter submenu
+    hrunintmenu = c_func(CreateMenu, {})
+    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_euiw, alloc_string("euiw")})
+    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_eui, alloc_string("eui")})
+    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_exw, alloc_string("exw")})
+    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_ex, alloc_string("ex")})
 -- run menu
     hrunmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1298,6 +1324,8 @@ procedure WinMain()
 	Run_WithArgs, alloc_string("Start with &Arguments\tShift-F5")})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Arguments, alloc_string("Set Arguments...")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
+	hrunintmenu, alloc_string("Choose Interpreter")})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Bind, alloc_string("&Bind")})
@@ -1362,6 +1390,8 @@ procedure WinMain()
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineWrap, MF_CHECKED*line_wrap})
+    c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, 
+	find(interpreter, {"euiw", "eui", "exw", "ex"})+Run_euiw-1, MF_BYCOMMAND})
 
 -- window creation
     hMainWnd = CreateWindow({
@@ -1435,6 +1465,5 @@ procedure WinMain()
 end procedure
 
 wee_init()
-interpreter_path = "euiw"
 WinMain()
 save_wee_conf(wee_conf_filename)
