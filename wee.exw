@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.26"
+  version = "0.27"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -148,7 +148,7 @@ global integer keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
     linenumber_color, bracelight_color
 global sequence find_phrase, replace_phrase
-    
+
 
 -- local variables
 sequence
@@ -182,6 +182,384 @@ function crash_cleanup(object x)
   end if
   return 0
 end function
+
+
+constant
+a_xpm = `/* XPM */
+"16 16 28 1",
+" 	c None",
+".	c #3300CC",
+"+	c #FFFFFF",
+"@	c #FBFBFD",
+"#	c #E6E1F8",
+"$	c #AD99EA",
+"%	c #4011CE",
+"&	c #7553DB",
+"*	c #3807CC",
+"=	c #8061DE",
+"-	c #B3A1EB",
+";	c #3503CC",
+">	c #EBE7F9",
+",	c #4A1DD1",
+"'	c #B9A8ED",
+")	c #FDFDFD",
+"!	c #CBBEF1",
+"~	c #947AE3",
+"{	c #3A0ACD",
+"]	c #F6F4FC",
+"^	c #3A09CD",
+"/	c #DAD2F5",
+"(	c #7958DD",
+"_	c #3908CC",
+":	c #8E72E2",
+"<	c #5F38D6",
+"[	c #DAD1F5",
+"}	c #8162DF",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .............. ",
+" ....++@#$%.... ",
+".....+&*=+-.....",
+"........;+>.....",
+"....,'>)+++.....",
+"....!+~{.++.....",
+"....]+^.;++.....",
+"..../+(_:++.....",
+" ...<[]/}+++... ",
+" .............. ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`,
+c_xpm = `/* XPM */
+static char * c_xpm[] = {
+"16 16 33 1",
+" 	c None",
+".	c #3399CC",
+"+	c #6EB6DA",
+"@	c #D1E7F3",
+"#	c #F7FAFC",
+"$	c #F2F8FB",
+"%	c #C3E0EF",
+"&	c #6AB4D9",
+"*	c #FDFDFD",
+"=	c #BFDFEE",
+"-	c #46A2D0",
+";	c #42A0CF",
+">	c #BBDDED",
+",	c #FFFFFF",
+"'	c #D0E7F2",
+")	c #55A9D3",
+"!	c #4AA4D1",
+"~	c #F6FAFC",
+"{	c #3A9CCD",
+"]	c #D2E8F3",
+"^	c #56AAD4",
+"/	c #4BA4D1",
+"(	c #E1EFF6",
+"_	c #72B8DB",
+":	c #C1DFEF",
+"<	c #43A0CF",
+"[	c #93C8E3",
+"}	c #73B8DB",
+"|	c #D4E9F3",
+"1	c #F8FBFC",
+"2	c #EBF4F9",
+"3	c #A4D1E8",
+"4	c #3599CC",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .............. ",
+" ....+@#$%&.... ",
+"....+*=-;>,.....",
+"....',)..!,.....",
+"....~,{.........",
+"....~,{.........",
+"....],^../(.....",
+"...._,:-<=[.....",
+" ....}|1234.... ",
+" .............. ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`,
+e_xpm = `/* XPM */
+static char * e_xpm[] = {
+"16 16 37 1",
+" 	c None",
+".	c #CC0099",
+"+	c #D844B3",
+"@	c #F1C0E5",
+"#	c #FBF3F9",
+"$	c #FCF6FA",
+"%	c #F3C8E8",
+"&	c #DA4EB7",
+"*	c #D945B4",
+"=	c #FDFCFD",
+"-	c #E684CD",
+";	c #CE0E9E",
+">	c #CE0F9E",
+",	c #E688CF",
+"'	c #FDFDFD",
+")	c #D73BB0",
+"!	c #F2C3E6",
+"~	c #FFFFFF",
+"{	c #CD0C9D",
+"]	c #F0B8E2",
+"^	c #FCF5FA",
+"/	c #F9E9F5",
+"(	c #CD0B9C",
+"_	c #F2C5E7",
+":	c #D637AE",
+"<	c #D42DAA",
+"[	c #F5D2EC",
+"}	c #DA4AB6",
+"|	c #F3C7E8",
+"1	c #D32BA9",
+"2	c #CC089B",
+"3	c #D534AD",
+"4	c #F4D0EB",
+"5	c #DE5EBE",
+"6	c #D948B5",
+"7	c #F4CFEB",
+"8	c #DE60BF",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .............. ",
+" ....+@#$%&.... ",
+"....*=-;>,')....",
+"....!~{..;~]....",
+"....^~~~~~~/....",
+"....^~(.........",
+"...._~:...<[....",
+"....}'|12345....",
+" ....6@##78.... ",
+" .............. ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`,
+f_xpm = `/* XPM */
+static char * f_xpm[] = {
+"16 16 11 1",
+" 	c None",
+".	c #0044FF",
+"+	c #2A62FE",
+"@	c #BDCEFE",
+"#	c #F2F5FE",
+"$	c #FFFFFF",
+"%	c #CBD8FE",
+"&	c #3A6EFE",
+"*	c #366BFE",
+"=	c #FAFBFE",
+"-	c #0044FE",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .....+@#$$.... ",
+" .....%$&*$.... ",
+"......=$-.......",
+".....$$$$$......",
+"......$$........",
+"......$$........",
+"......$$........",
+"......$$........",
+" .....$$....... ",
+" .....$$....... ",
+"  ...$$$$.....  ",
+"   ..........   ",
+"     ......     "};`,
+i_xpm = `/* XPM */
+static char * i_xpm[] = {
+"16 16 6 1",
+" 	c None",
+".	c #CC0033",
+"+	c #F2C4CF",
+"@	c #F2C3CF",
+"#	c #F3C6D1",
+"$	c #FFFFFF",
+"     ......     ",
+"   ..........   ",
+"  .....+@.....  ",
+" ......#+...... ",
+" .............. ",
+"......$$$.......",
+".......$$.......",
+".......$$.......",
+".......$$.......",
+".......$$.......",
+".......$$.......",
+" ......$$...... ",
+" .....$$$$..... ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`,
+o_xpm = `/* XPM */
+static char * o_xpm[] = {
+"16 16 20 1",
+" 	c None",
+".	c #00CC99",
+"+	c #45D9B4",
+"@	c #C2F2E6",
+"#	c #F5FCFA",
+"$	c #FCFDFD",
+"%	c #A8EDDB",
+"&	c #16CFA1",
+"*	c #14CFA0",
+"=	c #A3ECD9",
+"-	c #C3F2E6",
+";	c #FFFFFF",
+">	c #23D2A6",
+",	c #22D2A6",
+"'	c #04CC9A",
+")	c #03CC99",
+"!	c #A6ECDB",
+"~	c #15CFA0",
+"{	c #A5ECDA",
+"]	c #44D8B3",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .............. ",
+" ....+@##@+.... ",
+"....+$%&*=$+....",
+"....-;>..,;@....",
+"....#;'..);#....",
+"....#;)..';#....",
+"....@;>..>;@....",
+"....+$!~*{$]....",
+" ....+-##-+.... ",
+" .............. ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`,
+p_xpm = `/* XPM */
+static char * p_xpm[] = {
+"16 16 25 1",
+" 	c None",
+".	c #FF6600",
+"+	c #FFFFFF",
+"@	c #FEA66C",
+"#	c #FEEDE3",
+"$	c #FEFAF8",
+"%	c #FEE3D1",
+"&	c #FE9854",
+"*	c #FECAA8",
+"=	c #FE7216",
+"-	c #FE7215",
+";	c #FE8D42",
+">	c #FE7A22",
+",	c #FE7B24",
+"'	c #FED8BF",
+")	c #FE6703",
+"!	c #FE6804",
+"~	c #FEF3EC",
+"{	c #FEC9A6",
+"]	c #FECAA7",
+"^	c #FE8E43",
+"/	c #FEEEE4",
+"(	c #FEFBF9",
+"_	c #FEE3D2",
+":	c #FE9A57",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" ...+++@#$%&... ",
+" ....++*=-*+;.. ",
+".....++>..,+'...",
+".....++)..!+~...",
+".....++)..!+~...",
+".....++>..,+'...",
+".....++{--]+^...",
+".....++@/(_:....",
+" ....++........ ",
+" ....++........ ",
+"  ..++++......  ",
+"   ..........   ",
+"     ......     "};`,
+s_xpm = `/* XPM */
+static char * s_xpm[] = {
+"16 16 34 1",
+" 	c None",
+".	c #33CC00",
+"+	c #4BD11F",
+"@	c #B6ECA4",
+"#	c #E8F8E3",
+"$	c #FAFDF9",
+"%	c #FFFFFF",
+"&	c #D2F3C7",
+"*	c #7BDD5B",
+"=	c #38CC07",
+"-	c #4AD11D",
+";	c #C0EEB1",
+">	c #F7FCF6",
+",	c #6AD945",
+"'	c #35CC03",
+")	c #CAF1BD",
+"!	c #F9FCF8",
+"~	c #E0F6D9",
+"{	c #A4E78D",
+"]	c #41CE12",
+"^	c #44CF16",
+"/	c #EBF9E7",
+"(	c #CBF1BE",
+"_	c #4ED222",
+":	c #3DCD0D",
+"<	c #77DC55",
+"[	c #F6FCF4",
+"}	c #C8F0BB",
+"|	c #37CC06",
+"1	c #78DC57",
+"2	c #D3F3C9",
+"3	c #FCFDFC",
+"4	c #ECF9E8",
+"5	c #BCEDAC",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .............. ",
+" ....+@#$%%%... ",
+".....&%*=-;%....",
+".....>%,'.-%....",
+".....)%%!~{]....",
+".....^@/%%%(....",
+".....%_.:<%[....",
+".....%}_|1%2....",
+" ....%%%345+... ",
+" .............. ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`,
+t_xpm = `/* XPM */
+static char * t_xpm[] = {
+"16 16 11 1",
+" 	c None",
+".	c #CC9900",
+"+	c #FFFFFF",
+"@	c #F9F4E6",
+"#	c #D2A622",
+"$	c #D5AD34",
+"%	c #DEBF60",
+"&	c #F8F2E1",
+"*	c #FDFCF9",
+"=	c #F8F3E3",
+"-	c #DEBE5E",
+"     ......     ",
+"   ..........   ",
+"  ............  ",
+" .....++....... ",
+" .....++....... ",
+".....+++++......",
+"......++........",
+"......++........",
+"......++........",
+"......++........",
+"......++........",
+" .....@+#$@.... ",
+" .....%&*=-.... ",
+"  ............  ",
+"   ..........   ",
+"     ......     "};`
 
 
 constant             -- colors of various syntax classes
@@ -254,7 +632,7 @@ global procedure wee_init()
 
   find_phrase = ""
   replace_phrase = ""
-
+  
 end procedure
 
 
@@ -432,6 +810,16 @@ global procedure init_edit(atom edit)
     elsedef
 	ssm(SCI_SETEOLMODE, SC_EOL_LF)
     end ifdef
+    
+    ssm(SCI_REGISTERIMAGE, DECL_ATOM, a_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_CONSTANT, c_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_ENUM, e_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_FUNCTION, f_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_INTEGER, i_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_OBJECT, o_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_PROCEDURE, p_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_SEQUENCE, s_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_TYPE, t_xpm)
 end procedure
 
 global procedure reinit_all_edits()
@@ -487,7 +875,14 @@ global procedure go_back()
     tab_pos_stack[current_tab] = tab_pos_stack[current_tab][1..$-1]
 
     if sequence(pos) and length(pos) >= 3 then
-        if open_file(pos[3], 0) = 0 then
+	if length(pos[3]) = 0 then
+	    -- fixme: pick first untitled tab
+	    integer tab = find("", tab_file_names)
+	    if tab = 0 then
+	        return
+	    end if
+	    select_tab(tab)
+	elsif open_file(pos[3], 0) = 0 then
             return -- file not found or user cancelled
         end if
     end if
@@ -1522,9 +1917,9 @@ global procedure view_declaration()
     word = word[1]
 
     decls = get_declarations(parse(text, file_name), pos, name_space)
-    for i = 1 to length(decls) by 2 do
-      if equal(decls[i], word) then
-        goto_pos(decls[i+1], length(word))
+    for i = 1 to length(decls) do
+      if equal(decls[i][1], word) then
+        goto_pos(decls[i][2], length(word))
         exit
       end if
     end for
@@ -1558,9 +1953,9 @@ global procedure view_completions()
 	suggestions = suggest_includes(word, name_space)
 
 	-- filter duplicate suggestions
-	for i = 1 to length(suggestions) by 2 do
-	    if not find(suggestions[i+1], decls) then
-		decls &= suggestions[i..i+1]
+	for i = 1 to length(suggestions) do
+	    if not find(suggestions[i], decls) then
+		decls = append(decls, suggestions[i])
 	    end if
 	end for
     end if
@@ -1569,12 +1964,12 @@ global procedure view_completions()
 	return
     end if
     text = ""
-    for i = 1 to length(decls) by 2 do
-	if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then
+    for i = 1 to length(decls) do
+	if length(decls[i][1]) >= length(word) and equal(decls[i][1][1..length(word)], word) then
 	  if length(text) then 
-	    text &= '\n'
+	    text &= "\n"
 	  end if
-	  text &= decls[i]
+	  text &= decls[i][1] & sprintf("?%d", {decls[i][3]})
 	end if
     end for
     if length(text) then

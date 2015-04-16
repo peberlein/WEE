@@ -241,7 +241,13 @@ function EditClear() SSM(tab_hedit(), SCI_CLEAR) return 0 end function
 function EditSelectAll() SSM(tab_hedit(), SCI_SELECTALL) return 0 end function
 function EditToggleComment() toggle_comment() return 0 end function
 function SearchFind() find_dialog(0) return 0 end function
-function SearchFindNext() search_find(find_phrase, 0) return 0 end function
+function SearchFindNext() 
+    if length(find_phrase) = 0 then
+        return SearchFind()
+    end if
+    search_find(find_phrase, 0)
+    return 0 
+end function
 function SearchFindPrevious() search_find(find_phrase, 1) return 0 end function
 function SearchReplace() find_dialog(1) return 0 end function
 function ViewDecl() view_declaration() return 0 end function
@@ -312,6 +318,7 @@ function OldViewSubs()
 end function
 
 function RowActivated(atom ctl, atom path, atom col, atom dialog)
+    ? {ctl, path, col, dialog}
     set(dialog, "response", GTK_RESPONSE_OK)
     return 0
 end function
@@ -342,10 +349,7 @@ function ViewSubs()
     scroll = create(GtkScrolledWindow)
     pack(content, scroll, TRUE, TRUE)
 
-    object routines = {}, data
-    for i = 1 to length(subs) by 2 do
-	routines = append(routines,{subs[i],subs[i+1]})
-    end for
+    object routines = subs, data
     if sorted_subs then
         routines = sort(routines)
     end if
@@ -375,7 +379,7 @@ function ViewSubs()
     set(col2,"visible",FALSE)
 
     set(col1,"sort column id",1)
-    --connect(list, "row-activated", row_activated, dialog)
+    connect(list, "row-activated", row_activated, dialog)
 
     show_all(dialog)
     if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
@@ -742,11 +746,11 @@ set(menuEdit, "submenu", editmenu)
 
 add(searchmenu, {
   sets(createmenuitem("Find...", "SearchFind", "<Control>F"),
-    {{"add accelerator", {group,"F3"}}}),
+    {{"add accelerator", {group,"<Control>F3"}}}),
   sets(createmenuitem("Find Next", "SearchFindNext", "<Control>G"),
-    {{"add accelerator", {group, "<Control>F3"}}}),
+    {{"add accelerator", {group, "F3"}}}),
   sets(createmenuitem("Find Previous", "SearchFindPrevious", "<Control><Shift>G"),
-    {{"add accelerator", {group, "<Control><Shift>F3"}}}),
+    {{"add accelerator", {group, "<Shift>F3"}}}),
   createmenuitem("Replace...", "SearchReplace", "<Control>R")
   })
 set(menuSearch, "submenu", searchmenu)

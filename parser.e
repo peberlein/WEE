@@ -42,7 +42,9 @@ defined_words = {"OE", "OE4"}
 if platform() = WIN32 then
   defined_words &= {"WINDOWS", "WIN32"}
 elsif platform() = LINUX then
-  defined_words &= {"LINUX"}
+  defined_words &= {"LINUX", "UNIX"}
+elsif platform() = OSX then
+  defined_words &= {"OSX", "UNIX"}
 end if
 
 -- ast node types that are also opcodes
@@ -75,6 +77,17 @@ global constant
   AND = 25,
   OR = 26,
   XOR = 27
+
+global constant
+    DECL_ATOM = 1,
+    DECL_CONSTANT = 2,
+    DECL_ENUM = 3,
+    DECL_FUNCTION = 4,
+    DECL_INTEGER = 5,
+    DECL_OBJECT = 6,
+    DECL_PROCEDURE = 7,
+    DECL_SEQUENCE = 8,
+    DECL_TYPE = 9
 
 -- ast node types that are not opcodes
 global constant
@@ -1585,6 +1598,16 @@ function get_args(sequence ast, sequence word, sequence name_space, integer filt
   return result
 end function
 
+function type_to_decl(sequence name)
+    if equal(name, "atom") then
+        return DECL_ATOM
+    elsif equal(name, "sequence") then
+        return DECL_SEQUENCE
+    elsif equal(name, "integer") then
+        return DECL_INTEGER
+    end if
+    return DECL_OBJECT
+end function
 
 -- to prevent recursion, symbols may be included from a file
 -- only once for each type of flag: global, public, export
@@ -1596,7 +1619,7 @@ end function
 --  included file is publicly included by file with same namespace
 
 -- get a list of declarations from ast in scope at pos
--- returns {"name1", pos1, "name2", pos2...}
+-- returns {{"name1", pos1, type1}, {"name2", pos2, type2}...}
 --  pos may be be an integer for the position in the current file,
 --  or {pos, "include-path"} for included files.
 
@@ -1644,10 +1667,10 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
           check_cache_timestamp(x)
           s = get_decls(cache[x], 0, name_space, include_filter)
           --printf(1, "%s: %d\n", {cache[x][1], length(cache[x])})
-          for j = 2 to length(s) by 2 do
+          for j = 1 to length(s) do
             --printf(1, "%s: %d\n", {s[j-1], s[j]})
-            if not sequence(s[j]) then
-              s[j] = {cache[x][1], s[j]} -- is {filename, pos}
+            if not sequence(s[j][2]) then
+              s[j][2] = {cache[x][1], s[j][2]} -- is {filename, pos}
             end if
           end for
           result &= s
@@ -1660,7 +1683,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
       for j = 2 to length(s) do
         --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
         if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
-          result &= {s[j][1], s[j][2]}
+          result = append(result, {s[j][1], s[j][2], DECL_CONSTANT})
         end if
       end for
 
@@ -1670,7 +1693,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
       for j = 3 to length(s) do
         --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
         if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
-          result &= {s[j][1], s[j][2]}
+          result = append(result, {s[j][1], s[j][2], type_to_decl(s[2])})
         end if
       end for
 
@@ -1680,17 +1703,19 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
       --    scope-start, scope-end, stmts...}
       if decl = FUNC_DECL then
         --printf(1, "function %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
+        result = append(result, {s[2], s[3], DECL_FUNCTION})
       elsif decl = PROC_DECL then
         --printf(1, "procedure %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
+        result = append(result, {s[2], s[3], DECL_PROCEDURE})
       elsif decl = TYPE_DECL then
         --printf(1, "type %s: %d  scope=%d..%d\n", {s[2], s[3], s[5], s[6]})
+	result = append(result, {s[2], s[3], DECL_TYPE})
       end if
-      result &= {s[2], s[3]}
       if length(s) >= 6 and pos >= s[5] and pos <= s[6] then -- in scope?
         for j = 1 to length(s[4]) do -- display arguments
           if length(s[4][j]) >= 4 and pos >= s[4][j][4] then
             --printf(1, "  %s %s: %d\n", {s[4][j][1], s[4][j][2], s[4][j][3]})
-            result &= {s[4][j][2], s[4][j][3]}
+            result = append(result, {s[4][j][2], s[4][j][3], type_to_decl(s[4][j][1])})
           end if
         end for
         result &= get_decls(s[5..$], pos, name_space, filter)
@@ -1700,7 +1725,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
       -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
       if length(s) >= 8 and pos >= s[7] and pos <= s[8] then -- in scope?
         --printf(1, "for %s: %d\n", {s[2], s[3]})
-        result &= {s[2], s[3]}
+        result = append(result, {s[2], s[3], DECL_ATOM})
         result &= get_decls(s[7..$], pos, name_space, filter)
       end if
 
@@ -1725,11 +1750,11 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
       -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
       --             {"name", pos, scope-start, [expr]}...}
       if length(s[2]) then -- has typename
-        result &= {s[2], s[3]}
+        result = append(result, {s[2], s[3], DECL_TYPE})
       end if
       for j = 6 to length(s) do
         if length(s[j]) >= 3 and pos >= s[j][3] then -- in scope?
-          result &= {s[j][1], s[j][2]}
+          result = append(result, {s[j][1], s[j][2], DECL_ENUM})
         end if
       end for
 
@@ -1761,7 +1786,7 @@ global function get_subroutines(sequence ast)
       -- {FUNC_DECL, "name", pos,
       --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
       --    scope-start, scope-end, stmts...}
-      result &= {s[2], s[3]}
+      result = append(result, {s[2], s[3]})
     end if
   end for
   return result
@@ -1825,14 +1850,14 @@ function walk_include(sequence path_name, sequence dirent)
       include_flags = {}
       decls = get_decls(cache[state], 0, suggested_namespace, 
                         FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
-      for i = 1 to length(decls) by 2 do
+      for i = 1 to length(decls) do
         --puts(1, "  "&decls[i]&"\n")
-        if length(decls[i]) >= length(suggested_word) and 
-           equal(decls[i][1..length(suggested_word)], suggested_word) then
+        if length(decls[i][1]) >= length(suggested_word) and 
+           equal(decls[i][1][1..length(suggested_word)], suggested_word) then
           --puts(1, dirent[D_NAME]&" matched!\n")
-          suggested_includes &= {decls[i] & " --include "&
-		path_name[length(suggested_path)+2..$], 
-		{cache[state][1], decls[i+1]}}
+          suggested_includes = append(suggested_includes, 
+	    {decls[i][1] & " --include "& path_name[length(suggested_path)+2..$],
+		{cache[state][1], decls[i][2]}, decls[i][3]})
         end if
       end for
     end if

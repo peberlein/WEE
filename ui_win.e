@@ -316,11 +316,7 @@ function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
         text = get_edit_text()
         pos = get_pos()
         word = word_pos(text, pos)
-        tmp = get_subroutines(parse(text, file_name))
-        subs = repeat(0, floor(length(tmp)/2))
-        for i = 1 to length(subs) do
-            subs[i] = {tmp[i*2-1], tmp[i*2]}
-        end for
+	subs = get_subroutines(parse(text, file_name))
         if sorted_subs then
             subs = sort(subs)
         end if
@@ -388,139 +384,6 @@ procedure view_subroutines()
         SubsDialogCallback,
         0)
     subs = {}
-end procedure
-
-
-function CodeDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
-    atom junk, hList, pos, len, item
-    sequence word, text, decls, namespace
-
-    --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
-
-    if iMsg = WM_INITDIALOG then
-        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
-                      WM_SETFONT, captionFont, 0})
-        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDCANCEL}), 
-                      WM_SETFONT, captionFont, 0})
-        hList = c_func(GetDlgItem, {hdlg, DialogListID})
-        junk = c_func(SendMessage, {hList, WM_SETFONT, messageFont, 0})
-
-        text = get_edit_text()
-        pos = get_pos()
-        word = word_pos(text, pos)
-        if length(word) < 4 then 
-            junk = c_func(EndDialog, {hdlg, 0})
-            return 1
-        end if
-        junk = c_func(SendMessage, {hedit, SCI_SETSEL, word[3]-1, word[4]})
-        namespace = word[2]
-        word = word[1]
-
-        decls = get_declarations(parse(text, file_name), pos, namespace)
-        --if length(decls) = 0 then
-            --puts(1, "no decls found for "&word&", suggesting includes...\n")
-            decls &= suggest_includes(word, namespace)
-        --end if
-
-        if length(decls) = 0 then
-            junk = c_func(EndDialog, {hdlg, 0})
-            return 1
-        end if
-
-        for i = 1 to length(decls) by 2 do
-            if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then
-              junk = c_func(SendMessage, {hList, LB_ADDSTRING, 0, alloc_string(decls[i])})
-            end if
-        end for
-        junk = c_func(SendMessage, {hList, LB_SETCURSEL, 0, 0})
-
-    elsif iMsg = WM_COMMAND then
-        if LOWORD(wParam) = IDOK then
-            hList = c_func(GetDlgItem, {hdlg, DialogListID})
-            pos = c_func(SendMessage, {hList, LB_GETCURSEL, 0, 0})
-            len = c_func(SendMessage, {hList, LB_GETTEXTLEN, pos, 0})
-            if pos != -1 and len > 0 then
-              item = allocate(len+1)
-              junk = c_func(SendMessage, {hList, LB_GETTEXT, pos, item})
-              junk = c_func(SendMessage, {hedit, SCI_REPLACESEL, 1, item})
-              free(item)
-            end if
-            junk = c_func(EndDialog, {hdlg, 1})
-            return 1
-        elsif LOWORD(wParam) = IDCANCEL then
-            junk = c_func(EndDialog, {hdlg, 0})
-            return 1
-        end if
-
-    elsif iMsg = WM_CLOSE then --closing dialog
-        junk = c_func(EndDialog, {hdlg, 0})
-    end if
-
-    return 0
-end function
-
-constant CodeDialogCallback = call_back(routine_id("CodeDialogProc"))
-
-procedure ui_view_completions()
-    atom junk
-    sequence text, word, decls, namespace
-    integer pos
-if 0 then
-    junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
---    hcode = CreateDialogIndirectParam(c_func(GetModuleHandle, {NULL}), {
-        --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
-	  {{WS_POPUP, WS_BORDER, WS_SYSMENU, DS_MODALFRAME, WS_CAPTION}, 0,
-         10,10, 100,124, 0, 0, "Completions"},
---	  {{WS_POPUP, WS_BORDER}, 0,
---         10,10, 100,124, 0, 0, "Completions"},
-        --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
-        {{WS_CHILD, WS_VISIBLE, WS_VSCROLL}, WS_EX_CLIENTEDGE,
-         0,0, 100,108, DialogListID, DIALOG_CLASS_LIST, "ListBox"},
-        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
-         4,108, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
-        {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
-         52,108, 44,12, IDOK, DIALOG_CLASS_BUTTON, "OK"}
-        },
-        hMainWnd, 
-        CodeDialogCallback,
-        0)
-    --c_proc(ShowWindow, {hcode, SW_SHOWNORMAL})
-elsif 0 then
-    -- use an overlapped window listbox
-    hcode = CreateWindow({WS_EX_CLIENTEDGE,"LISTBOX", "code",
-		    {WS_BORDER,WS_CHILD,WS_CLIPSIBLINGS,WS_OVERLAPPED,
-                 WS_POPUP,WS_POPUPWINDOW,WS_SYSMENU,WS_VISIBLE,
-                 WS_VSCROLL,LBS_NOTIFY},
-		    100,100,200,200, -- set by resize
-                hMainWnd,
-                NULL,
-                0,
-                NULL})
-    junk = c_func(SendMessage, {hcode, WM_SETFONT, messageFont, 0})
-
-    text = get_edit_text()
-    pos = get_pos()
-    word = word_pos(text, pos)
-    if length(word) = 0 then 
-        return
-    end if
-    junk = c_func(SendMessage, {hedit, EM_SETSEL, word[3]-1, word[4]})
-    namespace = word[2]
-    word = word[1]
-
-    decls = get_declarations(parse(text, file_name), pos, namespace)
-    if length(decls) = 0 then
-        return
-    end if
-
-    for i = 1 to length(decls) by 2 do
-        if length(decls[i]) >= length(word) and equal(decls[i][1..length(word)], word) then
-          junk = c_func(SendMessage, {hcode, LB_ADDSTRING, 0, alloc_string(decls[i])})
-        end if
-    end for
-    junk = c_func(SendMessage, {hcode, LB_SETCURSEL, 0, 0})
-    junk = c_func(SendMessage, {hMainWnd, WM_SETFOCUS, 0, 0})
-end if
 end procedure
 
 
@@ -1122,15 +985,31 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	        toggle_comment()
 		return rc
 	    elsif wParam = Search_Find then
+		sequence s = get_selection()
+		if length(s) then
+		    find_phrase = s
+		end if
 		hFindDlg = FindText(hMainWnd,0,FR_DOWN,find_phrase)
 		return rc
 	    elsif wParam = Search_Find_Next then
-		search_find(find_phrase, 0)
-	        return rc
+		if length(find_phrase) = 0 then
+		    sequence s = get_selection()
+		    if length(s) then
+			find_phrase = s
+		    end if
+		    hFindDlg = FindText(hMainWnd,0,FR_DOWN,find_phrase)
+		else
+		    search_find(find_phrase, 0)
+		end if
+		return rc
 	    elsif wParam = Search_Find_Prev then
 		search_find(find_phrase, 1)
 	        return rc
 	    elsif wParam = Search_Replace then
+		sequence s = get_selection()
+		if length(s) then
+		    find_phrase = s
+		end if
 		hFindDlg = ReplaceText(hMainWnd,0,FR_DOWN,find_phrase,replace_phrase)
 		return rc
 	    elsif wParam = View_Subs then
@@ -1277,12 +1156,12 @@ procedure translate_editor_keys(atom msg)
       elsif wParam = VK_F4 then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Error, 0})
       elsif wParam = VK_F3 then
-	if and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+	if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
           poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
         elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Next, 0})
-        else
           poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
+        else
+          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Next, 0})
         end if
       elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
         poke4(msg, {hMainWnd, WM_COMMAND, View_Declaration, 0})
@@ -1390,11 +1269,11 @@ procedure WinMain()
 -- search menu
     hsearchmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Search_Find, alloc_string("&Find...\tF3")})
+	Search_Find, alloc_string("&Find...\tCtrl+F3")})
     junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Search_Find_Next, alloc_string("Find &Next\tCtrl+F3")})
+	Search_Find_Next, alloc_string("Find &Next\tF3")})
     junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Search_Find_Prev, alloc_string("Find &Previous\tShift+Ctrl+F3")})
+	Search_Find_Prev, alloc_string("Find &Previous\tShift+F3")})
     junk = c_func(AppendMenu, {hsearchmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Search_Replace, alloc_string("&Replace...")})
 -- view menu
