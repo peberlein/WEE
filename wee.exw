@@ -69,6 +69,7 @@ global constant
 --  go back (Esc) after doing View Declaration or Goto Error
 --    if there is a selection, it will be deselected first
 --  line wrap option
+--  autocompletion list shows icons for each type of declaration
 
 
 --  bugs fixed:
@@ -91,18 +92,18 @@ global constant
 --    shift-ctrl-Z does redo
 --    better at locating scintilla library when bound/compiled
 --    run/bind/shroud/translate didn't like spaces in the path
+--    preserve selection during comment/uncomment lines
 
 -- todo:
---  save tabs in conf file? option to restore last tabs?
 --  choose which intepreter to use for run (interpreter_path)
+--  save tabs in conf file? option to restore last tabs?
 --  64-bit safe on Windows (Linux/OSX ok)
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
---    as it is now, its really annoying
+--    as it is now, its really annoying (better with overtyping)
 --  fix brace highlighting in comments and strings
 --  configurable indent size
 --  namespaces might still need to be fixed (include as)
---  put an icon in the completion list for each type of symbol (maybe)
 --  put arguments after each subroutine completion (maybe)
 --  investigate Mike Duffy's scintilla Euphoria Lexer
 --    multicolored brackets and parens
@@ -2366,13 +2367,19 @@ end procedure
 
 -- toggle the comment at the start of each line in selection
 global procedure toggle_comment()
-    integer 
+    integer
+	pos = ssm(SCI_GETCURRENTPOS),
+	anchor = ssm(SCI_GETANCHOR),
+	line_pos = ssm(SCI_LINEFROMPOSITION, pos),
+	line_anchor = ssm(SCI_LINEFROMPOSITION, anchor),
+	col_pos = pos - ssm(SCI_POSITIONFROMLINE, line_pos),
+	col_anchor = anchor - ssm(SCI_POSITIONFROMLINE, line_anchor),
 	line_start = ssm(SCI_LINEFROMPOSITION, ssm(SCI_GETSELECTIONSTART)),
 	line_end = ssm(SCI_LINEFROMPOSITION, ssm(SCI_GETSELECTIONEND)-1)
+    integer uncomment = 1
     if line_end < line_start then
         line_end = line_start
     end if
-    integer pos, uncomment = 1
     -- check to see if all lines are commented
     for i = line_start to line_end do
 	pos = ssm(SCI_POSITIONFROMLINE, i)
@@ -2392,6 +2399,15 @@ global procedure toggle_comment()
         end if
     end for
     ssm(SCI_ENDUNDOACTION)
+    pos = ssm(SCI_POSITIONFROMLINE, line_pos) + col_pos
+    anchor = ssm(SCI_POSITIONFROMLINE, line_anchor) + col_anchor
+    if col_pos != 0 then
+        pos -= uncomment*4-2
+    end if
+    if col_anchor != 0 then
+        anchor -= uncomment*4-2
+    end if
+    ssm(SCI_SETSEL, anchor, pos) 
 end procedure
 
 -------------------------------------------------------------------
