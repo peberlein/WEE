@@ -38,7 +38,7 @@ include wee.exw as wee
 ifdef BITS64 then
 function check_callback_func(atom x)
   if x = 0 then
-    crash("You need a newer 64-bit Euphoria with callback bug fix")
+    crash("You need a newer 64-bit Euphoria with callback bug fix: 4.1.0 Beta 2 or later")
   end if
   return 0
 end function
@@ -50,8 +50,6 @@ c_proc(define_c_proc("",
 end ifdef
 
 
-
-constant cmdline = command_line()
 
 wee_init() -- initialize global variables
 
@@ -318,7 +316,7 @@ function OldViewSubs()
 end function
 
 function RowActivated(atom ctl, atom path, atom col, atom dialog)
-    ? {ctl, path, col, dialog}
+    --? {ctl, path, col, dialog}
     set(dialog, "response", GTK_RESPONSE_OK)
     return 0
 end function
@@ -504,6 +502,11 @@ end function
 function OptionsLineWrap(atom handle)
     line_wrap = gtk:get(handle, "active")
     reinit_all_edits()
+    return 0
+end function
+
+function OptionsReopenTabs(atom handle)
+    reopen_tabs = gtk:get(handle, "active")
     return 0
 end function
 
@@ -795,7 +798,8 @@ add(optionsmenu, {
   createmenuitem("Line Numbers", "OptionsLineNumbers", 0, line_numbers),
   createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs),
   createmenuitem("Colors...", "OptionsColors"),
-  createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap)
+  createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap),
+  createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs)
   })
 set(menuOptions, "submenu", optionsmenu)
 
@@ -1159,14 +1163,8 @@ end procedure
 
 ui_refresh_file_menu(recent_files)
 
--- open files on command line
-if length(cmdline) > 2 then
-  for i = 3 to length(cmdline) do
-    open_file(cmdline[i], 0)
-  end for
-else
-  new_file()
-end if
+-- open files from last time and on command line
+open_tabs()
 
 show_all(win)
 main()

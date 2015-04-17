@@ -50,6 +50,7 @@ constant
     Options_SortedSubs = 603,
     Options_Colors = 604,
     Options_LineWrap = 605,
+    Options_ReopenTabs = 606,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -95,9 +96,6 @@ constant
     ansi_fixed_font = c_func(GetStockObject, {ANSI_FIXED_FONT})
 
 atom captionFont, smCaptionFont, menuFont, statusFont, messageFont
-
-constant cmdline = command_line()
-
 
 
 global procedure ui_update_window_title(sequence file_name)
@@ -1081,6 +1079,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	        line_wrap = not line_wrap
 	        reinit_all_edits()
 	        return c_func(CheckMenuItem, {hoptionsmenu, Options_LineWrap, MF_CHECKED*line_wrap})
+	    elsif wParam = Options_ReopenTabs then
+	        reopen_tabs = not reopen_tabs
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_ReopenTabs, MF_CHECKED*reopen_tabs})
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -1345,6 +1346,8 @@ procedure WinMain()
 	Options_Colors, alloc_string("&Colors...")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
 	Options_LineWrap, alloc_string("Line &Wrap")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
+	Options_ReopenTabs, alloc_string("&Reopen Tabs Next Time")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1435,12 +1438,8 @@ procedure WinMain()
 	abort(1)
     end if
 
-    
-    if length(cmdline) > 2 then
-	open_file(cmdline[3], 0)
-    else
-        new_file()
-    end if
+    -- open files from last time and on command line
+    open_tabs()
 
     --if SetThemeAppProperties != -1 then
     --    c_proc(SetThemeAppProperties, {STAP_ALLOW_NONCLIENT+STAP_ALLOW_CONTROLS})

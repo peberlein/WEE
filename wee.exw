@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.27"
+  version = "0.28"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -70,7 +70,8 @@ global constant
 --    if there is a selection, it will be deselected first
 --  line wrap option
 --  autocompletion list shows icons for each type of declaration
-
+--  Run menu choose which intepreter to use
+--  Option to reopen tabs next time
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -95,7 +96,6 @@ global constant
 --    preserve selection during comment/uncomment lines
 
 -- todo:
---  choose which intepreter to use for run
 --  save tabs in conf file? option to restore last tabs?
 --  64-bit safe on Windows (Linux/OSX ok)
 --  bug with reloading files, first few characters get garbled
@@ -143,7 +143,7 @@ constant
 global constant max_recent_files = 5
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
-global integer font_height, line_numbers, sorted_subs, line_wrap
+global integer font_height, line_numbers, sorted_subs, line_wrap, reopen_tabs
 global sequence file_name, run_file_name, ex_err_name, recent_files
 global integer keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
@@ -155,7 +155,7 @@ global sequence find_phrase, replace_phrase, interpreter
 sequence
 	tab_hedits, tab_file_names, tab_timestamps, 
 	recent_pos, indent_str, tab_arguments, tab_pos_stack
-integer current_tab, modified
+integer current_tab, modified, initial_tab
 atom hedit
 atom ex_err_timestamp
 integer expand_line, last_deleted_char
@@ -166,6 +166,7 @@ sequence calltip_stack -- {calltip_pos, calltip_args...}
 sequence calltip_text -- "routine_name(type1 arg1, ...)"
 sequence wee_conf_filename
 sequence search_idx, search_dat
+sequence tabs_to_open
 
 -- shorthand helper function
 function ssm(integer m, object w=0, object l=0)
@@ -638,6 +639,10 @@ end ifdef
   find_phrase = ""
   replace_phrase = ""
   
+  reopen_tabs = 0
+  tabs_to_open = {}
+  initial_tab = 1
+  
 end procedure
 
 
@@ -656,49 +661,59 @@ global procedure load_wee_conf(sequence wee_conf_file)
             key = l[1..eq-1]
             val = l[eq+1..length(l)-1]
             l = value(val)
-            if equal(key, "x_pos") then
+            if equal(key, "x_pos") and integer(l[2]) then
                 x_pos = l[2]
-            elsif equal(key, "y_pos") then
+            elsif equal(key, "y_pos") and integer(l[2]) then
                 y_pos = l[2]
-            elsif equal(key, "x_size") then
+            elsif equal(key, "x_size") and integer(l[2]) then
                 x_size = l[2]
-            elsif equal(key, "y_size") then
+            elsif equal(key, "y_size") and integer(l[2]) then
                 y_size = l[2]
             elsif equal(key, "recent_file") then
                 recent_files &= {val}
-            elsif equal(key, "recent_pos") then
+            elsif equal(key, "recent_pos") and integer(l[2]) then
                 recent_pos &= l[2]
             elsif equal(key, "font_name") then
                 font_name = val
-            elsif equal(key, "font_height") then
+            elsif equal(key, "font_height") and integer(l[2]) then
                 font_height = l[2]
                 if font_height < 0 then 
                     font_height = -floor((font_height*96+36)/72)
                 end if
-            elsif equal(key, "line_numbers") then
+            elsif equal(key, "line_numbers") and integer(l[2]) then
                 line_numbers = l[2]
-            elsif equal(key, "normal_color") then
+            elsif equal(key, "normal_color") and integer(l[2]) then
                 normal_color = l[2]
-            elsif equal(key, "background_color") then
+            elsif equal(key, "background_color") and integer(l[2]) then
                 background_color = l[2]
-            elsif equal(key, "comment_color") then
+            elsif equal(key, "comment_color") and integer(l[2]) then
                 comment_color = l[2]
-            elsif equal(key, "keyword_color") then
+            elsif equal(key, "keyword_color") and integer(l[2]) then
                 keyword_color = l[2]
-            elsif equal(key, "builtin_color") then
+            elsif equal(key, "builtin_color") and integer(l[2]) then
                 builtin_color = l[2]
-            elsif equal(key, "number_color") then
+            elsif equal(key, "number_color") and integer(l[2]) then
                 number_color = l[2]
-            elsif equal(key, "linenumber_color") then
+            elsif equal(key, "linenumber_color") and integer(l[2]) then
                 linenumber_color = l[2]
-            elsif equal(key, "bracelight_color") then
+            elsif equal(key, "bracelight_color") and integer(l[2]) then
                 bracelight_color = l[2]
-            elsif equal(key, "sorted_subs") then
+            elsif equal(key, "sorted_subs") and integer(l[2]) then
                 sorted_subs = l[2]
-            elsif equal(key, "line_wrap") then
+            elsif equal(key, "line_wrap") and integer(l[2]) then
                 line_wrap = l[2]
             elsif equal(key, "interpreter") then
                 interpreter = val
+            elsif equal(key, "reopen_tabs") and integer(l[2]) then
+                reopen_tabs = l[2]
+            elsif equal(key, "open_tab") then
+		if length(l[2]) = 3 and sequence(l[2][1]) and integer(l[2][2]) and integer(l[2][3]) then
+		    tabs_to_open = append(tabs_to_open, l[2])
+		else
+		    tabs_to_open = append(tabs_to_open, val)
+		end if
+            elsif equal(key, "initial_tab") and integer(l[2]) then
+                initial_tab = l[2]
             end if
         end if
         l = gets(f)
@@ -730,6 +745,19 @@ global procedure save_wee_conf(sequence wee_conf_file)
     printf(f, "sorted_subs=%d\n", {sorted_subs})
     printf(f, "line_wrap=%d\n", {line_wrap})
     printf(f, "interpreter=%s\n", {interpreter})
+    printf(f, "reopen_tabs=%d\n", {reopen_tabs})
+    printf(f, "initial_tab=%d\n", {current_tab})
+    if reopen_tabs then
+        for i = 1 to length(tab_file_names) do
+	    if length(tab_file_names[i]) then
+		hedit = tab_hedits[i]
+	        printf(f, "open_tab={\"%s\",%d,%d}\n", {
+		    tab_file_names[i],
+		    ssm(SCI_GETCURRENTPOS),
+		    ssm(SCI_GETFIRSTVISIBLELINE)})
+	    end if
+        end for
+    end if
     close(f)
 end procedure
 
@@ -1201,7 +1229,7 @@ end procedure
 -- returns tab index of opened file, or 0 if cancelled
 global function open_file(sequence file_name, integer reload)
     atom result, text_buffer
-    integer fn, tab
+    integer fn, tab, initial_pos = 0, first_visible_line = 0
     object temp, s
     sequence text
 
@@ -1215,6 +1243,15 @@ global function open_file(sequence file_name, integer reload)
             end for
             return 0
         end if
+    elsif sequence(file_name[1]) then
+        -- filename is {"file_name", initial_pos, first_visible_line}
+        if length(file_name) >= 2 and integer(file_name[2]) then
+	    initial_pos = file_name[2]
+        end if
+        if length(file_name) >= 3 and integer(file_name[3]) then
+	    first_visible_line = file_name[3]
+	end if
+        file_name = file_name[1]
     end if
     
     file_name = canonical_path(file_name, 0, CORRECT)
@@ -1258,12 +1295,29 @@ global function open_file(sequence file_name, integer reload)
       update_tab_name()
     end if
     
-    result = ssm(SCI_SETSEL)
+    result = ssm(SCI_SETFIRSTVISIBLELINE, first_visible_line)
+    result = ssm(SCI_SETEMPTYSELECTION, initial_pos)
     result = ssm(SCI_EMPTYUNDOBUFFER)
 
     add_recent_file(file_name)
     return tab
 end function
+
+-- open files on startup and saved tabs
+global procedure open_tabs()
+    sequence cmdline
+    cmdline = command_line()
+    tabs_to_open &= cmdline[3..$]
+    -- open files on command line
+    for i = 1 to length(tabs_to_open) do
+	open_file(tabs_to_open[i], 0)
+    end for
+    if length(tab_file_names) != 0 then
+	select_tab(initial_tab)
+    else
+	new_file()
+    end if
+end procedure
 
 procedure save_file()
     atom fn, junk
