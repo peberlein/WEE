@@ -1312,7 +1312,7 @@ global procedure open_tabs()
     for i = 1 to length(tabs_to_open) do
 	open_file(tabs_to_open[i], 0)
     end for
-    if length(tab_file_names) != 0 then
+    if length(tab_file_names) != 0 and reopen_tabs then
 	select_tab(initial_tab)
     else
 	new_file()
