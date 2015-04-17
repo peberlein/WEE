@@ -96,7 +96,6 @@ global constant
 --    preserve selection during comment/uncomment lines
 
 -- todo:
---  save tabs in conf file? option to restore last tabs?
 --  64-bit safe on Windows (Linux/OSX ok)
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
@@ -1053,6 +1052,8 @@ global function search_find(sequence phrase, integer backward = 0)
 	    return 0
 	end if
     end if
+    -- scroll to left side first
+    ssm(SCI_SETXOFFSET, 0)
     -- set selection from target
     ssm(SCI_SETSEL, ssm(SCI_GETTARGETSTART), ssm(SCI_GETTARGETEND))
     
