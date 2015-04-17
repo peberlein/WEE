@@ -928,6 +928,7 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
     elsif iMsg = WM_DESTROY then
 	c_proc(PostQuitMessage, {0})
 	get_window_size()
+	save_wee_conf(wee_conf_filename)
 	return rc
     elsif iMsg = WM_SIZE then  --resize the rich edit control to fit the window
 	c_proc(MoveWindow, {hedit, 0, tab_h, LOWORD(lParam), HIWORD(lParam)-tab_h, 1})
@@ -1393,6 +1394,7 @@ procedure WinMain()
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineNumbers, MF_CHECKED*line_numbers}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineWrap, MF_CHECKED*line_wrap})
+    c_func(CheckMenuItem, {hoptionsmenu, Options_ReopenTabs, MF_CHECKED*reopen_tabs})
     c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, 
 	find(interpreter, {"euiw", "eui", "exw", "ex"})+Run_euiw-1, MF_BYCOMMAND})
 
@@ -1465,4 +1467,3 @@ end procedure
 
 wee_init()
 WinMain()
-save_wee_conf(wee_conf_filename)

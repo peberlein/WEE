@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.28"
+  version = "0.29"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -94,6 +94,7 @@ global constant
 --    better at locating scintilla library when bound/compiled
 --    run/bind/shroud/translate didn't like spaces in the path
 --    preserve selection during comment/uncomment lines
+--    fix crash + lose wee_conf when closing on Windows with reopen_tabs=1
 
 -- todo:
 --  64-bit safe on Windows (Linux/OSX ok)
@@ -647,7 +648,7 @@ end procedure
 
 
 global procedure load_wee_conf(sequence wee_conf_file)
-    integer f, eq
+    integer f, eq, int_ok
     object l
     sequence key, val
     f = open(wee_conf_file, "r")
@@ -660,58 +661,63 @@ global procedure load_wee_conf(sequence wee_conf_file)
             key = l[1..eq-1]
             val = l[eq+1..length(l)-1]
             l = value(val)
-            if equal(key, "x_pos") and integer(l[2]) then
+            int_ok = (l[1] = 0 and integer(l[2]))
+            if equal(key, "x_pos") and int_ok then
                 x_pos = l[2]
-            elsif equal(key, "y_pos") and integer(l[2]) then
+            elsif equal(key, "y_pos") and int_ok then
                 y_pos = l[2]
-            elsif equal(key, "x_size") and integer(l[2]) then
+            elsif equal(key, "x_size") and int_ok then
                 x_size = l[2]
-            elsif equal(key, "y_size") and integer(l[2]) then
+            elsif equal(key, "y_size") and int_ok then
                 y_size = l[2]
             elsif equal(key, "recent_file") then
                 recent_files &= {val}
-            elsif equal(key, "recent_pos") and integer(l[2]) then
+            elsif equal(key, "recent_pos") and int_ok then
                 recent_pos &= l[2]
             elsif equal(key, "font_name") then
                 font_name = val
-            elsif equal(key, "font_height") and integer(l[2]) then
+            elsif equal(key, "font_height") and int_ok then
                 font_height = l[2]
                 if font_height < 0 then 
                     font_height = -floor((font_height*96+36)/72)
                 end if
-            elsif equal(key, "line_numbers") and integer(l[2]) then
+            elsif equal(key, "line_numbers") and int_ok then
                 line_numbers = l[2]
-            elsif equal(key, "normal_color") and integer(l[2]) then
+            elsif equal(key, "normal_color") and int_ok then
                 normal_color = l[2]
-            elsif equal(key, "background_color") and integer(l[2]) then
+            elsif equal(key, "background_color") and int_ok then
                 background_color = l[2]
-            elsif equal(key, "comment_color") and integer(l[2]) then
+            elsif equal(key, "comment_color") and int_ok then
                 comment_color = l[2]
-            elsif equal(key, "keyword_color") and integer(l[2]) then
+            elsif equal(key, "keyword_color") and int_ok then
                 keyword_color = l[2]
-            elsif equal(key, "builtin_color") and integer(l[2]) then
+            elsif equal(key, "builtin_color") and int_ok then
                 builtin_color = l[2]
-            elsif equal(key, "number_color") and integer(l[2]) then
+            elsif equal(key, "number_color") and int_ok then
                 number_color = l[2]
-            elsif equal(key, "linenumber_color") and integer(l[2]) then
+            elsif equal(key, "linenumber_color") and int_ok then
                 linenumber_color = l[2]
-            elsif equal(key, "bracelight_color") and integer(l[2]) then
+            elsif equal(key, "bracelight_color") and int_ok then
                 bracelight_color = l[2]
-            elsif equal(key, "sorted_subs") and integer(l[2]) then
+            elsif equal(key, "sorted_subs") and int_ok then
                 sorted_subs = l[2]
-            elsif equal(key, "line_wrap") and integer(l[2]) then
+            elsif equal(key, "line_wrap") and int_ok then
                 line_wrap = l[2]
             elsif equal(key, "interpreter") then
                 interpreter = val
-            elsif equal(key, "reopen_tabs") and integer(l[2]) then
+            elsif equal(key, "reopen_tabs") and int_ok then
                 reopen_tabs = l[2]
             elsif equal(key, "open_tab") then
 		if length(l[2]) = 3 and sequence(l[2][1]) and integer(l[2][2]) and integer(l[2][3]) then
 		    tabs_to_open = append(tabs_to_open, l[2])
 		else
-		    tabs_to_open = append(tabs_to_open, val)
+		    tabs_to_open = append(tabs_to_open, {val, 0, 0})
 		end if
-            elsif equal(key, "initial_tab") and integer(l[2]) then
+	    elsif equal(key, "open_tab_pos") and int_ok then
+	        tabs_to_open[$][2] = l[2]
+	    elsif equal(key, "open_tab_line") and int_ok then
+	        tabs_to_open[$][3] = l[2]
+            elsif equal(key, "initial_tab") and int_ok then
                 initial_tab = l[2]
             end if
         end if
@@ -750,7 +756,7 @@ global procedure save_wee_conf(sequence wee_conf_file)
         for i = 1 to length(tab_file_names) do
 	    if length(tab_file_names[i]) then
 		hedit = tab_hedits[i]
-	        printf(f, "open_tab={\"%s\",%d,%d}\n", {
+	        printf(f, "open_tab=%s\nopen_tab_pos=%d\nopen_tab_line=%d\n", {
 		    tab_file_names[i],
 		    ssm(SCI_GETCURRENTPOS),
 		    ssm(SCI_GETFIRSTVISIBLELINE)})
