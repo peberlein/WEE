@@ -461,6 +461,7 @@ function character_literal()
   end if
   if idx > length(text) then
     error("unexpected end of file")
+    return c
   end if
   if text[idx] != '\'' then
     tok_idx = idx
@@ -480,8 +481,6 @@ function filename()
   end while
   return s
 end function
-
-
 
 
 
@@ -1919,4 +1918,3 @@ global function parse_argument_position(sequence source_text)
   ? tok
   return arg
 end function
-
