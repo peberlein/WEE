@@ -32,6 +32,7 @@
 --include file,e -- for walk_dir and dir
 include std/filesys.e
 include std/os.e
+include std/text.e
 
 constant 
     OE4 = 1, -- enable OpenEuphoria 4 syntax
@@ -483,6 +484,45 @@ function filename()
 end function
 
 
+-- returns a sequence of paths from the eu.cfg
+-- name is path to eu.cfg file, mode can be "interpret", "translate", "bind"
+global function parse_eu_cfg(sequence name, sequence mode="interpret")
+    integer fd, section_ok = 1
+    object line
+    sequence result = {}
+    sequence allowed_sections = {"[all]", "["&mode&"]"}
+    ifdef WINDOWS then
+	allowed_sections &= {"[windows]", "["&mode&":windows]"}
+    end ifdef
+    ifdef UNIX then
+	allowed_sections &= {"[unix]", "["&mode&":unix]"}
+    end ifdef
+    
+    fd = open(name, "r")
+    if fd = -1 then return {} end if
+    line = gets(fd)
+    while sequence(line) do
+	line = trim(line)
+        if length(line) then
+	    if line[1] = '-' then
+	        -- comment or compiler option, ignore it
+	    elsif line[1] = '[' then
+	        -- section
+	        section_ok = find(line, allowed_sections)
+	    elsif section_ok then
+	        result = append(result, line)
+	    end if
+        end if
+        line = gets(fd)
+    end while
+    close(fd)
+    return result
+end function
+
+-- TODO: return a list of paths
+function locate_eu_cfg(sequence current_dir)
+    return {}
+end function
 
 -- returns a unique timestamp for filename, or -1 if doesn't exist
 global function get_timestamp(sequence filename)
@@ -536,11 +576,29 @@ function include_file(sequence filename)
   tmp = filename
   ts = get_timestamp(tmp)
   if ts = -1 and not equal(source_filename, "<none>") then
+    -- checks for the include file in the same directory as the parent
     tmp = dirname(source_filename) & SLASH & tmp
     ts = get_timestamp(tmp)
+    --printf(1, "%s %d\n", {tmp, ts})
+    if ts = -1 then
+	-- search for a eu.cfg in the same directory as the parent?
+	tmp = dirname(source_filename) & SLASH & "eu.cfg"
+	paths = parse_eu_cfg(tmp)
+	for i = 1 to length(paths) do
+	    tmp = paths[i]
+	    if tmp[$] != SLASH then
+	        tmp &= SLASH
+	    end if
+	    tmp &= filename
+	    ts = get_timestamp(tmp)
+	    if ts != -1 then
+	        exit
+	    end if
+	end for
+    end if
   end if
-  --printf(1, "%s %d\n", {tmp, ts})
   if ts = -1 then
+    -- search standard include paths (of the editor interpreter instance)
     paths = include_paths(0)
     for i = 1 to length(paths) do
         tmp = paths[i]
