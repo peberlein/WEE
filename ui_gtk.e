@@ -25,6 +25,7 @@
 
 public include std/machine.e
 public include std/error.e
+include std/get.e
 include std/regex.e
 include std/sort.e
 include scintilla.e
@@ -456,10 +457,21 @@ function ColorButton(atom ctl, atom w)
     return 0
 end function
 
+function BoldToggle(atom ctl, atom flag)
+    if gtk:get(ctl, "active") then
+	bold_flags = or_bits(bold_flags, flag)
+    else
+	bold_flags = and_bits(bold_flags, not_bits(flag))
+    end if
+    reinit_all_edits()
+    return 0
+end function
+
 constant color_button = call_back(routine_id("ColorButton"))
+constant bold_toggle = call_back(routine_id("BoldToggle"))
 
 function OptionsColors()
-    atom dialog, vbox
+    atom dialog, grid
     
     dialog = create(GtkDialog)
     set(dialog, "default size", 200, 300)
@@ -469,18 +481,43 @@ function OptionsColors()
     set(dialog, "default response", GTK_RESPONSE_OK)
     set(dialog, "modal", TRUE)
     
-    vbox = create(GtkBox, VERTICAL)
-    add(gtk:get(dialog, "content area"), vbox)
+    grid = create(GtkGrid, VERTICAL)
+    add(gtk:get(dialog, "content area"), grid)
     
-    pack(vbox, create(GtkButton, "Normal", color_button, 1))
-    pack(vbox, create(GtkButton, "Background", color_button, 2))
-    pack(vbox, create(GtkButton, "Comment", color_button, 3))
-    pack(vbox, create(GtkButton, "String", color_button, 4))
-    pack(vbox, create(GtkButton, "Keyword", color_button, 5))
-    pack(vbox, create(GtkButton, "Built-in", color_button, 6))
-    pack(vbox, create(GtkButton, "Number", color_button, 7))
-    pack(vbox, create(GtkButton, "Brace Highlight", color_button, 8))
-    pack(vbox, create(GtkButton, "Line Number", color_button, 9))
+    set(grid, {
+	{"row spacing", 2},
+	{"column spacing", 2},
+	{"attach", create(GtkButton, "Normal", color_button, 1), 1, 2, 1, 1},
+	{"attach", create(GtkButton, "Background", color_button, 2), 1, 3, 1, 1},
+	{"attach", create(GtkButton, "Comment", color_button, 3), 1, 4, 1, 1},
+	{"attach", create(GtkButton, "String", color_button, 4), 1, 5, 1, 1},
+	{"attach", create(GtkButton, "Keyword", color_button, 5), 1, 6, 1, 1},
+	{"attach", create(GtkButton, "Built-in", color_button, 6), 1, 7, 1, 1},
+	{"attach", create(GtkButton, "Number", color_button, 7), 1, 8, 1, 1},
+	{"attach", create(GtkButton, "Brace Highlight", color_button, 8), 1, 9, 1, 1},
+	{"attach", create(GtkButton, "Line Number", color_button, 9), 1, 10, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, 1)}}, 
+	    bold_toggle, 1), 2, 2, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, 2)}}, 
+	    bold_toggle, 2), 2, 4, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, 4)}}, 
+	    bold_toggle, 4), 2, 5, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, 8)}}, 
+	    bold_toggle, 8), 2, 6, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, #10)}}, 
+	    bold_toggle, #10), 2, 7, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, #20)}}, 
+	    bold_toggle, #20), 2, 8, 1, 1},
+	{"attach", create(GtkCheckButton, {
+	    {"label", "Bold"}, {"active", 0 != and_bits(bold_flags, #40)}}, 
+	    bold_toggle, #40), 2, 9, 1, 1}
+	})
     
     show_all(dialog)
     set(dialog, "run")
@@ -510,35 +547,47 @@ function OptionsReopenTabs(atom handle)
     return 0
 end function
 
+function OptionsCompleteStatements(atom handle)
+    complete_statements = gtk:get(handle, "active")
+    return 0
+end function
+
+function OptionsCompleteBraces(atom handle)
+    complete_braces = gtk:get(handle, "active")
+    return 0
+end function
+
+
 function RunStart(atom ctl)
     object lbl = gtk:get(ctl, "label")
+    sequence cmd
 
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
     end if
     
+    run_file_name = file_name
+    chdir(dirname(run_file_name))
     if match("Start", lbl) = 1 then
-	run_file_name = file_name
 	reset_ex_err()
-	chdir(dirname(run_file_name))
-	if equal(lbl, "Start") then
-	    system(interpreter & " \"" & run_file_name & "\"")
-	else -- with arguments
+	cmd = get_eu_bin(interpreter) & ' ' & quote_spaces(file_name)
+	if not equal(lbl, "Start") then -- with arguments
 	    if length(get_tab_arguments()) = 0 then
 		if RunSetArguments() then
 		    return 0
 		end if
 	    end if
-	    system(interpreter & " \"" & run_file_name & "\" " & get_tab_arguments())
+	    cmd &= ' ' & get_tab_arguments()
 	end if
+	system(cmd)
 	check_ex_err()
 	
     elsif equal(lbl, "Bind") then
-	system("eubind \"" & file_name & "\"")
+	system(get_eu_bin("eubind") & ' ' & quote_spaces(file_name))
     elsif equal(lbl, "Shroud") then
-	system("eushroud \"" & file_name & "\"")
+	system(get_eu_bin("eushroud") & ' ' & quote_spaces(file_name))
     elsif equal(lbl, "Translate") then
-	system("euc \"" & file_name & "\"")
+	system(get_eu_bin("euc") & ' ' & quote_spaces(file_name))
     else
 	crash("Unable to get menu label")
     end if
@@ -652,7 +701,7 @@ constant
   win = create(GtkWindow),
   group = create(GtkAccelGroup),
   panel = create(GtkBox, VERTICAL)
-
+set(win, "icon", join_path({wee_path, "wee.ico"}))
 set(win, "border width", 0)
 connect(win, "destroy", main_quit)
 connect(win, "configure-event", call_back(routine_id("configure_event")))
@@ -665,14 +714,16 @@ set(win, "default size", x_size, y_size)
 set(win, "move", x_pos, y_pos)
 
 constant
-  about_dialog = sets(create(GtkAboutDialog), {
+  about_dialog = create(GtkAboutDialog, {
     {"transient for", win},
+    {"name", "about:dialog"},
     {"program name", window_title},
     {"comments", "A small editor for Euphoria programming."},
     {"version", wee:version},
     {"authors", {author, "Powered by EuGTK http://sites.google.com/site/euphoriagtk/Home/"}},
     {"website", "https://github.com/peberlein/WEE/"},
-    {"website label", "Wee on GitHub"}
+    {"website label", "Wee on GitHub"},
+    {"logo", create(GdkPixbuf, join_path({wee_path, "wee.ico"}))}
   })
 
 constant
@@ -799,7 +850,9 @@ add(optionsmenu, {
   createmenuitem("Sort View Subroutines", "OptionsSortedSubs", 0, sorted_subs),
   createmenuitem("Colors...", "OptionsColors"),
   createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap),
-  createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs)
+  createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs),
+  createmenuitem("Complete Statements", "OptionsCompleteStatements", 0, complete_statements),
+  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces)
   })
 set(menuOptions, "submenu", optionsmenu)
 
@@ -867,7 +920,6 @@ connect(notebook, "button-press-event", call_back(routine_id("PopupTabMenu")))
 show(status_label)
 set(notebook, "action widget", status_label, GTK_PACK_END)
 
-
 --------------------------------------------------
 
 sequence ui_hedits
@@ -882,8 +934,15 @@ end function
 
 --------------------------------------------------
 
+constant 
+  gtk_label_set_text = define_proc("gtk_label_set_text", {P,P})
+
 global procedure ui_update_status(sequence status)
-  set(status_label, "text", status)
+  atom text
+  text = allocate_string(status)
+  c_proc(gtk_label_set_text, {status_label, text})
+  free(text)
+  --set(status_label, "text", status)
 end procedure
 
 function file_open_recent(atom handle, integer idx)
@@ -954,7 +1013,10 @@ constant filter1 = sets(create(GtkFileFilter), {
     {"name", "Euphoria files"},
     {"add pattern", "*.e"},
     {"add pattern", "*.ex"},
-    {"add pattern", "*.exw"}
+    {"add pattern", "*.exw"},
+    {"add pattern", "*.ew"},
+    {"add pattern", "ex.err"},
+    {"add pattern", "eu.cfg"}
     })
 
 constant filter2 = sets(create(GtkFileFilter), {

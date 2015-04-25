@@ -51,6 +51,8 @@ constant
     Options_Colors = 604,
     Options_LineWrap = 605,
     Options_ReopenTabs = 606,
+    Options_CompleteStatements = 607,
+    Options_CompleteBraces = 608,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -59,7 +61,7 @@ constant
     Select_Prev_Tab = 812
 
 constant file_filters = allocate_string(
-	"Euphoria files (*.ex,*.exw,*.e,*.ew)"&0&"*.EX;*.EXW;*.E;*.EW;ex.err"&0&
+	"Euphoria files (*.ex,*.exw,*.e,*.ew)"&0&"*.EX;*.EXW;*.E;*.EW;ex.err;eu.cfg"&0&
 	"Text or Document files (*.txt,*.doc)"&0&"*.TXT;*.DOC"&0&
 	"All files (*.*)"&0&"*.*"&0&0)
     
@@ -620,27 +622,27 @@ procedure run_start(integer with_args)
     run_file_name = file_name
     reset_ex_err()
 
-    args = ""
+    args = quote_spaces(run_file_name)
     if with_args then
 	if length(get_tab_arguments()) = 0 then
 	    run_arguments()
 	end if
-        args = get_tab_arguments()
+        args &= ' ' & get_tab_arguments()
     end if
 
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
-	alloc_string(interpreter),
-	alloc_string("\"" & run_file_name & "\" " & args),
+	alloc_string(get_eu_bin(interpreter)),
+	alloc_string(args),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
     if result < 33 then
 	-- shellexecute failed
 	if match(".exw", lower(run_file_name)) or
 	   match(".ew", lower(run_file_name)) then
-	    system("euiw \"" & run_file_name & "\" " & args)
+	    system(quote_spaces(get_eu_bin("euiw")) & ' ' & args)
 	else
-	    system("eui \"" & run_file_name & "\" " & args)
+	    system(quote_spaces(get_eu_bin("eui")) & ' ' & args)
 	end if
     end if
     free_strings()
@@ -655,8 +657,8 @@ procedure run_convert(sequence name, sequence cmd)
     end if
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
-	alloc_string(cmd),
-	alloc_string("\"" & file_name & "\""),
+	alloc_string(get_eu_bin(cmd)),
+	alloc_string(quote_spaces(file_name)),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
     if result < 33 then
@@ -690,9 +692,18 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     if iMsg = WM_INITDIALOG then
         junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
                       WM_SETFONT, captionFont, 0})
-	for id = 1000 to 1008 do
+	for id = 1000 to 1016 do
 	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, id}), 
                       WM_SETFONT, captionFont, 0})
+	end for
+	for i = 0 to 6 do
+	    if and_bits(bold_flags, power(2, i)) then
+	        junk = BST_CHECKED
+	    else
+		junk = BST_UNCHECKED
+	    end if
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1010+i}),
+		BM_SETCHECK, junk, 0})
 	end for
 
     elsif iMsg = WM_COMMAND then
@@ -738,6 +749,20 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
             linenumber_color = ChooseColor(hMainWnd, linenumber_color)
             reinit_all_edits()
             return 0
+        elsif LOWORD(wParam) >= 1010 and LOWORD(wParam) <= 1016 then
+            junk = power(2, LOWORD(wParam) - 1010)
+            if and_bits(bold_flags, junk) then
+                bold_flags = and_bits(bold_flags, not_bits(junk))
+                junk = BST_UNCHECKED
+            else
+		bold_flags = or_bits(bold_flags, junk)
+		junk = BST_CHECKED
+            end if
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, LOWORD(wParam)}),
+		BM_SETCHECK, junk, 0})
+	    ? bold_flags
+	    reinit_all_edits()
+	    return 0
         end if
 
     elsif iMsg = WM_CLOSE then --closing dialog
@@ -774,6 +799,22 @@ global procedure choose_colors()
          4,116, 64,12, 1007, DIALOG_CLASS_BUTTON, "Brace Highlight"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
          4,132, 64,12, 1008, DIALOG_CLASS_BUTTON, "Line Number"},
+
+
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,4, 32,12, 1010, DIALOG_CLASS_BUTTON, "Bold"},
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,36, 32,12, 1011, DIALOG_CLASS_BUTTON, "Bold"},
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,52, 32,12, 1012, DIALOG_CLASS_BUTTON, "Bold"},
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,68, 32,12, 1013, DIALOG_CLASS_BUTTON, "Bold"},
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,84, 32,12, 1014, DIALOG_CLASS_BUTTON, "Bold"},
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,100, 32,12, 1015, DIALOG_CLASS_BUTTON, "Bold"},
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         72,116, 32,12, 1016, DIALOG_CLASS_BUTTON, "Bold"},
 
         {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
          4,150, 44,12, IDOK, DIALOG_CLASS_BUTTON, "Close"}
@@ -964,10 +1005,8 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 		junk = save_file_as()
 		return rc
 	    elsif wParam = File_Close then
-                if save_if_modified(1) then
-		    close_tab()
-                end if
-		return rc
+		close_tab()
+                return rc
 	    elsif wParam = File_Exit then
 		return c_func(SendMessage, {hwnd, WM_CLOSE, 0, 0})
 	    elsif wParam = Edit_Undo then
@@ -1083,6 +1122,12 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Options_ReopenTabs then
 	        reopen_tabs = not reopen_tabs
 	        return c_func(CheckMenuItem, {hoptionsmenu, Options_ReopenTabs, MF_CHECKED*reopen_tabs})
+	    elsif wParam = Options_CompleteStatements then
+	        complete_statements = not complete_statements
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteStatements, MF_CHECKED*complete_statements})
+	    elsif wParam = Options_CompleteBraces then
+	        complete_braces = not complete_braces
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteBraces, MF_CHECKED*complete_braces})
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -1349,6 +1394,10 @@ procedure WinMain()
 	Options_LineWrap, alloc_string("Line &Wrap")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
 	Options_ReopenTabs, alloc_string("&Reopen Tabs Next Time")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
+	Options_CompleteStatements, alloc_string("Complete Statements")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
+	Options_CompleteBraces, alloc_string("Complete Braces")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1395,6 +1444,8 @@ procedure WinMain()
     c_func(CheckMenuItem, {hoptionsmenu, Options_SortedSubs, MF_CHECKED*sorted_subs}) 
     c_func(CheckMenuItem, {hoptionsmenu, Options_LineWrap, MF_CHECKED*line_wrap})
     c_func(CheckMenuItem, {hoptionsmenu, Options_ReopenTabs, MF_CHECKED*reopen_tabs})
+    c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteStatements, MF_CHECKED*complete_statements})
+    c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteBraces, MF_CHECKED*complete_braces})
     c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, 
 	find(interpreter, {"euiw", "eui", "exw", "ex"})+Run_euiw-1, MF_BYCOMMAND})
 

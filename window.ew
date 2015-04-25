@@ -805,6 +805,9 @@ global constant
     BM_GETSTATE = #F2,
     BM_SETSTATE = #F3,
     BM_SETSTYLE = #F4,
+    BST_CHECKED = 1,
+    BST_INDETERMINATE = 2,
+    BST_UNCHECKED = 0,
 
 -- Tab Control stuff
     TCS_FORCEICONLEFT = 16,

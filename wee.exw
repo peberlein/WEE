@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.29"
+  version = "0.30"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -71,7 +71,11 @@ global constant
 --  line wrap option
 --  autocompletion list shows icons for each type of declaration
 --  Run menu choose which intepreter to use
+--  Run will choose interpreter location based on eu.cfg include path
 --  Option to reopen tabs next time
+--  Options to disable auto-completing statements or braces
+--  Auto-completion and syntax coloring disabled for non-Euphoria files
+--  Bold options for syntax coloring
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -95,12 +99,14 @@ global constant
 --    run/bind/shroud/translate didn't like spaces in the path
 --    preserve selection during comment/uncomment lines
 --    fix crash + lose wee_conf when closing on Windows with reopen_tabs=1
+--    fix crash when typing character literals with calltip active
+--    GTK version: close tab didn't prompt to save when modified
 
 -- todo:
 --  64-bit safe on Windows (Linux/OSX ok)
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
---    as it is now, its really annoying (better with overtyping)
+--    as it is now, its really annoying (but better with overtyping)
 --  fix brace highlighting in comments and strings
 --  configurable indent size
 --  namespaces might still need to be fixed (include as)
@@ -117,15 +123,20 @@ global constant
 --    disable cut/copy when no selection, or paste with empty clipboard
 --    disable undo/redo when nothing to do
 --    disable go back when nowhere to go back to
+--  old calltips sometimes pop up after a calltip elsewhere is closed
+--    probably due to nesting calltips
+--  will crash by putting a function after sci_notify()  (Linux/OSX 64-bit)
+--    triggered by using Alt+1-9 to change tabs
+--    Euphoria bug?  file a ticket
 
 without warning
 
 include parser.e
 include scintilla.e
-include get.e
+include std/get.e
 include std/filesys.e
 include std/sequence.e
-include misc.e
+include std/text.e
 
 
 -- The ui includes are circular includes: 
@@ -143,19 +154,20 @@ constant
 global constant max_recent_files = 5
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name
-global integer font_height, line_numbers, sorted_subs, line_wrap, reopen_tabs
+global integer font_height, line_numbers, sorted_subs, line_wrap, 
+    reopen_tabs, complete_statements, complete_braces
 global sequence file_name, run_file_name, ex_err_name, recent_files
 global integer keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
-    linenumber_color, bracelight_color
-global sequence find_phrase, replace_phrase, interpreter
+    linenumber_color, bracelight_color, bold_flags
+global sequence find_phrase, replace_phrase, interpreter, wee_path
 
 
 -- local variables
 sequence
 	tab_hedits, tab_file_names, tab_timestamps, 
 	recent_pos, indent_str, tab_arguments, tab_pos_stack
-integer current_tab, modified, initial_tab
+integer current_tab, modified, initial_tab, is_eu_code
 atom hedit
 atom ex_err_timestamp
 integer expand_line, last_deleted_char
@@ -578,6 +590,7 @@ constant             -- colors of various syntax classes
     White = #FFFFFF
 
 global procedure wee_init()
+  sequence cmdline
 
   wee_conf_filename = ""
 
@@ -614,6 +627,8 @@ end ifdef
   expand_line = -1
   insert_chars = ""
   last_deleted_char = 0
+  complete_statements = 1
+  complete_braces = 1
 
   indent_str = repeat(' ', indent_size)
   calltip_args = {}
@@ -632,6 +647,7 @@ end ifdef
   string_color = Blue
   bracelight_color = LightBlue
   linenumber_color = DGray
+  bold_flags = #40
 
   search_idx = {}
   search_dat = {}
@@ -639,10 +655,16 @@ end ifdef
   find_phrase = ""
   replace_phrase = ""
   
-  reopen_tabs = 0
+  reopen_tabs = 1
   tabs_to_open = {}
   initial_tab = 1
+  is_eu_code = 1
   
+  cmdline = command_line()
+  wee_path = canonical_path(dirname(cmdline[2]))
+  if length(wee_path) and wee_path[$] = SLASH then
+      wee_path = wee_path[1..$-1]
+  end if
 end procedure
 
 
@@ -719,6 +741,12 @@ global procedure load_wee_conf(sequence wee_conf_file)
 	        tabs_to_open[$][3] = l[2]
             elsif equal(key, "initial_tab") and int_ok then
                 initial_tab = l[2]
+            elsif equal(key, "complete_statements") and int_ok then
+                complete_statements = l[2]
+            elsif equal(key, "complete_braces") and int_ok then
+                complete_braces = l[2]
+            elsif equal(key, "bold_flags") and int_ok then
+                bold_flags = l[2]
             end if
         end if
         l = gets(f)
@@ -747,6 +775,7 @@ global procedure save_wee_conf(sequence wee_conf_file)
     printf(f, "string_color=#%06x\n", {string_color})
     printf(f, "linenumber_color=#%06x\n", {linenumber_color})
     printf(f, "bracelight_color=#%06x\n", {bracelight_color})
+    printf(f, "bold_flags=#%x\n", {bold_flags})
     printf(f, "sorted_subs=%d\n", {sorted_subs})
     printf(f, "line_wrap=%d\n", {line_wrap})
     printf(f, "interpreter=%s\n", {interpreter})
@@ -763,6 +792,8 @@ global procedure save_wee_conf(sequence wee_conf_file)
 	    end if
         end for
     end if
+    printf(f, "complete_statements=%d\n", {complete_statements})
+    printf(f, "complete_braces=%d\n", {complete_braces})
     close(f)
 end procedure
 
@@ -805,7 +836,12 @@ global procedure init_edit(atom edit)
     ssm(SCI_STYLESETBACK, STYLE_DEFAULT, background_color)
     ssm(SCI_STYLECLEARALL)
 
-    ssm(SCI_SETLEXER, SCLEX_LUA)
+    if is_eu_code then
+	ssm(SCI_SETLEXER, SCLEX_LUA)
+    else
+        ssm(SCI_SETLEXER, SCLEX_NULL)
+	ssm(SCI_CLEARDOCUMENTSTYLE)
+    end if
     ssm(SCI_SETKEYWORDS, 0, 
      "procedure function type end and or xor not if then elsif else for to by do while "&
      "global constant include with without return exit " &
@@ -815,17 +851,25 @@ global procedure init_edit(atom edit)
      )
     ssm(SCI_SETKEYWORDS, 1, get_builtins())
 
+    ssm(SCI_STYLESETBOLD, STYLE_DEFAULT, and_bits(bold_flags, 1))
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, comment_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_COMMENT, 0 != and_bits(bold_flags, 2))
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, comment_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_COMMENTLINE, 0 != and_bits(bold_flags, 2))
     ssm(SCI_STYLESETFORE, SCE_LUA_NUMBER, number_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_NUMBER, 0 != and_bits(bold_flags, 4))
     ssm(SCI_STYLESETFORE, SCE_LUA_WORD, keyword_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_WORD, 0 != and_bits(bold_flags, 8))
     ssm(SCI_STYLESETFORE, SCE_LUA_WORD2, builtin_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_WORD2, 0 != and_bits(bold_flags, #10))
     ssm(SCI_STYLESETFORE, SCE_LUA_STRING, string_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_STRING, 0 != and_bits(bold_flags, #20))
 
     ssm(SCI_STYLESETBACK, STYLE_BRACELIGHT, bracelight_color)
-    ssm(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 1)
+    ssm(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 0 != and_bits(bold_flags, #40))
     
     ssm(SCI_STYLESETFORE, STYLE_LINENUMBER, linenumber_color)
+    ssm(SCI_STYLESETBOLD, STYLE_LINENUMBER, 0 != and_bits(bold_flags, #80))
     ssm(SCI_SETMARGINWIDTHN, 0, 48*line_numbers) -- line numbers margin visible
     ssm(SCI_SETMARGINWIDTHN, 1, 0) -- non-folding symbols margin hidden
     
@@ -1070,16 +1114,19 @@ end function
 -- returns 1 if replace made, otherwise 0
 global function search_replace(sequence phrase)
     integer pos = ssm(SCI_GETTARGETSTART)
-    if pos < ssm(SCI_GETTARGETEND) then
-	-- replace or replace_all
-	ssm(SCI_REPLACETARGET, length(phrase), phrase)
-	-- set the current pos to the end, so that the next
-	-- find doesn't search within the replacement phrase
-	ssm(SCI_SETANCHOR, pos)
-	ssm(SCI_SETCURRENTPOS, pos + length(phrase))
-	return 1
+    if pos >= ssm(SCI_GETTARGETEND) then
+	-- target not set
+	if not equal(get_selection(), find_phrase) then
+	    return 0
+	end if
+	SSM(hedit, SCI_TARGETFROMSELECTION)
     end if
-    return 0
+    -- replace or replace_all
+    ssm(SCI_REPLACETARGET, length(phrase), phrase)
+    -- set the current pos to the end, so that the next
+    -- find doesn't search within the replacement phrase
+    ssm(SCI_SETSEL, pos, pos + length(phrase))
+    return 1
 end function
 
 -- replace all in document, saving the cursor position
@@ -1092,7 +1139,7 @@ global function search_replace_all(sequence what, sequence phrase)
     -- save the current position to be restored later
     ssm(SCI_SETANCHOR, 0)
     ssm(SCI_SETCURRENTPOS, 0)
-    -- search until not found (show error first time only)
+    -- search until not found
     ssm(SCI_BEGINUNDOACTION)
     while search_find(what, 0) do
         search_replace(phrase)
@@ -1165,15 +1212,22 @@ global procedure select_tab(integer tab)
     calltip_pos = -1
     calltip_stack = {}
     calltip_text = ""
-
     ui_select_tab(tab)
     ui_update_window_title(file_name)
     update_status()
 end procedure
 
 global procedure update_tab_name()
+    integer result
     ui_update_window_title(file_name)
     ui_update_tab_name(current_tab, make_tab_name())
+
+    result = find(lower(fileext(file_name)), {"e","ex","ew","exw"}) 
+	or length(file_name) = 0
+    if is_eu_code != result then
+	is_eu_code = result
+	init_edit(hedit)
+    end if
 end procedure
 
 global procedure new_tab(sequence file_name)
@@ -1201,6 +1255,11 @@ end procedure
 
 global procedure close_tab()
     integer tab
+    
+    if save_if_modified(1) = 0 then
+      return -- user cancelled the save
+    end if
+    
     tab = current_tab
     save_recent_pos()
     ui_close_tab(tab)
@@ -1319,10 +1378,11 @@ global procedure open_tabs()
     for i = 1 to length(tabs_to_open) do
 	open_file(tabs_to_open[i], 0)
     end for
-    if length(tab_file_names) != 0 and reopen_tabs then
-	select_tab(initial_tab)
-    else
+    if length(tab_file_names) = 0 then
 	new_file()
+    elsif length(cmdline) < 3 then
+	-- select initial tab if no files on command line
+	select_tab(initial_tab)
     end if
 end procedure
 
@@ -1358,8 +1418,8 @@ global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if canc
     atom result, junk
     sequence text
     
-    if not get_modified() and length(file_name) != 0 then
-       return 1
+    if not get_modified() and (length(file_name) != 0 or confirm) then
+	return 1
     end if
 
     if confirm then
@@ -2373,6 +2433,8 @@ end procedure
 procedure insert_pair()
     integer pos, style, ch
 
+    if not complete_braces then return end if
+
     pos = get_pos()-1
 
     -- avoid inside strings and comments
@@ -2479,6 +2541,38 @@ global procedure toggle_comment()
 end procedure
 
 -------------------------------------------------------------------
+-- eu.cfg handling
+-------------------------------------------------------------------
+
+global function get_eu_bin(sequence bin)
+    sequence paths, try
+    paths = parse_eu_cfg(dirname(file_name) & SLASH & "eu.cfg")
+    paths &= include_paths(0) -- fallback to running interpreter
+    ifdef WINDOWS then
+	bin &= ".exe"
+    end ifdef
+    for i = 1 to length(paths) do
+	try = paths[i]
+	if try[$] = SLASH then
+	    try = try[1..$-1]
+	end if
+        try = canonical_path(try & join_path({"..", "bin", bin}))
+        if file_exists(try) then
+            return try
+        end if
+    end for
+    return bin
+end function
+
+global function quote_spaces(sequence text)
+    if find(' ', text) then
+	return '"' & text & '"'
+    end if
+    return text
+end function
+
+
+-------------------------------------------------------------------
 -- scintilla editor notifications
 -------------------------------------------------------------------
 
@@ -2552,7 +2646,6 @@ procedure log_notification(atom notification)
   end if
 end procedure
 
-
 ifdef BITS64 then
 constant
   NOTIFICATION_CODE = 16,
@@ -2588,10 +2681,10 @@ end function
 global function sci_notify(atom hedit, atom data, atom notification, atom userdata)
   integer code, pos, ch, modifiers, updated, len
   
-  --? {ctl, data, notification, userdata}
   if notification = 0 then return 0 end if
   --log_notification(notification)
   code = peek4u(notification+NOTIFICATION_CODE)
+  --? {hedit, data, notification, userdata, code}
   if code = SCN_UPDATEUI then
     updated = peek4u(notification+NOTIFICATION_UPDATED)
     --? {updated, insert_chars, last_deleted_char}
@@ -2642,16 +2735,18 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 	-- the user retyped the insert character, so delete it
         ssm(SCI_DELETERANGE, get_pos(), 1)
         -- the UPDATEUI will remove the insert_chars[$]
-    elsif ch = ':' then
+    elsif ch = ':' and complete_statements and is_eu_code then
       view_completions()
-    elsif ch = ' ' then
+    elsif ch = ' ' and complete_statements and is_eu_code then
       auto_expand()
-    elsif ch = '\n' then
+    elsif ch = '\n' and complete_statements and is_eu_code then
       auto_indent()
     elsif ch = '(' then
       -- check for displaying subroutine arguments
       insert_pair()
-      view_subroutine_arguments()
+      if complete_statements and is_eu_code then
+        view_subroutine_arguments()    
+      end if
     elsif ch = '{' or ch = '[' then
       insert_pair()
     elsif ch = '"' or ch = '\'' then
