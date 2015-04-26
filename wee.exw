@@ -100,7 +100,8 @@ global constant
 --    preserve selection during comment/uncomment lines
 --    fix crash + lose wee_conf when closing on Windows with reopen_tabs=1
 --    fix crash when typing character literals with calltip active
---    GTK version: close tab didn't prompt to save when modified
+--    GTK version: close tab didn't prompt to save modified files
+--    incorrect tab or new tab selected when reopening tabs
 
 -- todo:
 --  64-bit safe on Windows (Linux/OSX ok)

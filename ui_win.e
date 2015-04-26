@@ -760,7 +760,6 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
             end if
 	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, LOWORD(wParam)}),
 		BM_SETCHECK, junk, 0})
-	    ? bold_flags
 	    reinit_all_edits()
 	    return 0
         end if
