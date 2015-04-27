@@ -726,7 +726,7 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
             reinit_all_edits()
             return 0
         elsif LOWORD(wParam) = 1003 then
-            number_color = ChooseColor(hMainWnd, number_color)
+            string_color = ChooseColor(hMainWnd, string_color)
             reinit_all_edits()
             return 0
         elsif LOWORD(wParam) = 1004 then
@@ -738,7 +738,7 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
             reinit_all_edits()
             return 0
         elsif LOWORD(wParam) = 1006 then
-            string_color = ChooseColor(hMainWnd, string_color)
+            number_color = ChooseColor(hMainWnd, number_color)
             reinit_all_edits()
             return 0
         elsif LOWORD(wParam) = 1007 then
@@ -787,13 +787,13 @@ global procedure choose_colors()
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
          4,36, 64,12, 1002, DIALOG_CLASS_BUTTON, "Comment"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
-         4,52, 64,12, 1003, DIALOG_CLASS_BUTTON, "Number"},
+         4,52, 64,12, 1003, DIALOG_CLASS_BUTTON, "String"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
          4,68, 64,12, 1004, DIALOG_CLASS_BUTTON, "Keyword"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
          4,84, 64,12, 1005, DIALOG_CLASS_BUTTON, "Built-in"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
-         4,100, 64,12, 1006, DIALOG_CLASS_BUTTON, "String"},
+         4,100, 64,12, 1006, DIALOG_CLASS_BUTTON, "Number"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
          4,116, 64,12, 1007, DIALOG_CLASS_BUTTON, "Brace Highlight"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,

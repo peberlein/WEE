@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.30"
+  version = "0.31"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -102,6 +102,9 @@ global constant
 --    fix crash when typing character literals with calltip active
 --    GTK version: close tab didn't prompt to save modified files
 --    incorrect tab or new tab selected when reopening tabs
+--    Cursor color changes based on background (thanks Andreas)
+--    String color not loaded from config file (thanks Andreas)
+--    Fix bold options reversed for String and Number
 
 -- todo:
 --  64-bit safe on Windows (Linux/OSX ok)
@@ -718,6 +721,8 @@ global procedure load_wee_conf(sequence wee_conf_file)
                 builtin_color = l[2]
             elsif equal(key, "number_color") and int_ok then
                 number_color = l[2]
+            elsif equal(key, "string_color") and int_ok then
+                string_color = l[2]
             elsif equal(key, "linenumber_color") and int_ok then
                 linenumber_color = l[2]
             elsif equal(key, "bracelight_color") and int_ok then
@@ -835,6 +840,8 @@ global procedure init_edit(atom edit)
     ssm(SCI_STYLESETSIZE, STYLE_DEFAULT, font_height)
     ssm(SCI_STYLESETFORE, STYLE_DEFAULT, normal_color)
     ssm(SCI_STYLESETBACK, STYLE_DEFAULT, background_color)
+    ssm(SCI_SETCARETFORE, xor_bits(background_color, #FFFFFF))
+    ssm(SCI_SETCARETWIDTH, 2)
     ssm(SCI_STYLECLEARALL)
 
     if is_eu_code then
@@ -857,14 +864,14 @@ global procedure init_edit(atom edit)
     ssm(SCI_STYLESETBOLD, SCE_LUA_COMMENT, 0 != and_bits(bold_flags, 2))
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, comment_color)
     ssm(SCI_STYLESETBOLD, SCE_LUA_COMMENTLINE, 0 != and_bits(bold_flags, 2))
-    ssm(SCI_STYLESETFORE, SCE_LUA_NUMBER, number_color)
-    ssm(SCI_STYLESETBOLD, SCE_LUA_NUMBER, 0 != and_bits(bold_flags, 4))
+    ssm(SCI_STYLESETFORE, SCE_LUA_STRING, string_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_STRING, 0 != and_bits(bold_flags, 4))
     ssm(SCI_STYLESETFORE, SCE_LUA_WORD, keyword_color)
     ssm(SCI_STYLESETBOLD, SCE_LUA_WORD, 0 != and_bits(bold_flags, 8))
     ssm(SCI_STYLESETFORE, SCE_LUA_WORD2, builtin_color)
     ssm(SCI_STYLESETBOLD, SCE_LUA_WORD2, 0 != and_bits(bold_flags, #10))
-    ssm(SCI_STYLESETFORE, SCE_LUA_STRING, string_color)
-    ssm(SCI_STYLESETBOLD, SCE_LUA_STRING, 0 != and_bits(bold_flags, #20))
+    ssm(SCI_STYLESETFORE, SCE_LUA_NUMBER, number_color)
+    ssm(SCI_STYLESETBOLD, SCE_LUA_NUMBER, 0 != and_bits(bold_flags, #20))
 
     ssm(SCI_STYLESETBACK, STYLE_BRACELIGHT, bracelight_color)
     ssm(SCI_STYLESETBOLD, STYLE_BRACELIGHT, 0 != and_bits(bold_flags, #40))
@@ -1216,19 +1223,14 @@ global procedure select_tab(integer tab)
     ui_select_tab(tab)
     ui_update_window_title(file_name)
     update_status()
+
+    is_eu_code = find(lower(fileext(file_name)), {"e","ex","ew","exw"}) 
+	or length(file_name) = 0
 end procedure
 
 global procedure update_tab_name()
-    integer result
     ui_update_window_title(file_name)
     ui_update_tab_name(current_tab, make_tab_name())
-
-    result = find(lower(fileext(file_name)), {"e","ex","ew","exw"}) 
-	or length(file_name) = 0
-    if is_eu_code != result then
-	is_eu_code = result
-	init_edit(hedit)
-    end if
 end procedure
 
 global procedure new_tab(sequence file_name)
@@ -1242,7 +1244,6 @@ global procedure new_tab(sequence file_name)
         current_tab = 0 -- to force select_tab
     else
         hedit = ui_new_tab(make_tab_name())
-        init_edit(hedit)
 
         tab_hedits = append(tab_hedits, hedit)
         tab_file_names = append(tab_file_names, file_name)
@@ -1252,6 +1253,7 @@ global procedure new_tab(sequence file_name)
         tab = length(tab_hedits)
     end if
     select_tab(tab)
+    init_edit(hedit)
 end procedure
 
 global procedure close_tab()
