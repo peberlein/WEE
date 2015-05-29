@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.31"
+  version = "0.32"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -76,6 +76,7 @@ global constant
 --  Options to disable auto-completing statements or braces
 --  Auto-completion and syntax coloring disabled for non-Euphoria files
 --  Bold options for syntax coloring
+--  64-bit supported on Windows (Linux/OSX)
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -107,7 +108,6 @@ global constant
 --    Fix bold options reversed for String and Number
 
 -- todo:
---  64-bit safe on Windows (Linux/OSX ok)
 --  bug with reloading files, first few characters get garbled
 --  expanding "for" should then tab between "=", "to", and "do"
 --    as it is now, its really annoying (but better with overtyping)
