@@ -5,6 +5,8 @@ include wee.exw
 include std/text.e
 include std/filesys.e
 include std/sort.e
+include std/machine.e
+include std/dll.e
 
 -- MenuItem constants
 constant 
@@ -134,11 +136,8 @@ end procedure
 
 global procedure ui_update_tab_name(integer tab, sequence name)
     atom junk, tcitem
-    tcitem = allocate(4+4+4+4+4+4+4)
-    poke4(tcitem, {TCIF_TEXT, 0, 0, alloc_string(name), 0, 0, 0})
-    --tab = c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0})
+    tcitem = allocate_pack("dddsiip", {TCIF_TEXT, 0, 0, name, 0, 0, 0})
     junk = c_func(SendMessage, {htabs, TCM_SETITEMA, tab-1, tcitem})
-    --junk = c_func(SendMessage, {htabs, TCM_HIGHLIGHTITEM, tab, modified})
     free(tcitem)
     free_strings()
 end procedure
@@ -171,14 +170,13 @@ global function ui_new_tab(sequence name)
     atom junk, tcitem, tab, hedit
     tab = c_func(SendMessage, {htabs, TCM_GETITEMCOUNT, 0, 0})
 
-    tcitem = allocate(4+4+4+4+4+4+4)
-    poke4(tcitem, {TCIF_TEXT, 0, 0, alloc_string(name), 0, 0, 0})
+    tcitem = allocate_pack("dddsiip", {TCIF_TEXT, 0, 0, name, 0, 0, 0})
     junk = c_func(SendMessage, {htabs, TCM_INSERTITEMA, tab+(tab!=0), tcitem})
     free(tcitem)
     free_strings()
 
     hedit = CreateWindow({
-    	      0,
+    	    0,
             "Scintilla",
             "",
             {WS_CHILD, WS_VISIBLE, WS_TABSTOP, WS_CLIPCHILDREN},
@@ -193,8 +191,6 @@ end function
 global procedure ui_close_tab(integer tab)
     atom junk
     
-    --tab = c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0})
-
     -- get the edit window handle and destroy it
     junk = c_func(DestroyWindow, {hedit})
     hedit = 0
@@ -516,8 +512,7 @@ procedure process_find(atom struc)
         result += SCFIND_WHOLEWORD
     end if
     junk = c_func(SendMessage, {hedit, SCI_SETSEARCHFLAGS, result, 0})
-    
-    
+
     if and_bits(flags, FR_FINDNEXT) then
 	if search_find(GetFindWhat(struc), backward) = 0 then
 	    result = c_func(MessageBox, {hFindDlg, 
@@ -527,7 +522,7 @@ procedure process_find(atom struc)
 	end if
     elsif and_bits(flags, FR_REPLACE) then
 	result = search_replace(GetReplaceWith(struc))
-	if search_find(GetReplaceWith(struc), backward) = 0 and result = 0 then
+	if search_find(GetFindWhat(struc), backward) = 0 and result = 0 then
 	    result = c_func(MessageBox, {hFindDlg, 
 		  alloc_string("Unable to find a match."),
 		  alloc_string("Replace"),
@@ -686,14 +681,15 @@ constant wee_conf_filename = get_appdata_path() & "\\wee_conf.txt"
 
 function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     atom junk, hEdit, len, buf
+    integer id
 
     --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
 
     if iMsg = WM_INITDIALOG then
         junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
                       WM_SETFONT, captionFont, 0})
-	for id = 1000 to 1016 do
-	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, id}), 
+	for i = 1000 to 1016 do
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, i}), 
                       WM_SETFONT, captionFont, 0})
 	end for
 	for i = 0 to 6 do
@@ -707,50 +703,51 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
 	end for
 
     elsif iMsg = WM_COMMAND then
-        if LOWORD(wParam) = IDOK then
+	id = LOWORD(wParam)
+        if id = IDOK then
             junk = c_func(EndDialog, {hdlg, 1})
             return 1
-        elsif LOWORD(wParam) = IDCANCEL then
+        elsif id = IDCANCEL then
             junk = c_func(EndDialog, {hdlg, 0})
             return 1
-        elsif LOWORD(wParam) = 1000 then
+        elsif id = 1000 then
             normal_color = ChooseColor(hMainWnd, normal_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1001 then
+        elsif id = 1001 then
             background_color = ChooseColor(hMainWnd, background_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1002 then
+        elsif id = 1002 then
             comment_color = ChooseColor(hMainWnd, comment_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1003 then
+        elsif id = 1003 then
             string_color = ChooseColor(hMainWnd, string_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1004 then
+        elsif id = 1004 then
             keyword_color = ChooseColor(hMainWnd, keyword_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1005 then
+        elsif id = 1005 then
             builtin_color = ChooseColor(hMainWnd, builtin_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1006 then
+        elsif id = 1006 then
             number_color = ChooseColor(hMainWnd, number_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1007 then
+        elsif id = 1007 then
             bracelight_color = ChooseColor(hMainWnd, bracelight_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) = 1008 then
+        elsif id = 1008 then
             linenumber_color = ChooseColor(hMainWnd, linenumber_color)
             reinit_all_edits()
             return 0
-        elsif LOWORD(wParam) >= 1010 and LOWORD(wParam) <= 1016 then
-            junk = power(2, LOWORD(wParam) - 1010)
+        elsif id >= 1010 and id <= 1016 then
+            junk = power(2, id - 1010)
             if and_bits(bold_flags, junk) then
                 bold_flags = and_bits(bold_flags, not_bits(junk))
                 junk = BST_UNCHECKED
@@ -758,8 +755,8 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
 		bold_flags = or_bits(bold_flags, junk)
 		junk = BST_CHECKED
             end if
-	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, LOWORD(wParam)}),
-		BM_SETCHECK, junk, 0})
+	    junk = c_func(SendMessage, {
+		c_func(GetDlgItem, {hdlg, id}), BM_SETCHECK, junk, 0})
 	    reinit_all_edits()
 	    return 0
         end if
@@ -860,52 +857,6 @@ procedure init_fonts()
     free(ncm)
 end procedure
 
-procedure choose_font()
-    atom junk, cf, lf, size, lf_facesize, lf_size, hedit
-
-    lf_facesize = 32
-    lf_size = 4*5 + 8 + lf_facesize
-    lf = allocate(lf_size)
-    poke4(lf, {-floor((font_height*96+36)/72),0,0,0,0,0,0})
-    poke(lf+lf_size-lf_facesize, font_name&0)
-
-    size = 4*15
-    cf = allocate(size)
-    poke4(cf,{ -- struct CHOOSEFONT
-        size, -- DWORD lStructSize;
-        hMainWnd, -- hwndOwner;
-        NULL, -- HDC hDC;
-        lf, -- LPLOGFONT lpLogFont;
-        0, 
-        CF_INITTOLOGFONTSTRUCT,
-        0,
-        0,
-        NULL,
-        NULL,
-        NULL,
-        0,
-        0,
-        0})
-    junk = c_func(ChooseFont, {cf})
-    if junk = 1 then
-        font_name = peek_string(lf+lf_size-lf_facesize)
-        font_height = floor(peek4u(cf+16) / 10)
-        --? font_height
-        --printf(1, "height=%d %d width=%d weight=%d facename=%s pointsize=%d\n", {
-        --    peek4s(lf),
-        --   -floor((font_height*96+36)/72),
-        --    peek4u(lf+4),
-        --    peek4u(lf+16),
-        --    font_name,
-        --    peek4u(cf+16)})
-        
-        -- update existing editor windows style
-        reinit_all_edits()
-    end if
-    free(cf)
-    free(lf)
-end procedure
-
 procedure process_dropfiles(atom hDrop)
     integer count, len, size
     atom buf, junk
@@ -933,16 +884,17 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
     atom junk, hwndFrom, code
     integer rc
     rc = 0
-     
+
     if hwnd != hMainWnd then
         --? {hwnd, iMsg, wParam, lParam}
         return c_func(DefWindowProc, {hwnd, iMsg, wParam, lParam})
     end if
     if iMsg = WM_NOTIFY then
+      sequence nmhdr = unpack(lParam, "ppi")
       -- lParam is pointer to NMHDR { HWND hwndFrom; UINT_PTR idFrom; UINT code; }
-      hwndFrom = peek4u(lParam)
-      code = peek4s(lParam+8)
---printf(1, "hwndFrom=%x idFrom=%x code=%x %x %x %x\n", peek4u({lParam,6}))
+      hwndFrom = nmhdr[1]
+      code = nmhdr[3]
+      --printf(1, "hwndFrom=%x idFrom=%x code=%x %x %x\n", nmhdr & {LOWORD(code), HIWORD(code)})
 
       if hwndFrom = hedit then
          sci_notify(c_func(SendMessage, {hedit, SCI_GETDIRECTPOINTER, 0, 0}), 0, lParam, 0)
@@ -953,13 +905,7 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    select_tab(1 + c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0}))
 	elsif code = NM_RCLICK then
 	    rightclick_tab()
-	    --printf(1, "hwndFrom=%x idFrom=%x code=%x %x %x %x\n", peek4u({lParam,6}))
 	end if
-
-      else
-        --? peek4u({lParam, 6})
-        --printf(1, "hwndFrom=%x idFrom=%x code=%x %x %x %x\n", peek4u({lParam,6}))
-
       end if
     end if
 
@@ -1102,7 +1048,12 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	        interpreter = "ex"
 		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
 	    elsif wParam = Options_Font then
-		choose_font()
+	        sequence s = ChooseFont(hMainWnd, font_name, font_height)
+	        if length(s) then
+		    font_name = s[1]
+		    font_height = s[2]
+		    reinit_all_edits()
+	        end if
 		return rc
 	    elsif wParam = Options_LineNumbers then
 	        line_numbers = not line_numbers
@@ -1167,92 +1118,106 @@ end function
 -- rewrite them into WM_COMMAND messages for the main window handle.
 procedure translate_editor_keys(atom msg)
   atom hwnd, iMsg, wParam, lParam
+  sequence m
+  
+  m = unpack(msg, "pdpp")
 
-  hwnd = peek4u(msg)
-  iMsg = peek4u(msg+4)
-  wParam = peek4u(msg+8)
-  lParam = peek4u(msg+12)
-  if hwnd = hedit then
-    if iMsg = WM_CHAR  then
-      --printf(1, "%x %x %x %x\n", {hwnd, iMsg, wParam, lParam})
-      if wParam = 27 then -- Esc
-        poke4(msg, {hMainWnd, WM_COMMAND, View_GoBack, 0})
-      elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) = 0 then
-        -- control key is not pressed
-      elsif wParam = #13 then -- Ctrl+S
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Save, 0})
-      elsif wParam = #6 then -- Ctrl+F
-        poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
-      elsif wParam = #12 then -- Ctrl+R
-        poke4(msg, {hMainWnd, WM_COMMAND, Search_Replace, 0})
-      elsif wParam = #7 then -- Ctrl+G
-	if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-	  poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
-	else
-	  poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Next, 0})
-	end if
-      elsif wParam = #17 then -- Ctrl+W
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
-      elsif wParam = #D then -- Ctrl+M
-        poke4(msg, {hMainWnd, WM_COMMAND, Edit_ToggleComment, 0})
-      elsif wParam = #E then -- Ctrl+N
-        poke4(msg, {hMainWnd, WM_COMMAND, File_New, 0})
-      elsif wParam = #F then -- Ctrl+O
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Open, 0})
-      elsif wParam = #11 then -- Ctrl+Q
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Exit, 0})
-      elsif wParam = VK_SPACE then
-        poke4(msg, {hMainWnd, WM_COMMAND, View_Completions, 0})
-      elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
-      elsif wParam = 25 then -- Ctrl+Y
-        poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
+  hwnd = m[1]
+  iMsg = m[2]
+  wParam = m[3]
+  lParam = m[4]
+  if hwnd != hedit then
+    return
+  end if
+  if iMsg = WM_CHAR  then
+    --printf(1, "%x %x %x %x\n", {hwnd, iMsg, wParam, lParam})
+    if wParam = 27 then -- Esc
+      m = {hMainWnd, WM_COMMAND, View_GoBack, 0}
+    elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) = 0 then
+      -- control key is not pressed
+    elsif wParam = #13 then -- Ctrl+S
+      m = {hMainWnd, WM_COMMAND, File_Save, 0}
+    elsif wParam = #6 then -- Ctrl+F
+      m = {hMainWnd, WM_COMMAND, Search_Find, 0}
+    elsif wParam = #12 then -- Ctrl+R
+      m = {hMainWnd, WM_COMMAND, Search_Replace, 0}
+    elsif wParam = #7 then -- Ctrl+G
+      if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+	m = {hMainWnd, WM_COMMAND, Search_Find_Prev, 0}
+      else
+	m = {hMainWnd, WM_COMMAND, Search_Find_Next, 0}
       end if
-    elsif iMsg = WM_KEYUP then
-      if wParam = VK_F5 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, Run_WithArgs, 0})
-      elsif wParam = VK_F5 then
-        poke4(msg, {hMainWnd, WM_COMMAND, Run_Start, 0})
-      elsif wParam = VK_F4 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, File_Close, 0})
-      elsif wParam = VK_F4 then
-        poke4(msg, {hMainWnd, WM_COMMAND, View_Error, 0})
-      elsif wParam = VK_F3 then
-	if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Prev, 0})
-        elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find, 0})
-        else
-          poke4(msg, {hMainWnd, WM_COMMAND, Search_Find_Next, 0})
-        end if
-      elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, View_Declaration, 0})
-      elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, View_SubArgs, 0})
-      elsif wParam = VK_F2 then
-        poke4(msg, {hMainWnd, WM_COMMAND, View_Subs, 0})
-      elsif wParam = #5A and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, Edit_Redo, 0})
-      elsif wParam = VK_PRIOR and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0})
-      elsif wParam = VK_NEXT and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
-        poke4(msg, {hMainWnd, WM_COMMAND, Select_Next_Tab, 0})
-      elsif wParam = VK_F1 then
-        poke4(msg, {hMainWnd, WM_COMMAND, Help_Context, 0})
-      end if
-    elsif iMsg = WM_SYSCHAR then
-      if wParam >= '1' and wParam <= '9' then
-        poke4(msg, {hMainWnd, WM_COMMAND, wParam - '1' + Select_Tab, 0})
-      end if
+    elsif wParam = #17 then -- Ctrl+W
+      m = {hMainWnd, WM_COMMAND, File_Close, 0}
+    elsif wParam = #D then -- Ctrl+M
+      m = {hMainWnd, WM_COMMAND, Edit_ToggleComment, 0}
+    elsif wParam = #E then -- Ctrl+N
+      m = {hMainWnd, WM_COMMAND, File_New, 0}
+    elsif wParam = #F then -- Ctrl+O
+      m = {hMainWnd, WM_COMMAND, File_Open, 0}
+    elsif wParam = #11 then -- Ctrl+Q
+      m = {hMainWnd, WM_COMMAND, File_Exit, 0}
+    elsif wParam = VK_SPACE then
+      m = {hMainWnd, WM_COMMAND, View_Completions, 0}
+    elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      m = {hMainWnd, WM_COMMAND, Edit_Redo, 0}
+    elsif wParam = 25 then -- Ctrl+Y
+      m = {hMainWnd, WM_COMMAND, Edit_Redo, 0}
+    else
+      return
     end if
-  end if  
+  elsif iMsg = WM_KEYUP then
+    if wParam = VK_F5 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      m = {hMainWnd, WM_COMMAND, Run_WithArgs, 0}
+    elsif wParam = VK_F5 then
+      m = {hMainWnd, WM_COMMAND, Run_Start, 0}
+    elsif wParam = VK_F4 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+      m = {hMainWnd, WM_COMMAND, File_Close, 0}
+    elsif wParam = VK_F4 then
+      m = {hMainWnd, WM_COMMAND, View_Error, 0}
+    elsif wParam = VK_F3 then
+      if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+        m = {hMainWnd, WM_COMMAND, Search_Find_Prev, 0}
+      elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+        m = {hMainWnd, WM_COMMAND, Search_Find, 0}
+      else
+        m = {hMainWnd, WM_COMMAND, Search_Find_Next, 0}
+      end if
+    elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+      m = {hMainWnd, WM_COMMAND, View_Declaration, 0}
+    elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      m = {hMainWnd, WM_COMMAND, View_SubArgs, 0}
+    elsif wParam = VK_F2 then
+      m = {hMainWnd, WM_COMMAND, View_Subs, 0}
+    elsif wParam = #5A and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      m = {hMainWnd, WM_COMMAND, Edit_Redo, 0}
+    elsif wParam = VK_PRIOR and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+      m = {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0}
+    elsif wParam = VK_NEXT and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+      m = {hMainWnd, WM_COMMAND, Select_Next_Tab, 0}
+    elsif wParam = VK_F1 then
+      m = {hMainWnd, WM_COMMAND, Help_Context, 0}
+    else
+      return
+    end if
+  elsif iMsg = WM_SYSCHAR then
+    if wParam >= '1' and wParam <= '9' then
+      m = {hMainWnd, WM_COMMAND, wParam - '1' + Select_Tab, 0}
+    else
+      return
+    end if
+  else
+    return
+  end if
+  --printf(1, "%x %x %x %x\n", m)
+  pack(msg, "pdpp", m)
 end procedure
 
 
 constant AppName = "WeeEditor"
 
 
-procedure WinMain()
+global procedure ui_main()
 -- main routine 
     atom msg
     integer id
@@ -1474,7 +1439,6 @@ procedure WinMain()
                 0,
                 NULL})
     junk = c_func(SendMessage, {hstatus, WM_SETFONT, statusFont, 0})
-    --update_status(0)
 
     htabs = CreateWindow({0,"SysTabControl32", "tabs",
 		    {WS_CHILD,WS_VISIBLE,TCS_FOCUSNEVER},
@@ -1485,6 +1449,7 @@ procedure WinMain()
                 NULL})
     junk = c_func(SendMessage, {htabs, WM_SETFONT, statusFont, 0})
 
+    --printf(1, "hMainWnd=%x hstatus=%x htabs=%x\n", {hMainWnd, hstatus, htabs})
     if hMainWnd = 0 or hstatus = 0 or htabs = 0 then
 	puts(1, "Couldn't CreateWindow\n")
 	abort(1)
@@ -1516,4 +1481,4 @@ procedure WinMain()
 end procedure
 
 wee_init()
-WinMain()
+ui_main()

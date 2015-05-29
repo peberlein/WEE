@@ -141,6 +141,8 @@ include std/get.e
 include std/filesys.e
 include std/sequence.e
 include std/text.e
+include std/machine.e
+include std/error.e
 
 
 -- The ui includes are circular includes: 
@@ -841,6 +843,7 @@ global procedure init_edit(atom edit)
     ssm(SCI_STYLESETFORE, STYLE_DEFAULT, normal_color)
     ssm(SCI_STYLESETBACK, STYLE_DEFAULT, background_color)
     ssm(SCI_SETCARETFORE, xor_bits(background_color, #FFFFFF))
+    ssm(SCI_STYLESETBOLD, STYLE_DEFAULT, and_bits(bold_flags, 1))
     ssm(SCI_SETCARETWIDTH, 2)
     ssm(SCI_STYLECLEARALL)
 
@@ -859,7 +862,6 @@ global procedure init_edit(atom edit)
      )
     ssm(SCI_SETKEYWORDS, 1, get_builtins())
 
-    ssm(SCI_STYLESETBOLD, STYLE_DEFAULT, and_bits(bold_flags, 1))
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, comment_color)
     ssm(SCI_STYLESETBOLD, SCE_LUA_COMMENT, 0 != and_bits(bold_flags, 2))
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENTLINE, comment_color)

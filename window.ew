@@ -1,6 +1,8 @@
-include machine.e
-include dll.e
-include get.e
+-- window.ew
+
+include std/error.e
+include std/machine.e
+include std/dll.e
 
 global function or_all(sequence s)
 -- or together all elements of a sequence
@@ -21,11 +23,266 @@ global function LOWORD(atom x)
     return and_bits(x, #FFFF)
 end function
 
+-- bytes must be a power of 2
+function align(atom ptr, integer bytes)
+    integer result
+    result = and_bits(ptr, bytes - 1)
+    if result then
+        ptr += bytes - result
+    end if
+    return ptr
+end function
+
+-- strings ------------------------------------------------------------------
+sequence strings
+strings = {}
+
+-- allocate string that can be garbage collected later
+global function alloc_string(object str)
+    atom ptr
+    if atom(str) then
+        return str
+    end if
+    ptr = allocate(length(str)+1)
+    strings = append(strings, ptr)
+    poke(ptr, str)
+    poke(ptr + length(str), 0)
+    return ptr
+end function
+
+-- garbage collect strings
+global procedure free_strings()
+    for i = 1 to length(strings) do
+        free(strings[i])
+    end for
+    strings = {}
+end procedure
+
+global function peek_string(atom a)
+    integer i
+    sequence s
+    s = ""
+    if a then
+        i = peek(a)
+        while i do
+            s = append(s, i)
+            a = a + 1
+            i = peek(a)
+        end while
+    end if
+    return s
+end function
+
+
+procedure pokeWideCharString(atom ptr, sequence str)
+    for i = 1 to length(str) by 2 do
+        if i < length(str) then
+            poke4(ptr, str[i] + str[i+1]*#10000)
+        else
+            poke4(ptr, str[i])
+            return
+        end if
+        ptr += 4
+    end for
+    poke(ptr, {0, 0})
+end procedure
+
+global function allocWideCharString(sequence s)
+    atom ptr
+    ptr = allocate(length(s) * 2 + 2)
+    strings = append(strings, ptr)
+    pokeWideCharString(ptr, s)
+    return ptr
+end function
+
+global function peekWideCharString(atom ptr)
+    sequence result
+    integer ch
+    if ptr = 0 then
+        return 0
+    end if
+    result = ""
+    ch = peek2u(ptr)
+    while ch do
+        result &= ch
+        ptr += 2
+        ch = peek2u(ptr)
+    end while
+    return result
+end function
+
+
+-- structs ------------------------------------------------------------------
+
+-- pack/unpack pattern characters
+-- "d" dword  4 bytes
+-- "w" word   2 bytes
+-- "b" byte   1 byte
+-- "i" int    4 bytes
+-- "c" char   1 byte
+-- "l" long long  8 bytes
+-- "p" pointer 4 or 8 bytes
+-- "s" string pointer  4 or 8 bytes (alloc_string'd)
+-- "m" multibyte string pointer
+-- "z" dword  4 bytes, size of struct, must be first in pattern
+-- "$" aligns the total struct size to the size of the largest member
+
+function sizeof(sequence pattern)
+    integer size, x, max_align
+    size = 0
+    max_align = 1
+    for i = 1 to length(pattern) do
+	x = pattern[i]
+        if x = 'b' or x = 'c' then
+            x = 1
+        elsif x = 'w' then
+	    x = 2
+        elsif x = 'd' or x = 'i' or x = 'z' then
+	    x = 4
+        elsif x = 'l' then
+	    x = 8
+        elsif x = 'p' or x = 's' or x = 'm' then
+	    ifdef BITS64 then
+		x = 8
+	    elsedef
+		x = 4
+	    end ifdef
+	elsif x = '$' then
+	    size = align(size, max_align)
+	    exit
+	else
+	    printf(1, "unknown pack char %s\n", {{x}})
+	    x = 0
+        end if
+        size = align(size, x) + x
+        if x > max_align then
+            max_align = x
+        end if
+    end for
+    return size
+end function
+
+global procedure pack(atom ptr, sequence pattern, sequence data)
+    object tmp
+    integer x
+    
+    for i = 1 to length(pattern) do
+        x = pattern[i]
+        tmp = data[i]
+        if x = 's' then
+            tmp = alloc_string(tmp)
+        elsif x = 'm' then
+            tmp = allocWideCharString(tmp)
+        elsif sequence(tmp) then
+            tmp = or_all(tmp)
+        end if
+        if x = 'b' or x = 'c' then
+            poke(ptr, tmp)
+            ptr += 1
+        elsif x = 'w' then
+	    ptr = align(ptr, 2)
+            poke2(ptr, tmp)
+            ptr += 2
+        elsif x = 'd' or x = 'i' or x = 'z' then
+	    ptr = align(ptr, 4)
+            poke4(ptr, tmp)
+            ptr += 4
+        elsif x = 'l' then
+            ifdef BITS64 then
+                ptr = align(ptr, 8)
+                poke8(ptr, tmp)
+            elsedef
+                poke4(ptr, and_bits(tmp, #FFFFFFFF))
+                poke4(ptr + 4, floor(tmp/#100000000))
+            end ifdef
+            ptr += 8
+        elsif x = 'p' or x = 's' or x = 'm' then
+            ifdef BITS64 then
+                ptr = align(ptr, 8)
+		poke8(ptr, tmp)
+		ptr += 8
+	    elsedef
+                ptr = align(ptr, 4)
+		poke4(ptr, tmp)
+		ptr += 4
+	    end ifdef
+	elsif x = '$' then
+	else
+	    printf(1, "unknown pack char %s\n", {{x}})
+        end if
+    end for
+end procedure
+
+global function allocate_pack(sequence pattern, sequence data)
+    atom ptr
+    integer size
+    size = sizeof(pattern)
+    if pattern[1] = 'z' then
+        data = prepend(data, size)
+    end if
+    if pattern[$] = '$' then
+        data = append(data, 0)
+    end if
+    ptr = allocate(size)
+    --printf(1, "ptr=%x pattern=%s size=%d\n", {ptr, pattern, size})
+    pack(ptr, pattern, data)
+    return ptr
+end function
+
+global function unpack(atom ptr, sequence pattern)
+    sequence data
+    object tmp
+    integer x
+    data = repeat(0, length(pattern))
+    for i = 1 to length(pattern) do
+        x = pattern[i]
+        if x = 'b' then
+            data[i] = peek(ptr)
+            ptr += 1
+        elsif x = 'c' then
+            tmp = peek(ptr)
+            ptr += 1
+            data[i] = tmp - 2*and_bits(tmp, #80)
+        elsif x = 'w' then
+	    ptr = align(ptr, 2)
+	    data[i] = peek2u(ptr)
+	    ptr += 2
+	elsif x = 'd' or x = 'z' then
+	    ptr = align(ptr, 4)
+	    data[i] = peek4u(ptr)
+	    ptr += 4
+	elsif x = 'i' then
+	    ptr = align(ptr, 4)
+	    data[i] = peek4s(ptr)
+            ptr += 4
+        elsif x = 'p' or x = 's' or x = 'm' then
+            ifdef BITS64 then
+                ptr = align(ptr, 8)
+		tmp = peek8u(ptr)
+		ptr += 8
+            elsedef
+                ptr = align(ptr, 4)
+		tmp = peek4u(ptr)
+		ptr += 4
+            end ifdef
+            if x = 's' then
+                tmp = peek_string(tmp)
+            elsif x = 'm' then
+                tmp = peekWideCharString(tmp)
+            end if
+            data[i] = tmp
+	elsif x = '$' then
+	else
+	    printf(1, "unknown pack char %s\n", {{x}})
+        end if
+    end for
+    return data
+end function
+
+-- dll wrapping -------------------------------------------------------
 
 procedure not_found(sequence name)
-    puts(1, "Couldn't find " & name & '\n')
-    if wait_key() then end if
-    abort(1)
+    crash("Couldn't find " & name)
 end procedure
 
 function link_c_func(atom dll, sequence name, sequence args, atom result)
@@ -74,15 +331,15 @@ global constant
     GetStockObject = link_c_func(gdi32, "GetStockObject", {C_INT}, C_INT),
     DeleteObject = link_c_func(gdi32, "DeleteObject", {C_INT}, C_INT),
     CreateFontIndirect = link_c_func(gdi32, "CreateFontIndirectA", {C_POINTER}, C_INT),
-    RegisterClassEx = link_c_func(user32, "RegisterClassExA", {C_POINTER}, C_INT),
+    RegisterClassEx = link_c_func(user32, "RegisterClassExA", {C_POINTER}, C_USHORT),
     CreateWindowEx = link_c_func(user32, "CreateWindowExA", 
-     {C_INT, C_INT,C_INT,C_INT,C_INT,C_INT,C_INT,C_INT,C_INT,C_INT,C_INT,C_INT},
-      C_INT),
-    CloseWindow = link_c_proc(user32, "CloseWindow", {C_INT}),
-    DestroyWindow = link_c_func(user32, "DestroyWindow", {C_INT}, C_INT),
-    MoveWindow = link_c_proc(user32, "MoveWindow", {C_INT, C_INT, C_INT, C_INT, C_LONG, C_INT}),
-    ShowWindow = link_c_proc(user32, "ShowWindow", {C_INT, C_INT}),
-    UpdateWindow = link_c_proc(user32, "UpdateWindow", {C_INT}),
+     {C_UINT,C_POINTER,C_POINTER,C_UINT,C_INT,C_INT,C_INT,C_INT,C_UINT,C_UINT,C_UINT,C_POINTER},
+      C_UINT),
+    CloseWindow = link_c_proc(user32, "CloseWindow", {C_POINTER}),
+    DestroyWindow = link_c_func(user32, "DestroyWindow", {C_POINTER}, C_INT),
+    MoveWindow = link_c_proc(user32, "MoveWindow", {C_POINTER, C_INT, C_INT, C_INT, C_LONG, C_INT}),
+    ShowWindow = link_c_proc(user32, "ShowWindow", {C_POINTER, C_INT}),
+    UpdateWindow = link_c_proc(user32, "UpdateWindow", {C_POINTER}),
     RegisterWindowMessage = link_c_func(user32, "RegisterWindowMessageA", {C_POINTER}, C_LONG),
     PlaySound = link_c_proc(winmm, "PlaySound", {C_INT, C_INT, C_INT}),
     BeginPaint = link_c_func(user32, "BeginPaint", {C_INT, C_POINTER}, C_INT),
@@ -92,9 +349,9 @@ global constant
     DrawText = link_c_proc(user32, "DrawTextA", 
                            {C_INT, C_INT, C_INT, C_INT, C_INT}),
     EndPaint = link_c_proc(user32, "EndPaint", {C_INT, C_INT}),
-    PostQuitMessage = link_c_proc(user32, "PostQuitMessage", {C_INT}),
+    PostQuitMessage = link_c_proc(user32, "PostQuitMessage", {C_POINTER}),
     DefWindowProc = link_c_func(user32, "DefWindowProcA", 
-                                {C_INT, C_INT, C_INT, C_INT}, C_INT),
+                                {C_POINTER, C_INT, C_POINTER, C_POINTER}, C_INT),
 
     SetFocus = link_c_func(user32, "SetFocus", {C_LONG}, C_LONG),
     GetFocus = link_c_func(user32, "GetFocus", {}, C_LONG),
@@ -109,6 +366,7 @@ global constant
 
     LoadLibrary = link_c_func(kernel32, "LoadLibraryA", {C_POINTER}, C_LONG),
     GetModuleHandle = link_c_func(kernel32, "GetModuleHandleA", {C_POINTER}, C_INT),
+    GetLastError = link_c_func(kernel32, "GetLastError", {}, C_UINT),
     ShellExecute = link_c_func(shell32, "ShellExecuteA", {C_INT,C_INT,C_INT,C_INT,C_INT,C_INT}, C_INT),
     SHGetFolderPath = link_c_func(shell32, "SHGetFolderPathA", {C_INT, C_INT, C_INT, C_LONG, C_POINTER}, C_INT),
     DragAcceptFiles = link_c_proc(shell32, "DragAcceptFiles", {C_INT, C_INT}),
@@ -955,7 +1213,7 @@ global constant
     DWL_USER = 8,
 
 -- Dialog Manager Routines
-    IsDialogMessage = link_c_func(user32, "IsDialogMessageA", {C_LONG, C_POINTER}, C_LONG),
+    IsDialogMessage = link_c_func(user32, "IsDialogMessageA", {C_POINTER, C_POINTER}, C_LONG),
     MapDialogRect = link_c_func(user32, "MapDialogRect", {C_LONG, C_POINTER}, C_LONG),
     DlgDirList = link_c_func(user32, "DlgDirListA", {C_LONG, C_POINTER, C_LONG, C_LONG, C_LONG}, C_LONG),
 
@@ -1227,11 +1485,11 @@ global constant
 --    ExitWindows = link_c_func(user32, "ExitWindows", {C_LONG, C_LONG}, C_LONG),
     ExitWindowsEx = link_c_func(user32, "ExitWindowsEx", {C_LONG, C_LONG}, C_LONG),
 
-    SwapMouseButton = link_c_func(user32, "SwapMouseButton", {C_LONG}, C_LONG),
-    GetMessagePos = link_c_func(user32, "GetMessagePos", {}, C_LONG),
+    SwapMouseButton = link_c_func(user32, "SwapMouseButton", {C_INT}, C_INT),
+    GetMessagePos = link_c_func(user32, "GetMessagePos", {}, C_UINT),
     GetMessageTime = link_c_func(user32, "GetMessageTime", {}, C_LONG),
-    GetMessageExtraInfo = link_c_func(user32, "GetMessageExtraInfo", {}, C_LONG),
-    SendMessage = link_c_func(user32, "SendMessageA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
+    GetMessageExtraInfo = link_c_func(user32, "GetMessageExtraInfo", {}, C_POINTER),
+    SendMessage = link_c_func(user32, "SendMessageA", {C_POINTER, C_UINT, C_POINTER, C_POINTER}, C_LONG),
     SendMessageTimeout = link_c_func(user32, "SendMessageTimeoutA", {C_LONG, C_LONG, C_INT, C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
     SendNotifyMessage = link_c_func(user32, "SendNotifyMessageA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
     SendMessageCallback = link_c_func(user32, "SendMessageCallbackA", {C_LONG, C_LONG, C_INT, C_LONG, C_LONG, C_LONG}, C_LONG),
@@ -1482,63 +1740,22 @@ global constant
     SB_HORZ = 0,
     SB_VERT = 0
 
-global constant SIZE_OF_MESSAGE = 40
-
--- strings ------------------------------------------------------------------
-sequence strings
-strings = {}
--- allocate string that can be garbage collected later
-global function alloc_string(object o)
-    if atom(o) then
-        return o
-    end if
-    strings = prepend(strings, allocate(length(o)+1))
-    poke(strings[1], o&0)
-    return strings[1]
-end function
-
--- garbage collect strings
-global procedure free_strings()
-    for i = 1 to length(strings) do
-        free(strings[i])
-    end for
-    strings = {}
-end procedure
-
-global function peek_string(atom a)
-    integer i
-    sequence s
-    s = ""
-    if a then
-        i = peek(a)
-        while i do
-            s = append(s, i)
-            a = a + 1
-            i = peek(a)
-        end while
-    end if
-    return s
-end function
-
------------------------------------------------------------------- strings --
+global constant SIZE_OF_MESSAGE = sizeof("pdppddd")
 
 
-constant SIZE_OF_WNDCLASS = 48
+--constant SIZE_OF_WNDCLASS = 48
 global function RegisterClass(sequence info)
 -- info = {style, lpfnWndProc, cbClsExtra, cbWndExtra, hInstance,
 --   hIcon, hCursor, hbrBackground, lpszMenuName, lpszClassName, hIconSm}
     atom WndClass, result
-    WndClass = allocate(SIZE_OF_WNDCLASS)
-    if sequence(info[9]) then
-        info[9] = alloc_string(info[9])  -- lpszMenuName
-    end if
-    if sequence(info[10]) then
-        info[10] = alloc_string(info[10])  -- lpszClassName
-    end if
-    poke4(WndClass, SIZE_OF_WNDCLASS & info)
+    
+    WndClass = allocate_pack("zdpiippppssp", info)
     result = c_func(RegisterClassEx, {WndClass})
+    if result = 0 then
+        printf(1, "%x\n", {c_func(GetLastError, {})})
+    end if
     free_strings()
-    free(WndClass)    
+    free(WndClass)
     return result
 end function
 
@@ -1557,33 +1774,14 @@ global function CreateWindow(sequence info)
     end if
 
     result = c_func(CreateWindowEx, info)
+    if result = 0 then
+        printf(1, "%x\n", {c_func(GetLastError, {})})
+    end if
     free_strings()
     return result
 end function
 
-procedure pokeWideCharString(atom ptr, sequence str)
-    for i = 1 to length(str) by 2 do
-        if i < length(str) then
-            poke4(ptr, str[i] + str[i+1]*#10000)
-        else
-            poke4(ptr, str[i])
-        end if
-        ptr += 4
-    end for
-    if and_bits(length(str), 1) = 0 then
-        poke(ptr, {0, 0})
-    end if
-end procedure
 
--- bytes must be a power of 2
-function align(atom ptr, integer bytes)
-    integer result
-    result = and_bits(ptr, bytes - 1)
-    if result then
-        ptr += bytes - result
-    end if
-    return ptr
-end function
 
 function allocDialogTemplate(sequence info)
     atom data, ptr, style, exstyle, cdit, id, x, y, cx, cy, class, result
@@ -1736,8 +1934,8 @@ function peek_multi_strings(atom ptr)
     return result
 end function
 
-constant SIZE_OF_OPENFILENAME = 76
-global function GetOpenFileName(sequence info)
+
+function GetFileNameDialog(atom func, sequence info)
 -- info = {hwndOwner, hInstance, lpstrFilter, nFilterIndex, lpstrFile, 
 --   lpstrInitialDir, lpstrTitle, Flags, lpstrDefExt}
 -- returns: {nFilterIndex, FileName, Flags, nFileOffset, nFileExtension}
@@ -1753,38 +1951,41 @@ global function GetOpenFileName(sequence info)
     elsif length(info[5]) < maxsize then
         info[5] = info[5] & repeat(0, maxsize - length(info[5]))
     end if
+
+    struc = allocate_pack("zppspddsdppssdwwsppp", {
+        info[1],         -- hwndOwner
+        info[2],         -- hInstance
+        info[3],         -- lpstrFilter
+        0,               -- lpstrCustomFilter
+        0,               -- nMaxCustFilter
+        info[4],         -- nFilterIndex
+        info[5],         -- lpstrFile
+        length(info[5]), -- nMaxFile
+        0,               -- lpstrFileTitle
+        0,               -- nMaxFileTitle
+        info[6],         -- lpstrInitialDir
+        info[7],         -- lpstrTitle
+        info[8],         -- Flags
+        0,               -- nFileOffset
+        0,               -- nFileExtension
+        info[9],         -- lpstrDefExt
+        0,               -- lCustData
+        0,               -- lpfnHook
+        0})              -- lpTemplateName
     
-    struc = allocate(SIZE_OF_OPENFILENAME)
-    poke4(struc, SIZE_OF_OPENFILENAME& -- lStructSize
-        info[1]&                       -- hwndOwner
-        info[2]&                       -- hInstance
-        alloc_string(info[3])&         -- lpstrFilter
-        0&                             -- lpstrCustomFilter
-        0&                             -- nMaxCustFilter
-        info[4]&                       -- nFilterIndex
-        alloc_string(info[5])&         -- lpstrFile
-        length(info[5])&               -- nMaxFile
-        0&                             -- lpstrFileTitle
-        0&                             -- nMaxFileTitle
-        alloc_string(info[6])&         -- lpstrInitialDir
-        alloc_string(info[7])&         -- lpstrTitle
-        info[8]&                       -- Flags
-        0&                             -- nFileOffset|Extemsion
-        alloc_string(info[9])&         -- lpstrDefExt
-        0&                             -- lCustData
-        0&                             -- lpfnHook
-        0)                             -- lpTemplateName
-    if c_func(GetOpenFileName_, {struc}) then
+    if c_func(func, {struc}) then
+	result = unpack(struc, "zppppddpdppppdwwpppp")
         if and_bits(info[8], OFN_ALLOWMULTISELECT) then
-            result = peek_multi_strings(peek4u(struc+28))
+            result[8] = peek_multi_strings(result[8])
         else
-	    result = peek_string(peek4u(struc+28))
+	    result[8] = peek_string(result[8])
         end if
-        result = peek4u(struc+24)&
-            {result}&
-            peek4u(struc+52)&
-            and_bits(peek4u(struc+56),#FFFF)&
-            floor(peek4u(struc+56)/#10000)
+        result = {
+	    result[7], -- nFilterIndex
+	    result[8], -- lpstrFile
+	    result[14], -- Flags
+	    result[15], -- nFileOffset
+	    result[16]} -- nFileExtension
     else
         result = {}
     end if
@@ -1793,50 +1994,18 @@ global function GetOpenFileName(sequence info)
     return result
 end function
 
+global function GetOpenFileName(sequence info)
+-- info = {hwndOwner, hInstance, lpstrFilter, nFilterIndex, lpstrFile, 
+--   lpstrInitialDir, lpstrTitle, Flags, lpstrDefExt}
+-- returns: {nFilterIndex, FileName, Flags, nFileOffset, nFileExtension}
+    return GetFileNameDialog(GetOpenFileName_, info)
+end function
+
 global function GetSaveFileName(sequence info)
 -- info = {hwndOwner, hInstance, lpstrFilter, nFilterIndex, lpstrFile, 
 --   lpstrInitialDir, lpstrTitle, Flags, lpstrDefExt}
 -- returns: {nFilterIndex, FileName, Flags, nFileOffset, nFileExtension}
-    atom struc
-    sequence result
-    if compare(info[5], 0) then 
-        info[5] = repeat(0,260)
-    elsif length(info[5]) < 260 then
-        info[5] = info[5] & repeat(0, 260 - length(info[5]))
-    end if
-    
-    struc = allocate(SIZE_OF_OPENFILENAME)
-    poke4(struc, SIZE_OF_OPENFILENAME& -- lStructSize
-        info[1]&                       -- hwndOwner
-        info[2]&                       -- hInstance
-        alloc_string(info[3])&         -- lpstrFilter
-        0&                             -- lpstrCustomFilter
-        0&                             -- nMaxCustFilter
-        info[4]&                       -- nFilterIndex
-        alloc_string(info[5])&         -- lpstrFile
-        length(info[5])&               -- nMaxFile
-        0&                             -- lpstrFileTitle
-        0&                             -- nMaxFileTitle
-        alloc_string(info[6])&         -- lpstrInitialDir
-        alloc_string(info[7])&         -- lpstrTitle
-        info[8]&                       -- Flags
-        0&                             -- nFileOffset|Extemsion
-        alloc_string(info[9])&         -- lpstrDefExt
-        0&                             -- lCustData
-        0&                             -- lpfnHook
-        0)                             -- lpTemplateName
-    if c_func(GetSaveFileName_, {struc}) then
-        result = peek4u(struc+24)&
-            {peek_string(peek4u(struc+28))}&
-            peek4u(struc+52)&
-            and_bits(peek4u(struc+56),#FFFF)&
-            floor(peek4u(struc+56)/#10000)
-    else
-        result = {}
-    end if
-    free(struc)
-    free_strings()
-    return result
+    return GetFileNameDialog(GetSaveFileName_, info)
 end function
 
 
@@ -1870,7 +2039,12 @@ global constant
     FindText_ = link_c_func(comdlg32, "FindTextA", {C_POINTER}, C_LONG),
     ReplaceText_ = link_c_func(comdlg32, "ReplaceTextA", {C_POINTER}, C_LONG)
 
-constant SIZE_OF_FINDREPLACE = 40 
+constant 
+    struct_FINDREPLACE = "zppdsswwppp",
+    SIZE_OF_FINDREPLACE = sizeof(struct_FINDREPLACE),
+    Flags_offset = sizeof(struct_FINDREPLACE[1..3]),
+    FindWhat_offset = sizeof(struct_FINDREPLACE[1..4]), 
+    ReplaceWith_offset = sizeof(struct_FINDREPLACE[1..5])
     -- 0  DWORD        lStructSize;
     -- 4  HWND         hwndOwner;
     -- 8  HINSTANCE    hInstance;
@@ -1883,33 +2057,62 @@ constant SIZE_OF_FINDREPLACE = 40
     -- 32 LPFRHOOKPROC lpfnHook;
     -- 36 LPCTSTR      lpTemplateName;
 
+global function GetFindFlags(atom struc)
+    return peek4u(struc + Flags_offset)
+end function
+
+global function GetFindWhat(atom struc)
+    sequence tmp
+    tmp = unpack(struc + FindWhat_offset, "s")
+    return tmp[1]
+end function
+
+global function GetReplaceWith(atom struc)
+    sequence tmp
+    tmp = unpack(struc + ReplaceWith_offset, "s")
+    return tmp[1]
+end function
+
 atom find_struc, hwnd_find
 find_struc = 0
 hwnd_find = 0
-global function FindText(atom hwndOwner, atom hInstance, atom Flags, sequence lpstrFindWhat)
+
+function FindReplaceText(atom func, atom hwndOwner, atom hInstance, atom Flags, sequence FindWhat, sequence ReplaceWith)
 -- returns: hwndFindDialog
-    atom text, junk
-    if length(lpstrFindWhat) > 255 then lpstrFindWhat = lpstrFindWhat[1..255] end if
+    atom junk
+    integer Len
+    Len = 256
+    if length(FindWhat) >= Len then FindWhat = FindWhat[1..Len-1] end if
+    if length(ReplaceWith) >= Len then ReplaceWith = ReplaceWith[1..Len-1] end if
     if find_struc then
-        text = peek4u(find_struc + 16)
         if hwnd_find then
             junk = c_func(DestroyWindow, {hwnd_find})
         end if
     else
-        find_struc = allocate(SIZE_OF_FINDREPLACE + #100 + #100)
-        text = find_struc + SIZE_OF_FINDREPLACE
-        poke4(find_struc+16, 
-            {find_struc + SIZE_OF_FINDREPLACE, 
-             find_struc + SIZE_OF_FINDREPLACE + 256,
-             #100 + #1000000, 0, 0, 0, 0})
+        find_struc = allocate(SIZE_OF_FINDREPLACE + Len + Len)
+	pack(find_struc, struct_FINDREPLACE, {
+	    SIZE_OF_FINDREPLACE,
+	    hwndOwner,
+	    0, -- hInstance
+	    Flags,
+	    find_struc + SIZE_OF_FINDREPLACE, -- lpstrFindWhat
+	    find_struc + SIZE_OF_FINDREPLACE + Len, --lpstrReplaceWith
+	    Len, -- wFindWhatLen
+	    Len, -- wReplaceWithLen
+	    NULL, -- lCustData
+	    NULL, -- lpfnHook
+	    NULL -- lpTemplateName
+	    })
     end if
-    poke(text, lpstrFindWhat&0)
-    poke4(find_struc, SIZE_OF_FINDREPLACE&
-        hwndOwner&
-        hInstance&
-        Flags)
+    pack(find_struc, "zppd", {
+	SIZE_OF_FINDREPLACE,
+	hwndOwner,
+	0,
+	Flags})
+    poke(find_struc + SIZE_OF_FINDREPLACE, FindWhat & 0)
+    poke(find_struc + SIZE_OF_FINDREPLACE + Len, ReplaceWith & 0)
     
-    hwnd_find = c_func(FindText_, {find_struc}) 
+    hwnd_find = c_func(func, {find_struc})
     if hwnd_find = 0 then
         free(find_struc)
         find_struc = 0
@@ -1917,54 +2120,20 @@ global function FindText(atom hwndOwner, atom hInstance, atom Flags, sequence lp
     return hwnd_find
 end function
 
-global function ReplaceText(atom hwndOwner, atom hInstance, atom Flags, sequence lpstrFindWhat, sequence lpstrReplaceWith)
+global function FindText(atom hwndOwner, atom hInstance, atom Flags, sequence FindWhat)
 -- returns: hwndFindDialog
-    atom text, replace, junk
-    if length(lpstrFindWhat) > 255 then lpstrFindWhat = lpstrFindWhat[1..255] end if
-    if length(lpstrReplaceWith) > 255 then lpstrReplaceWith = lpstrReplaceWith[1..255] end if
-    if find_struc then
-        text = peek4u(find_struc + 16)
-        replace = peek4u(find_struc + 20)
-        if hwnd_find then
-            junk = c_func(DestroyWindow, {hwnd_find})
-        end if
-    else
-        find_struc = allocate(SIZE_OF_FINDREPLACE + #100 + #100)
-        text = find_struc + SIZE_OF_FINDREPLACE
-        replace = find_struc + SIZE_OF_FINDREPLACE + #100
-        poke4(find_struc+16, 
-            {find_struc + SIZE_OF_FINDREPLACE, 
-             find_struc + SIZE_OF_FINDREPLACE + 256,
-             #100 + #1000000, 0, 0, 0, 0})
-    end if
-    poke(text, lpstrFindWhat&0)
-    poke(replace, lpstrReplaceWith&0)
-    poke4(find_struc, SIZE_OF_FINDREPLACE&
-        hwndOwner&
-        hInstance&
-        Flags)
-    
-    hwnd_find = c_func(ReplaceText_, {find_struc}) 
-    if hwnd_find = 0 then
-        free(find_struc)
-        find_struc = 0
-    end if
-    return hwnd_find
+    return FindReplaceText(FindText_, hwndOwner, hInstance, Flags, FindWhat, "")
 end function
 
-global function GetFindFlags(atom struc)
-    return peek4u(struc+12)
+global function ReplaceText(atom hwndOwner, atom hInstance, atom Flags, sequence FindWhat, sequence ReplaceWith)
+-- returns: hwndFindDialog
+    return FindReplaceText(ReplaceText_, hwndOwner, hInstance, Flags, FindWhat, ReplaceWith)
 end function
-global function GetFindWhat(atom struc)
-    return peek_string(peek4u(struc+16))
-end function
-global function GetReplaceWith(atom struc)
-    return peek_string(peek4u(struc+20))
-end function
+
 
 -- choose font common dialog
 global constant
-    ChooseFont = link_c_func(comdlg32, "ChooseFontA", {C_POINTER}, C_INT),
+    ChooseFont_ = link_c_func(comdlg32, "ChooseFontA", {C_POINTER}, C_INT),
     CF_SCREENFONTS = 1,
     CF_PRINTERFONTS = 2,
     CF_BOTH = 3,
@@ -2003,6 +2172,52 @@ global constant
     WM_CHOOSEFONT_SETLOGFONT = (WM_USER+101),
     WM_CHOOSEFONT_SETFLAGS = (WM_USER+102)
 
+global function ChooseFont(atom hwndOwner, sequence font_name, integer font_height)
+    atom cf, lf, size, lf_facesize, lf_size, hedit
+    sequence result
+
+    lf_facesize = 32
+    lf_size = 4*5 + 8 + lf_facesize
+    lf = allocate(lf_size)
+    poke4(lf, {-floor((font_height*96+36)/72),0,0,0,0,0,0})
+    poke(lf+lf_size-lf_facesize, font_name&0)
+
+    cf = allocate_pack("zpppiddpppppwii$", {
+        hwndOwner, -- hwndOwner;
+        NULL, -- hDC;
+        lf, -- lpLogFont;
+        0, -- iPointSize
+        CF_INITTOLOGFONTSTRUCT, -- Flags
+        0, -- rgbColors
+        NULL, -- lCustData
+        NULL, -- lpfnHook
+        NULL, -- lpTemplateName
+        NULL, -- hInstance
+        NULL, -- lpszStyle
+        0, -- nFontType
+        0, -- nSizeMin
+        0  -- nSizeMax
+        })
+    result = {}
+    if c_func(ChooseFont_, {cf}) then
+        font_name = peek_string(lf+lf_size-lf_facesize)
+        font_height = floor(peek4u(cf + sizeof("zppp")) / 10)
+        --? font_height
+        --printf(1, "height=%d %d width=%d weight=%d facename=%s pointsize=%d\n", {
+        --    peek4s(lf),
+        --   -floor((font_height*96+36)/72),
+        --    peek4u(lf+4),
+        --    peek4u(lf+16),
+        --    font_name,
+        --    peek4u(cf+16)})
+        result = {font_name, font_height}
+    end if
+    free(cf)
+    free(lf)
+    return result
+end function
+
+
 -- choose color common dialog
 global constant
     ChooseColor_ = link_c_func(comdlg32, "ChooseColorA", {C_POINTER}, C_INT),
@@ -2020,13 +2235,11 @@ sequence cur_palette
 cur_palette = repeat(0, 16)
 
 global function ChooseColor(atom hwnd, integer rgb)
-    atom struc, size, pal
-    size = 4+4+4+4+4+4+4+4+4
-    struc = allocate(size)
+    atom struc, pal
+    sequence result
     pal = allocate(4*length(cur_palette))
     poke4(pal, cur_palette)
-    poke4(struc, {
-	size,
+    struc = allocate_pack("zppdpdppp", {
 	hwnd, -- hwndOwner
 	0, -- hInstance
 	rgb, -- rgbResult
@@ -2037,7 +2250,8 @@ global function ChooseColor(atom hwnd, integer rgb)
 	0 -- lpTemplateName
 	})
     if c_func(ChooseColor_, {struc}) != 0 then
-        rgb = peek4u(struc + 12)
+	result = unpack(struc, "zppdpdppp")
+        rgb = result[4]
     end if
     cur_palette = peek4u({pal, length(cur_palette)})
     free(struc)
@@ -2045,22 +2259,7 @@ global function ChooseColor(atom hwnd, integer rgb)
     return rgb
 end function
 
-----------------------------------------------------------------------------
-integer bytes_allotted
-bytes_allotted = 0
-global function allot(atom data_type)
-    integer result
-    result = bytes_allotted
-    bytes_allotted = bytes_allotted + and_bits(data_type, #F)
-    return result
-end function
-    
-global function allotted()
-    integer result
-    result = bytes_allotted
-    bytes_allotted = 0
-    return result
-end function
+
 
 ----------------------------------------------------------------------------
 global constant 
@@ -2068,31 +2267,3 @@ global constant
     SystemParametersInfo = link_c_func(user32, "SystemParametersInfoA", 
         {C_INT, C_INT, C_POINTER, C_INT}, C_INT)
 
-constant
-    CreateFile = link_c_func(kernel32, "CreateFileA", {C_POINTER, C_INT, C_INT, C_POINTER, C_INT, C_INT, C_INT}, C_INT),
-    GetFileTime = link_c_func(kernel32, "GetFileTime", {C_INT, C_POINTER, C_POINTER, C_POINTER}, C_INT),
-    CloseHandle = link_c_proc(kernel32, "CloseHandle", {C_INT})
-    
-
-global function GetFileLastWriteTimeXX(sequence filename)
-    atom handle, filetime, result
-    handle = c_func(CreateFile, {
-        alloc_string(filename),
-        #80000000, --GENERIC_READ,
-        7, -- FILE_SHARE_DELETE+FILE_SHARE_READ+FILE_SHARE_WRITE
-        NULL,
-        3, --OPEN_EXISTING
-        0, -- no flags or attributes
-        NULL})
-    if handle = -1 then
-        return -1
-    end if
-    result = -1
-    filetime = allocate(8)
-    if c_func(GetFileTime, {handle, NULL, NULL, filetime}) != 0 then
-        result = peek4u(filetime) + #100000000 * peek4u(filetime+4)
-    end if
-    free(filetime)
-    c_proc(CloseHandle, {handle})
-    return result
-end function
