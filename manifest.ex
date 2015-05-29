@@ -24,7 +24,8 @@ files = {
  {"EuGTK/README.txt", 0, 0, 0, LINUX, OSX},
  {"EuGTK/license.txt", 0, 0, 0, LINUX, OSX},
 -- scintilla
- {"scintilla/SciLexer.dll", 0, 0, 0, WINDOWS},
+ {"scintilla/SciLexer.dll", 0, 0, 32, WINDOWS},
+ {"scintilla/SciLexer64.dll", 0, 0, 64, WINDOWS},
  {"scintilla/scintilla32.so", 0, 0, 32, LINUX},
  {"scintilla/scintilla64.so", 0, 0, 64, LINUX},
  {"scintilla/scintillaOSX.dylib", 0, 0, 64, OSX},
