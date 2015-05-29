@@ -12,4 +12,6 @@ A small code-aware editor for Euphoria programming
 
 Supports Windows
 
-Future support Linux and Mac OS using [EuGTK](https://sites.google.com/site/euphoriagtk/Home)
+Supports Linux and Mac OS using [EuGTK](https://sites.google.com/site/euphoriagtk/Home)
+
+Requires [Euphoria 4.1.0 Beta 2](http://openeuphoria.org/wiki/view/DownloadEuphoria.wc) or later.
