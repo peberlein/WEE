@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.32"
+  version = "0.33"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -106,6 +106,7 @@ global constant
 --    Cursor color changes based on background (thanks Andreas)
 --    String color not loaded from config file (thanks Andreas)
 --    Fix bold options reversed for String and Number
+--    No message when opening saved tab whose file no longer exists
 
 -- todo:
 --  bug with reloading files, first few characters get garbled
@@ -1377,13 +1378,18 @@ end function
 -- open files on startup and saved tabs
 global procedure open_tabs()
     sequence cmdline
-    cmdline = command_line()
-    tabs_to_open &= cmdline[3..$]
-    -- open files on command line
+    -- open files from previous session
     for i = 1 to length(tabs_to_open) do
-	open_file(tabs_to_open[i], 0)
+	if file_exists(tabs_to_open[i][1]) then
+	    open_file(tabs_to_open[i], 0)
+	end if
     end for
-    if length(tab_file_names) = 0 then
+    -- open files on command line
+    cmdline = command_line()
+    for i = 3 to length(cmdline) do
+        open_file(cmdline[i], 0)
+    end for
+    if length(tab_file_names) = 0 and length(cmdline) < 3 then
 	new_file()
     elsif length(cmdline) < 3 then
 	-- select initial tab if no files on command line
