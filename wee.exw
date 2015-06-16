@@ -817,6 +817,45 @@ function sreplace(sequence text, sequence what, sequence replacement)
     return text
 end function
 
+-- update the hedit lexer based on the file extension
+procedure update_hedit_style()
+    integer lexer
+    sequence ext
+    ext = lower(fileext(tab_file_names[current_tab]))
+    
+    is_eu_code = find(ext, {"e","ex","ew","exw"}) or length(file_name) = 0
+    
+    if is_eu_code then
+	lexer = SCLEX_LUA
+    elsif find(ext, {"c","h","cpp","hpp"}) then
+        lexer = SCLEX_CPP
+    elsif find(ext, {"py"}) then
+        lexer = SCLEX_PYTHON
+    elsif find(ext, {"htm", "html", "shtml"}) then
+        lexer = SCLEX_HTML
+    elsif find(ext, {"xml"}) then
+        lexer = SCLEX_XML
+    elsif find(ext, {"pl", "perl"}) then
+        lexer = SCLEX_PERL
+    else
+	lexer = SCLEX_NULL
+	ssm(SCI_CLEARDOCUMENTSTYLE)
+    end if
+    if ssm(SCI_GETLEXER) != lexer then
+	ssm(SCI_SETLEXER, lexer)
+	if is_eu_code then	    
+	    ssm(SCI_SETKEYWORDS, 0, 
+	     "procedure function type end and or xor not if then elsif else for to by do while "&
+	     "global constant include with without return exit " &
+	     -- OE4
+	     "public export enum as namespace ifdef elsifdef elsedef "&
+	     "label entry break continue loop until routine switch case fallthru"
+	     )
+	    ssm(SCI_SETKEYWORDS, 1, get_builtins())
+	end if
+    end if
+end procedure
+
 -- init edit, (or reinit all existing edits when hedit = 0)
 global procedure init_edit(atom edit)
     sequence font
@@ -847,21 +886,6 @@ global procedure init_edit(atom edit)
     ssm(SCI_STYLESETBOLD, STYLE_DEFAULT, and_bits(bold_flags, 1))
     ssm(SCI_SETCARETWIDTH, 2)
     ssm(SCI_STYLECLEARALL)
-
-    if is_eu_code then
-	ssm(SCI_SETLEXER, SCLEX_LUA)
-    else
-        ssm(SCI_SETLEXER, SCLEX_NULL)
-	ssm(SCI_CLEARDOCUMENTSTYLE)
-    end if
-    ssm(SCI_SETKEYWORDS, 0, 
-     "procedure function type end and or xor not if then elsif else for to by do while "&
-     "global constant include with without return exit " &
-     -- OE4
-     "public export enum as namespace ifdef elsifdef elsedef "&
-     "label entry break continue loop until routine switch case fallthru"
-     )
-    ssm(SCI_SETKEYWORDS, 1, get_builtins())
 
     ssm(SCI_STYLESETFORE, SCE_LUA_COMMENT, comment_color)
     ssm(SCI_STYLESETBOLD, SCE_LUA_COMMENT, 0 != and_bits(bold_flags, 2))
@@ -1227,8 +1251,7 @@ global procedure select_tab(integer tab)
     ui_update_window_title(file_name)
     update_status()
 
-    is_eu_code = find(lower(fileext(file_name)), {"e","ex","ew","exw"}) 
-	or length(file_name) = 0
+    update_hedit_style()
 end procedure
 
 global procedure update_tab_name()
@@ -1421,6 +1444,7 @@ global function save_file_as()  -- returns 1 if ok, 0 if cancelled
     tab_file_names[current_tab] = file_name
     save_file()
     update_tab_name()
+    update_hedit_style()
     return 1
 end function
 
