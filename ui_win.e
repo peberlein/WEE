@@ -7,6 +7,7 @@ include std/filesys.e
 include std/sort.e
 include std/machine.e
 include std/dll.e
+include std/get.e
 
 -- MenuItem constants
 constant 
@@ -55,6 +56,7 @@ constant
     Options_ReopenTabs = 606,
     Options_CompleteStatements = 607,
     Options_CompleteBraces = 608,
+    Options_Indent = 609,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -68,7 +70,7 @@ constant file_filters = allocate_string(
 	"All files (*.*)"&0&"*.*"&0&0)
     
 
-atom hMainWnd, hFindDlg, class,
+atom hMainWnd, hFindDlg, hDlg, class,
     hmenu, hfilemenu, heditmenu, hsearchmenu, hviewmenu, 
     hrunmenu, hoptionsmenu, hhelpmenu, htabmenu, hrunintmenu,
     hstatus, htabs, hcode, hedit,
@@ -81,6 +83,7 @@ class = 0
 WM_FIND = 0
 hMainWnd = 0  -- the main window
 hFindDlg = 0
+hDlg = 0
 hedit = 0     -- the richedit control
 hstatus = 0   -- the static control showing cursor position
 htabs = 0     -- the tab control
@@ -148,13 +151,17 @@ global procedure ui_select_tab(integer tab)
     atom junk, rect
     integer w, h
 
+    -- change tab, and highlight it to make it stand out
+    junk = c_func(SendMessage, {htabs, TCM_HIGHLIGHTITEM, 
+	c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0}), 0})
     junk = c_func(SendMessage, {htabs, TCM_SETCURSEL, tab-1, 0})
+    junk = c_func(SendMessage, {htabs, TCM_HIGHLIGHTITEM, tab-1, 1})
 
     if hedit then
         -- hide the previous hedit
         c_proc(ShowWindow, {hedit, SW_HIDE})
     end if
-  
+
     hedit = ui_hedits[tab]
 
     -- update the richedit control to the window size
@@ -821,6 +828,144 @@ global procedure choose_colors()
 end procedure
 
 
+
+function IndentDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
+    atom junk, len, buf
+    integer id, tab_width, indent_width, use_tabs, check
+    sequence val
+
+    --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
+
+    if iMsg = WM_INITDIALOG then
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
+                      WM_SETFONT, captionFont, 0})
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDCANCEL}), 
+                      WM_SETFONT, captionFont, 0})
+	hDlg = hdlg
+	
+	tab_width = c_func(SendMessage, {hedit, SCI_GETTABWIDTH, 0, 0})
+	indent_width = c_func(SendMessage, {hedit, SCI_GETINDENT, 0, 0})
+	use_tabs = c_func(SendMessage, {hedit, SCI_GETUSETABS, 0, 0})
+	junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1001}),
+	              WM_SETTEXT, 0, alloc_string(sprintf("%d", {tab_width}))})
+	junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1003}),
+	              WM_SETTEXT, 0, alloc_string(sprintf("%d", {indent_width}))})
+	
+	if use_tabs then
+	    check = BST_CHECKED
+	else
+	    check = BST_UNCHECKED
+	end if
+	junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1004}),
+		BM_SETCHECK, check, 0})
+	if indentation_guides then
+	    check = BST_CHECKED
+	else
+	    check = BST_UNCHECKED
+	end if
+	junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1005}),
+		BM_SETCHECK, check, 0})
+
+    elsif iMsg = WM_COMMAND then
+	id = LOWORD(wParam)
+        if id = IDOK then
+	    buf = allocate(16)
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1001}),
+	              WM_GETTEXT, 16, buf})
+	    val = value(peek_string(buf))
+	    if val[1] = 0 and integer(val[2]) then
+		tab_width = val[2]
+	    else
+		tab_width = 0
+	    end if
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, 1003}),
+	              WM_GETTEXT, 16, buf})
+	    val = value(peek_string(buf))
+	    if val[1] = 0 and integer(val[2]) then
+		indent_width = val[2]
+	    else
+		indent_width = 0
+	    end if
+	    free(buf)
+	    
+	    if indent_width < 1 or indent_width > 8 or
+	          tab_width < 1 or tab_width > 8 then
+	        return 0
+	    end if
+
+            use_tabs = BST_CHECKED = c_func(SendMessage, {
+		c_func(GetDlgItem, {hdlg, 1004}), BM_GETCHECK, 0, 0})
+	    indentation_guides = BST_CHECKED = c_func(SendMessage, {
+		c_func(GetDlgItem, {hdlg, 1005}), BM_GETCHECK, 0, 0})
+
+	    junk = c_func(SendMessage, {hedit, SCI_SETTABWIDTH, tab_width, 0})
+	    junk = c_func(SendMessage, {hedit, SCI_SETINDENT, indent_width, 0})	    
+	    junk = c_func(SendMessage, {hedit, SCI_SETUSETABS, use_tabs, 0})
+	    reinit_all_edits()
+            
+            junk = c_func(EndDialog, {hdlg, 1})
+            return 1
+        elsif id = IDCANCEL then
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+        elsif id = 1004 or id = 1005 then
+            junk = c_func(SendMessage, {
+		c_func(GetDlgItem, {hdlg, id}), BM_GETCHECK, 0, 0})
+	    if junk = BST_CHECKED then
+	        junk = BST_UNCHECKED
+	    else
+		junk = BST_CHECKED
+	    end if
+            junk = c_func(SendMessage, {
+		c_func(GetDlgItem, {hdlg, id}), BM_SETCHECK, junk, 0})
+        end if
+
+    elsif iMsg = WM_CLOSE then --closing dialog
+        junk = c_func(EndDialog, {hdlg, 0})
+	hDlg = 0
+    end if
+
+    return 0
+end function
+
+constant IndentDialogCallback = call_back(routine_id("IndentDialogProc"))
+
+global procedure indent_dialog()
+    integer junk
+    junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
+        --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
+	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
+         50,50, 100,86, 0, 0, "Indent"},
+        --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
+        
+        {{WS_CHILD, WS_VISIBLE}, 0,
+         4,4, 44,12, 1002, DIALOG_CLASS_STATIC, "Indent size"},
+	{{WS_CHILD, WS_VISIBLE, WS_BORDER, ES_AUTOHSCROLL, ES_NUMBER}, 0,
+         52,4, 44,12, 1003, DIALOG_CLASS_EDIT, ""},
+
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         4,20, 92,12, 1005, DIALOG_CLASS_BUTTON, "Show indentation guides"},
+        
+        {{WS_CHILD, WS_VISIBLE, BS_CHECKBOX}, 0,
+         4,34, 92,12, 1004, DIALOG_CLASS_BUTTON, "Use tabs in indentation"},
+        
+	{{WS_CHILD, WS_VISIBLE}, 0,
+         4,50, 44,12, 1000, DIALOG_CLASS_STATIC, "Tab size"},
+	{{WS_CHILD, WS_VISIBLE, WS_BORDER, ES_AUTOHSCROLL, ES_NUMBER}, 0,
+         52,50, 44,12, 1001, DIALOG_CLASS_EDIT, ""},
+
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         4,66, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
+        {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
+         52,66, 44,12, IDOK, DIALOG_CLASS_BUTTON, "OK"}
+        },
+        hMainWnd, 
+        IndentDialogCallback,
+        0)
+end procedure
+
+
+
 procedure init_fonts()
     atom junk, lf_facesize, lf_size, size, ncm, lf,
         lfCaptionFont, lfSmCaptionFont, lfMenuFont, lfStatusFont, lfMessageFont
@@ -903,6 +1048,10 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
       elsif hwndFrom = htabs then
 	if code = TCN_SELCHANGE then
 	    select_tab(1 + c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0}))
+	elsif code = TCN_SELCHANGING then
+	    -- unhighlight the current tab
+	    junk = c_func(SendMessage, {htabs, TCM_HIGHLIGHTITEM, 
+		c_func(SendMessage, {htabs, TCM_GETCURSEL, 0, 0}), 0})
 	elsif code = NM_RCLICK then
 	    rightclick_tab()
 	end if
@@ -1078,6 +1227,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Options_CompleteBraces then
 	        complete_braces = not complete_braces
 	        return c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteBraces, MF_CHECKED*complete_braces})
+	    elsif wParam = Options_Indent then
+	        indent_dialog()
+	        return rc
 	    elsif wParam = Help_About then
 		about_box()
 		return rc
@@ -1119,6 +1271,7 @@ end function
 procedure translate_editor_keys(atom msg)
   atom hwnd, iMsg, wParam, lParam
   sequence m
+  integer ctrl, shift
   
   m = unpack(msg, "pdpp")
 
@@ -1129,11 +1282,14 @@ procedure translate_editor_keys(atom msg)
   if hwnd != hedit then
     return
   end if
+  
   if iMsg = WM_CHAR  then
+    shift = and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000)
+    ctrl = and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000)
     --printf(1, "%x %x %x %x\n", {hwnd, iMsg, wParam, lParam})
     if wParam = 27 then -- Esc
       m = {hMainWnd, WM_COMMAND, View_GoBack, 0}
-    elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) = 0 then
+    elsif not ctrl then
       -- control key is not pressed
     elsif wParam = #13 then -- Ctrl+S
       m = {hMainWnd, WM_COMMAND, File_Save, 0}
@@ -1142,7 +1298,7 @@ procedure translate_editor_keys(atom msg)
     elsif wParam = #12 then -- Ctrl+R
       m = {hMainWnd, WM_COMMAND, Search_Replace, 0}
     elsif wParam = #7 then -- Ctrl+G
-      if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      if shift then
 	m = {hMainWnd, WM_COMMAND, Search_Find_Prev, 0}
       else
 	m = {hMainWnd, WM_COMMAND, Search_Find_Next, 0}
@@ -1159,7 +1315,7 @@ procedure translate_editor_keys(atom msg)
       m = {hMainWnd, WM_COMMAND, File_Exit, 0}
     elsif wParam = VK_SPACE then
       m = {hMainWnd, WM_COMMAND, View_Completions, 0}
-    elsif wParam = 26 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+    elsif wParam = 26 and shift then
       m = {hMainWnd, WM_COMMAND, Edit_Redo, 0}
     elsif wParam = 25 then -- Ctrl+Y
       m = {hMainWnd, WM_COMMAND, Edit_Redo, 0}
@@ -1167,33 +1323,35 @@ procedure translate_editor_keys(atom msg)
       return
     end if
   elsif iMsg = WM_KEYUP then
-    if wParam = VK_F5 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+    shift = and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000)
+    ctrl = and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000)
+    if wParam = VK_F5 and shift then
       m = {hMainWnd, WM_COMMAND, Run_WithArgs, 0}
     elsif wParam = VK_F5 then
       m = {hMainWnd, WM_COMMAND, Run_Start, 0}
-    elsif wParam = VK_F4 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+    elsif wParam = VK_F4 and ctrl then
       m = {hMainWnd, WM_COMMAND, File_Close, 0}
     elsif wParam = VK_F4 then
       m = {hMainWnd, WM_COMMAND, View_Error, 0}
     elsif wParam = VK_F3 then
-      if and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+      if shift then
         m = {hMainWnd, WM_COMMAND, Search_Find_Prev, 0}
-      elsif and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+      elsif ctrl then
         m = {hMainWnd, WM_COMMAND, Search_Find, 0}
       else
         m = {hMainWnd, WM_COMMAND, Search_Find_Next, 0}
       end if
-    elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+    elsif wParam = VK_F2 and ctrl then
       m = {hMainWnd, WM_COMMAND, View_Declaration, 0}
-    elsif wParam = VK_F2 and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+    elsif wParam = VK_F2 and shift then
       m = {hMainWnd, WM_COMMAND, View_SubArgs, 0}
     elsif wParam = VK_F2 then
       m = {hMainWnd, WM_COMMAND, View_Subs, 0}
-    elsif wParam = #5A and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) and and_bits(c_func(GetKeyState, {VK_SHIFT}), #8000) then
+    elsif wParam = #5A and ctrl and shift then
       m = {hMainWnd, WM_COMMAND, Edit_Redo, 0}
-    elsif wParam = VK_PRIOR and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+    elsif (wParam = VK_PRIOR or (wParam = VK_TAB and shift)) and ctrl then
       m = {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0}
-    elsif wParam = VK_NEXT and and_bits(c_func(GetKeyState, {VK_CONTROL}), #8000) then
+    elsif (wParam = VK_NEXT or wParam = VK_TAB) and ctrl then
       m = {hMainWnd, WM_COMMAND, Select_Next_Tab, 0}
     elsif wParam = VK_F1 then
       m = {hMainWnd, WM_COMMAND, Help_Context, 0}
@@ -1362,6 +1520,8 @@ global procedure ui_main()
 	Options_CompleteStatements, alloc_string("Complete Statements")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
 	Options_CompleteBraces, alloc_string("Complete Braces")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
+	Options_Indent, alloc_string("&Indents...")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1469,8 +1629,11 @@ global procedure ui_main()
 
     while c_func(GetMessage, {msg, NULL, 0, 0}) do
 	if hFindDlg and c_func(IsDialogMessage,{hFindDlg,msg}) then
-	  -- this message is handled by find dialog (thanks Jacques)
-	  -- it makes the tab key work for find/replace dialogs
+	    -- this message is handled by find dialog (thanks Jacques)
+	    -- it makes the tab key work for find/replace dialogs
+	elsif hDlg and c_func(IsDialogMessage,{hDlg,msg}) then
+	    -- ditto
+	    ? hDlg
 	else
           translate_editor_keys(msg)
           junk = c_func(TranslateMessage, {msg})

@@ -758,6 +758,7 @@ global constant
     ES_OEMCONVERT = #400,
     ES_READONLY = #800,
     ES_WANTRETURN = #1000,
+    ES_NUMBER = #2000,
 
 -- Edit Control Notification Codes
     EN_SETFOCUS = #100,
