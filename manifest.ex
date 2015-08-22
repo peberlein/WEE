@@ -12,6 +12,7 @@ files = {
  {"scintilla.e", 0, 0, 0},
  {"parser.e", 0, 0, 0},
  {"updater.ex", 0, 0, 0},
+ {"weeicon.e", 0, 0, 0},
 -- windows
  {"ui_win.e", 0, 0, 0, WINDOWS},
  {"window.ew", 0, 0, 0, WINDOWS},
