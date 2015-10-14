@@ -120,12 +120,15 @@ end function
 -- "b" byte   1 byte
 -- "i" int    4 bytes
 -- "c" char   1 byte
--- "l" long long  8 bytes
+-- "q" qword/int64  8 bytes
 -- "p" pointer 4 or 8 bytes
 -- "s" string pointer  4 or 8 bytes (alloc_string'd)
 -- "m" multibyte string pointer
 -- "z" dword  4 bytes, size of struct, must be first in pattern
 -- "$" aligns the total struct size to the size of the largest member
+
+-- When converting Windows struct member types, this may be useful:
+-- https://msdn.microsoft.com/en-us/library/windows/desktop/aa383751(v=vs.85).aspx
 
 function sizeof(sequence pattern)
     integer size, x, max_align
@@ -139,7 +142,7 @@ function sizeof(sequence pattern)
 	    x = 2
         elsif x = 'd' or x = 'i' or x = 'z' then
 	    x = 4
-        elsif x = 'l' then
+        elsif x = 'q' then
 	    x = 8
         elsif x = 'p' or x = 's' or x = 'm' then
 	    ifdef BITS64 then
@@ -165,7 +168,7 @@ end function
 global procedure pack(atom ptr, sequence pattern, sequence data)
     object tmp
     integer x
-    
+
     for i = 1 to length(pattern) do
         x = pattern[i]
         tmp = data[i]
@@ -187,7 +190,7 @@ global procedure pack(atom ptr, sequence pattern, sequence data)
 	    ptr = align(ptr, 4)
             poke4(ptr, tmp)
             ptr += 4
-        elsif x = 'l' then
+        elsif x = 'q' then
             ifdef BITS64 then
                 ptr = align(ptr, 8)
                 poke8(ptr, tmp)

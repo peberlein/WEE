@@ -776,7 +776,7 @@ function expr(integer depth)
     e = {INTEGER, to_integer(get_token())}
   elsif token("-") then
     e = {NEG, expr(depth)}
-    if e[2][1] = INTEGER then
+    if length(e[2]) and e[2][1] = INTEGER then
       e = {INTEGER, -e[2][2]}
     end if
   elsif token("+") then

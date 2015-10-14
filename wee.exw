@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.33"
+  version = "0.34"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -108,6 +108,7 @@ global constant
 --    String color not loaded from config file (thanks Andreas)
 --    Fix bold options reversed for String and Number
 --    No message when opening saved tab whose file no longer exists
+--    Fix crash on parsing "-type ..." (thanks dcuny)
 
 -- todo:
 --  bug with reloading files, first few characters get garbled
@@ -159,12 +160,18 @@ end ifdef
 -- all variables must be initialized in wee_init() due to circular include
 global constant max_recent_files = 5
 
+
 -- these are configuration settings saved to wee_conf
 global atom x_pos, y_pos, x_size, y_size
 global sequence font_name, recent_files
 global integer font_height, line_numbers, sorted_subs, line_wrap, 
-    reopen_tabs, complete_statements, complete_braces,
-    tab_width, indentation_guides, caret_width
+    reopen_tabs, tab_width, indentation_guides, caret_width, 
+    complete_statements, -- when typing "if " -> "if | then\n    \nend if"
+    complete_braces, -- when typing '(' or '[' or '{' or ''' or '"'
+    auto_namespace, -- when typing ':'
+    auto_complete, -- when typing two word chars or backspace
+    auto_arguments, -- when typing '(' after an identifier
+    auto_indent -- when creating a new line
 global integer keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
     linenumber_color, bracelight_color, bold_flags
@@ -264,8 +271,12 @@ global procedure wee_init()
     expand_line = -1
     insert_chars = ""
     last_deleted_char = 0
+    auto_namespace = 1
+    auto_complete = 1
     complete_statements = 1
     complete_braces = 1
+    auto_arguments = 1
+    auto_indent = 1
     tab_width = 8
     indentation_guides = 0
     caret_width = 2
@@ -761,9 +772,15 @@ global procedure goto_pos(object pos, integer len=0)
 end procedure
 
 -- restore the previous cursor and scroll position,
--- or clear the selection if there is one
+-- or clear the selection or autocompletion if there is one
 global procedure go_back()
     object pos = ssm(SCI_GETCURRENTPOS)
+
+    -- clear any active autocomplete, and return
+    if ssm(SCI_AUTOCACTIVE) then
+	ssm(SCI_AUTOCCANCEL, 0, 0)
+	return
+    end if
     
     -- clear any selection, and return
     if pos != ssm(SCI_GETANCHOR) then
@@ -1855,6 +1872,7 @@ end procedure
 -- code syntax routines
 -------------------------------------------------------------------
 
+-- move the cursor to the location when the word under the cursor was declared
 global procedure view_declaration()
     sequence text, decls, word, name_space
     integer pos
@@ -1875,10 +1893,14 @@ global procedure view_declaration()
     end for
 end procedure
 
-
+-- show a list of possible words when autocomplete is triggered
 global procedure view_completions()
     sequence text, word, decls, name_space, suggestions
     integer pos, junk, style
+
+    if ssm(SCI_AUTOCACTIVE) then
+        return -- autocomplete is already active
+    end if
 
     pos = get_pos()
 
@@ -2128,7 +2150,7 @@ procedure auto_expand()
 end procedure
 
 
-procedure auto_indent()
+procedure do_auto_indent()
     integer line, pos, end_pos
     sequence indent
 
@@ -2545,22 +2567,30 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 	-- the user retyped the insert character, so delete it
         ssm(SCI_DELETERANGE, get_pos(), 1)
         -- the UPDATEUI will remove the insert_chars[$]
-    elsif ch = ':' and complete_statements then
+    elsif ch = ':' and auto_namespace then
       view_completions()
     elsif ch = ' ' and complete_statements then
       auto_expand()
-    elsif ch = '\n' and complete_statements then
-      auto_indent()
+    elsif ch = '\n' and auto_indent then
+      do_auto_indent()
     elsif ch = '(' then
       -- check for displaying subroutine arguments
-      insert_pair()
-      if complete_statements then
+      if complete_braces then
+	insert_pair()
+      end if
+      if auto_arguments then
         view_subroutine_arguments()    
       end if
-    elsif ch = '{' or ch = '[' then
+    elsif ch = '{' or ch = '[' and complete_braces then
       insert_pair()
-    elsif ch = '"' or ch = '\'' then
+    elsif ch = '"' or ch = '\'' and complete_braces then
       insert_pair()
+--    elsif auto_complete and (
+--	(ch >= 'a' and ch <= 'z') or
+--	(ch >= 'A' and ch <= 'Z') or
+--	(ch >= '0' and ch <= '9') or
+--	ch = '_') then
+--        view_completions()
     end if
 
   elsif code = SCN_AUTOCSELECTION then
