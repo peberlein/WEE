@@ -472,10 +472,16 @@ function character_literal()
   return c
 end function
 
+-- returns a bare or quoted filename following an include statement
+-- when quoted, backslashes must be escaped
 function filename()
   sequence s
-  s = ""
   skip_whitespace()
+  if idx <= length(text) and text[idx] = '\"' then
+    idx += 1
+    return string_literal()
+  end if
+  s = ""
   while idx <= length(text) and not find(text[idx], "\t\r\n ") do
     s &= text[idx]
     idx += 1
