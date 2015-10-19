@@ -565,12 +565,17 @@ function RunStart(atom ctl)
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
     end if
+
+    cmd = terminal_program
+    if length(cmd) and cmd[$] != ' ' then
+        cmd &= ' '
+    end if
     
     run_file_name = file_name
     chdir(dirname(run_file_name))
     if match("Start", lbl) = 1 then
 	reset_ex_err()
-	cmd = get_eu_bin(interpreter) & ' ' & quote_spaces(file_name)
+	cmd &= get_eu_bin(interpreter) & ' ' & quote_spaces(file_name)
 	if not equal(lbl, "Start") then -- with arguments
 	    if length(get_tab_arguments()) = 0 then
 		if RunSetArguments() then
@@ -581,13 +586,12 @@ function RunStart(atom ctl)
 	end if
 	system(cmd)
 	check_ex_err()
-	
     elsif equal(lbl, "Bind") then
-	system(get_eu_bin("eubind") & ' ' & quote_spaces(file_name))
+	system(cmd & get_eu_bin("eubind") & ' ' & quote_spaces(file_name))
     elsif equal(lbl, "Shroud") then
-	system(get_eu_bin("eushroud") & ' ' & quote_spaces(file_name))
+	system(cmd & get_eu_bin("eushroud") & ' ' & quote_spaces(file_name))
     elsif equal(lbl, "Translate") then
-	system(get_eu_bin("euc") & ' ' & quote_spaces(file_name))
+	system(cmd & get_eu_bin("euc") & ' ' & quote_spaces(file_name))
     else
 	crash("Unable to get menu label")
     end if
@@ -630,6 +634,57 @@ function RunChooseInterpreter(atom ctl)
     if gtk:get(ctl, "active") then
       interpreter = lbl
     end if
+    return 0
+end function
+
+function ChooseTerminal(atom ctl, atom text_entry)
+    object lbl = gtk:get(ctl, "label")
+    if equal(lbl, "gnome-terminal") then
+      set(text_entry, "text", lbl & " -x")
+    else
+      set(text_entry, "text", lbl & " -e")
+    end if
+    return 0
+end function
+
+constant choose_terminal = call_back(routine_id("ChooseTerminal"))
+constant terminals = {"x-terminal-emulator", "urxvt", "rxvt",
+    "terminator", "Eterm", "aterm", "xterm", "gnome-terminal",
+    "roxterm", "xfce4-terminal", "termite", "lxterminal",
+    "mate-terminal", "terminology"}
+
+function OptionsTerminal()
+    atom dialog, text_entry, panel
+    
+    dialog = create(GtkDialog)
+
+    set(dialog, "add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT)
+    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
+    set(dialog, "transient for", win)
+    set(dialog, "title", "Choose Terminal Emulator")
+    set(dialog, "default response", GTK_RESPONSE_OK)
+    set(dialog, "modal", TRUE)
+
+    panel = create(GtkBox, VERTICAL, 4)
+    add(gtk:get(dialog, "content area"), panel)
+
+    add(panel, create(GtkLabel, "Enter a terminal emulator to use when running programs,or select\none from below. Leave blank to run in parent terminal."))
+    
+    text_entry = create(GtkEntry)
+    add(panel, text_entry)
+    set(text_entry, "activates default", TRUE)
+    set(text_entry, "text", terminal_program)
+    for i = 1 to length(terminals) do
+        if system_exec("which " & terminals[i] & " >/dev/null 2>&1") = 0 then
+	    add(panel, create(GtkButton, terminals[i], choose_terminal, text_entry))
+        end if
+    end for
+
+    show_all(dialog)
+    if set(dialog, "run") = GTK_RESPONSE_OK then
+	terminal_program = gtk:get(text_entry, "text")
+    end if
+    hide(dialog)
     return 0
 end function
 
@@ -700,7 +755,7 @@ end function
 constant 
   win = create(GtkWindow),
   group = create(GtkAccelGroup),
-  panel = create(GtkBox, VERTICAL)
+  panel = create(GtkBox, VERTICAL, 2)
 set(win, "icon", join_path({wee_path, "wee.ico"}))
 set(win, "border width", 0)
 connect(win, "destroy", main_quit)
@@ -852,7 +907,8 @@ add(optionsmenu, {
   createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap),
   createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs),
   createmenuitem("Complete Statements", "OptionsCompleteStatements", 0, complete_statements),
-  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces)
+  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces),
+  createmenuitem("Terminal...", "OptionsTerminal")
   })
 set(menuOptions, "submenu", optionsmenu)
 

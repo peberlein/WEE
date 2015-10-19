@@ -175,6 +175,8 @@ global integer font_height, line_numbers, sorted_subs, line_wrap,
     auto_complete, -- when typing two word chars or backspace
     auto_arguments, -- when typing '(' after an identifier
     auto_indent -- when creating a new line
+global sequence
+    terminal_program -- for GTK, runs programs in a terminal
 global integer keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
     linenumber_color, bracelight_color, bold_flags
@@ -307,6 +309,7 @@ global procedure wee_init()
 
     find_phrase = ""
     replace_phrase = ""
+    terminal_program = ""
 
     reopen_tabs = 1
     tabs_to_open = {}
@@ -473,6 +476,8 @@ global procedure load_wee_conf(sequence wee_conf_file)
 	        indentation_guides = l[2]
 	    elsif equal(key, "caret_width") and int_ok then
 	        caret_width = l[2]
+	    elsif equal(key, "terminal_program") then
+		terminal_program = val
             end if
         end if
         l = gets(f)
@@ -523,6 +528,7 @@ global procedure save_wee_conf(sequence wee_conf_file)
     printf(f, "tab_width=%d\n", {tab_width})
     printf(f, "indentation_guides=%d\n", {indentation_guides})
     printf(f, "caret_width=%d\n", {caret_width})
+    printf(f, "terminal_program=%s\n", {terminal_program})
     close(f)
 end procedure
 
