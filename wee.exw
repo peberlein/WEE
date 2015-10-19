@@ -78,6 +78,8 @@ global constant
 --  Bold options for syntax coloring
 --  64-bit supported on Windows (Linux/OSX)
 --  select next tab (Ctrl+Tab) and previous tab (Shift+Ctrl+Tab)
+--  select next/prev tab using mouse wheel over tabs
+--  close tab with middle mouse button
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos

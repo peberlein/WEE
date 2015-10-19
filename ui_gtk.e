@@ -884,8 +884,10 @@ pack(panel, menubar)
 
 -------------------------------------------------
 function PopupTabMenu(atom nb, atom event)
+  integer button = events:button(event)
 
-  if events:button(event) = 3 then
+  -- right click or middle click
+  if button = 3 or button = 2 then
     atom x, y, lx, ly, lw, lh
     {x,y} = events:xy(event) -- get mouse coordinates
     atom allocation = allocate(4*4)
@@ -897,12 +899,18 @@ function PopupTabMenu(atom nb, atom event)
       {lx, ly, lw, lh} = peek4u({allocation, 4}) -- get label rect
 
       if x >= lx-10 and x <= lx+lw+10 then
-        select_tab(i+1)
-        set(tabmenu, "popup", NULL, NULL, NULL, NULL, 0, events:time(event))
+        if button = 3 then -- right click
+          select_tab(i+1)
+          set(tabmenu, "popup", NULL, NULL, NULL, NULL, 0, events:time(event))
+	elsif button = 2 then -- middle click
+	  select_tab(i+1)
+	  close_tab()
+        end if
         exit
       end if
     end for
     free(allocation)
+    return 1
   end if
 
   return 0

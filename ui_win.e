@@ -1279,7 +1279,22 @@ procedure translate_editor_keys(atom msg)
   iMsg = m[2]
   wParam = m[3]
   lParam = m[4]
+  
   if hwnd != hedit then
+    if hwnd = htabs and iMsg = WM_MBUTTONDOWN then
+      atom point
+      integer tab
+      point = allocate(12)
+      poke4(point, {LOWORD(lParam), HIWORD(lParam), 0})
+      tab = c_func(SendMessage, {htabs, TCM_HITTEST, 0, point})
+      free(point)
+      if tab >= 0 then
+	-- middle click to close tab
+	select_tab(tab + 1)
+	m = {hMainWnd, WM_COMMAND, File_Close, 0}
+	pack(msg, "pdpp", m)
+      end if
+    end if
     return
   end if
   
@@ -1378,7 +1393,6 @@ procedure translate_editor_keys(atom msg)
       end if
     end if
     free(point)
-
   else
     return
   end if
