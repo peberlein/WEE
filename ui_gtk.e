@@ -908,6 +908,16 @@ function PopupTabMenu(atom nb, atom event)
   return 0
 end function
 
+function NotebookTabScroll(atom nb, atom event)
+  integer dir = events:scroll_dir(event)
+  if dir = 1 then
+    select_tab(get_next_tab())
+  elsif dir = 0 then
+    select_tab(get_prev_tab())
+  end if
+  return 0
+end function
+
 constant
   notebook = create(GtkNotebook),
   status_label = create(GtkLabel, "status")
@@ -917,8 +927,13 @@ pack(panel, notebook, TRUE, TRUE)
 connect(notebook, "switch-page", call_back(routine_id("notebook_switch_page")))
 connect(notebook, "button-press-event", call_back(routine_id("PopupTabMenu")))
 
+set(notebook, "add_events", GDK_SCROLL_MASK)
+connect(notebook, "scroll-event", call_back(routine_id("NotebookTabScroll")))
+
 show(status_label)
 set(notebook, "action widget", status_label, GTK_PACK_END)
+set(notebook, "scrollable", TRUE)
+
 
 --------------------------------------------------
 
