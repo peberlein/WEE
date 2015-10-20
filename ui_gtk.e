@@ -32,7 +32,7 @@ include scintilla.e
 include EuGTK/GtkEngine.e
 include EuGTK/GtkEvents.e
 include wee.exw as wee
-
+include weeicon.e
 
 
 -- check to see if 64-bit callback arguments are broken
@@ -60,29 +60,10 @@ x_size = 500 y_size = 600
 constant wee_conf_file = getenv("HOME") & "/.wee_conf"
 load_wee_conf(wee_conf_file)
 
-
--- helper function for setting multiple properties at once
-function sets(atom handle, sequence properties)
-    sequence p
-    for i = 1 to length(properties) do
-	p = properties[i]
-	if length(p) = 2 then
-	   set(handle, p[1], p[2])
-	elsif length(p) = 3 then
-	   set(handle, p[1], p[2], p[3])
-	elsif length(p) = 4 then
-	   set(handle, p[1], p[2], p[3], p[4])
-	elsif length(p) = 5 then
-	   set(handle, p[1], p[2], p[3], p[4], p[5])
-	elsif length(p) = 6 then
-	   set(handle, p[1], p[2], p[3], p[4], p[5], p[6])
-	else
-	    crash("unhandled property length")
-	end if
-    end for
-    return handle
-end function
-
+-- bind the icon so it won't have to be found at runtime;
+constant wee_icon = gtk_func("gdk_pixbuf_new_from_xpm_data",
+        {P},
+        {allocate_string_pointer_array(wee_xpm)})
 
 --------------------------------------------------
 -- Find dialog
@@ -111,45 +92,43 @@ procedure find_dialog(integer rep)
 	find_phrase = text
     end if
 
-    dialog = create(GtkDialog)
-    --set(dialog, "default size", 200, 200)
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"transient for", win},
+	{"title", "Find"},
+	{"modal", TRUE},
+	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT}})
     if rep then
 	set(dialog, "add button", "Replace All", GTK_RESPONSE_REPLACE_ALL)
 	set(dialog, "add button", "Replace", GTK_RESPONSE_REPLACE)
-    end if
-    set(dialog, "add button", "Find Next", GTK_RESPONSE_FIND)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "Find")
-    if rep then
 	set(dialog, "default response", GTK_RESPONSE_REPLACE)
     else
 	set(dialog, "default response", GTK_RESPONSE_FIND)
     end if
-    set(dialog, "modal", TRUE)
+    set(dialog, "add button", "Find Next", GTK_RESPONSE_FIND)
     content = gtk:get(dialog, "content area")
     
-    vbox = create(GtkBox, VERTICAL)
+    vbox = create(GtkBox, VERTICAL, 5)
+    set(vbox, "margin bottom", 5)
     add(content, vbox)
     
-    hbox = create(GtkBox, HORIZONTAL)
+    hbox = create(GtkBox, HORIZONTAL, 5)
     pack(vbox, hbox)
     pack(hbox, create(GtkLabel, "Find What:"))
-    find_entry = create(GtkEntry)
-    set(find_entry, "activates default", TRUE)
-    set(find_entry, "text", find_phrase)
+    find_entry = create(GtkEntry, {
+	{"activates default", TRUE},
+	{"text", find_phrase}})
     pack(hbox, find_entry)
-    --pack(hbox, -create(GtkButton, "Find Next", GTK_RESPONSE_OK))
 
     hedit = tab_hedit()
 
     if rep then
-        hbox = create(GtkBox, HORIZONTAL)
+        hbox = create(GtkBox, HORIZONTAL, 5)
 	pack(vbox, hbox)
 	pack(hbox, create(GtkLabel, "Replace With:"))
-	rep_entry = create(GtkEntry)
-	set(rep_entry, "activates default", TRUE)
-	set(rep_entry, "text", replace_phrase)
+	rep_entry = create(GtkEntry, {
+	    {"activates default", TRUE},
+	    {"text", replace_phrase}})
 	pack(hbox, rep_entry)
 	
 	-- clear the target so that first replace won't reuse old one
@@ -157,18 +136,17 @@ procedure find_dialog(integer rep)
 	SSM(hedit, SCI_SETTARGETEND, 0)
     end if
 
-    hbox = create(GtkBox, HORIZONTAL)
+    hbox = create(GtkBox, HORIZONTAL, 5)
     pack(vbox, hbox)
     chk_word = create(GtkCheckButton, "Match whole word only")
     pack(hbox, chk_word)
-    --pack(hbox, -create(GtkButton, "Cancel", GTK_RESPONSE_DELETE_EVENT))
     
-    hbox = create(GtkBox, HORIZONTAL)
+    hbox = create(GtkBox, HORIZONTAL, 5)
     pack(vbox, hbox)
     chk_case = create(GtkCheckButton, "Match case")
     pack(hbox, chk_case)
 
-    hbox = create(GtkBox, HORIZONTAL)
+    hbox = create(GtkBox, HORIZONTAL, 5)
     pack(vbox, hbox)
     chk_backward = create(GtkCheckButton, "Search backward")
     pack(hbox, chk_backward)
@@ -274,14 +252,15 @@ function OldViewSubs()
         subs = sort(subs)
     end if
     
-    dialog = create(GtkDialog)
-    set(dialog, "default size", 200, 400)
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
-    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "Subroutines")
-    set(dialog, "default response", GTK_RESPONSE_OK)
-    set(dialog, "modal", TRUE)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"default size", 200, 400},
+	{"add button", "gtk-close", GTK_RESPONSE_CLOSE},
+	{"add button", "gtk-ok", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "Subroutines"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
 
     content = gtk:get(dialog, "content area")
     scroll = create(GtkScrolledWindow)
@@ -335,14 +314,15 @@ function ViewSubs()
     subs = get_subroutines(parse(text, file_name))
     word = word[1]
 
-    dialog = create(GtkDialog)
-    set(dialog, "default size", 200, 400)
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
-    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "Subroutines")
-    set(dialog, "default response", GTK_RESPONSE_OK)
-    set(dialog, "modal", TRUE)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"default size", 200, 400},
+	{"add button", "gtk-close", GTK_RESPONSE_CLOSE},
+	{"add button", "gtk-ok", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "Subroutines"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
 
     content = gtk:get(dialog, "content area")
     scroll = create(GtkScrolledWindow)
@@ -355,35 +335,35 @@ function ViewSubs()
 
     list = create(GtkTreeView)
     add(scroll, list)
-    object store = create(GtkListStore,{gSTR,gINT})
-    set(list,"model",store)
+    object store = create(GtkListStore, {gSTR, gINT})
+    set(list, "model", store)
     object col1 = create(GtkTreeViewColumn)
     object rend1 = create(GtkCellRendererText)
-    add(col1,rend1)
-    set(col1,"add attribute",rend1,"text",1)
-    set(col1,"sort indicator",TRUE)
-    set(col1,"max width",100)
-    set(col1,"title","Routine Name")
-    set(list,"append columns",col1)
+    add(col1, rend1)
+    set(col1, "add attribute", rend1, "text", 1)
+    set(col1, "sort indicator", TRUE)
+    set(col1, "max width", 100)
+    set(col1, "title", "Routine Name")
+    set(list, "append columns", col1)
 
     object col2 = create(GtkTreeViewColumn)
     object rend2 = create(GtkCellRendererText)
-    add(col2,rend2)
-    set(col2,"add attribute",rend2,"text",2)
-    set(list,"append columns",col2)
-    set(store,"data",routines)
+    add(col2, rend2)
+    set(col2, "add attribute", rend2, "text", 2)
+    set(list, "append columns", col2)
+    set(store, "data", routines)
     
     object selection = gtk:get(list,"selection")
-    set(selection,"mode",GTK_SELECTION_SINGLE)
-    set(col2,"visible",FALSE)
+    set(selection, "mode", GTK_SELECTION_SINGLE)
+    set(col2, "visible", FALSE)
 
-    set(col1,"sort column id",1)
+    set(col1, "sort column id", 1)
     connect(list, "row-activated", row_activated, dialog)
 
     show_all(dialog)
     if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
-	row = gtk:get(selection,"selected row")
-	data = gtk:get(store,"row data",row)
+	row = gtk:get(selection, "selected row")
+	data = gtk:get(store, "row data", row)
 	word = data[1]
 	pos = data[2]
 	goto_pos(pos, length(word))
@@ -420,10 +400,12 @@ function OptionsFont()
 end function
 
 function RunColorDialog(integer color)
-    object ccd = create(GtkColorChooserDialog, "Select a color", win)
-    set(ccd, "use alpha", FALSE)
-    set(ccd, "rgba", sprintf("#%02x%02x%02x", 
-	and_bits(floor(color/{1,#100,#10000}),#FF)))
+    object ccd = create(GtkColorChooserDialog, {
+	{"title", "Select a color"},
+	{"transient for", win},
+	{"use alpha", FALSE},
+	{"rgba", sprintf("#%02x%02x%02x", 
+	and_bits(floor(color/{1,#100,#10000}),#FF))}})
     if gtk:get(ccd, "run") = MB_OK then
 	color = gtk:get(ccd, "rgba", 2)
 	color = floor(and_bits(color, #FF0000) / #10000) +
@@ -473,15 +455,17 @@ constant bold_toggle = call_back(routine_id("BoldToggle"))
 function OptionsColors()
     atom dialog, grid
     
-    dialog = create(GtkDialog)
-    set(dialog, "default size", 200, 300)
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "Colors")
-    set(dialog, "default response", GTK_RESPONSE_OK)
-    set(dialog, "modal", TRUE)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"default size", 200, 300},
+	{"add button", "gtk-close", GTK_RESPONSE_CLOSE},
+	{"transient for", win},
+	{"title", "Colors"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
     
     grid = create(GtkGrid, VERTICAL)
+    set(grid, "margin bottom", 5)
     add(gtk:get(dialog, "content area"), grid)
     
     set(grid, {
@@ -602,20 +586,21 @@ end function
 function RunSetArguments()
     atom dialog, content, text_entry, result = -1
     
-    dialog = create(GtkDialog)
-    --set(dialog, "default size", 200, 200)
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT)
-    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "Arguments")
-    set(dialog, "default response", GTK_RESPONSE_OK)
-    set(dialog, "modal", TRUE)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT},
+	{"add button", "gtk-ok", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "Arguments"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
     content = gtk:get(dialog, "content area")
     
-    text_entry = create(GtkEntry)
+    text_entry = create(GtkEntry, {
+	{"activates default", TRUE},
+	{"text", get_tab_arguments()},
+	{"margin bottom", 5}})
     add(content, text_entry)
-    set(text_entry, "activates default", TRUE)
-    set(text_entry, "text", get_tab_arguments())
 
     show_all(dialog)
     if set(dialog, "run") = GTK_RESPONSE_OK then
@@ -626,14 +611,33 @@ function RunSetArguments()
     return result
 end function
 
-function RunChooseInterpreter(atom ctl)
-    object lbl = gtk:get(ctl, "label")
-    if atom(lbl) or equal(lbl, "") then
-        crash("Unable to get menu label")
+function RunChooseInterpreter()--atom ctl)
+    atom dialog, text_entry, panel
+    sequence interpreters = {"eui", "exu"}
+    
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT},
+	{"add button", "gtk-ok", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "Choose Interpreter"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
+
+    panel = create(GtkBox, HORIZONTAL)
+    add(gtk:get(dialog, "content area"), panel)
+    
+    text_entry = create(GtkComboBoxEntry, {
+	{"margin bottom", 5},
+	{"activates default", TRUE}})
+    add(panel, text_entry)
+    add(text_entry, interpreters)
+    
+    show_all(dialog)
+    if set(dialog, "run") = GTK_RESPONSE_OK then
+	terminal_program = gtk:get(text_entry, "text")
     end if
-    if gtk:get(ctl, "active") then
-      interpreter = lbl
-    end if
+    hide(dialog)
     return 0
 end function
 
@@ -656,23 +660,24 @@ constant terminals = {"x-terminal-emulator", "urxvt", "rxvt",
 function OptionsTerminal()
     atom dialog, text_entry, panel
     
-    dialog = create(GtkDialog)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT},
+	{"add button", "gtk-ok", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "Choose Terminal Emulator"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
 
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT)
-    set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "Choose Terminal Emulator")
-    set(dialog, "default response", GTK_RESPONSE_OK)
-    set(dialog, "modal", TRUE)
-
-    panel = create(GtkBox, VERTICAL, 4)
+    panel = create(GtkBox, VERTICAL, 5)
+    set(panel, "margin bottom", 5)
     add(gtk:get(dialog, "content area"), panel)
 
     add(panel, create(GtkLabel, "Enter a terminal emulator to use when running programs,or select\none from below. Leave blank to run in parent terminal."))
     
-    text_entry = create(GtkEntry)
+    text_entry = create(GtkEntry, {
+	{"activates default", TRUE}})
     add(panel, text_entry)
-    set(text_entry, "activates default", TRUE)
     set(text_entry, "text", terminal_program)
     for i = 1 to length(terminals) do
         if system_exec("which " & terminals[i] & " >/dev/null 2>&1") = 0 then
@@ -714,7 +719,6 @@ function configure_event(atom w, atom s)
   {left_margin, top_margin, x_size, y_size} =
     gtk:get(gtk:get(w, "window"), "geometry")
   {x_pos, y_pos} = gtk:get(w, "position")
-  --? {x_pos, y_pos, x_size, y_size, left_margin, top_margin}
   return 0
 end function
 
@@ -728,13 +732,11 @@ function delete_event()
 end function
 
 function notebook_switch_page(atom nb, atom page, atom page_num)
-    --? {nb, page, page_num}
     select_tab(page_num + 1)
     return 0
 end function
 
 function window_set_focus(atom widget)
-    --printf(1, "window set focus %d\n", {widget})
     check_externally_modified_tabs()
     check_ex_err()
     return 0
@@ -753,20 +755,20 @@ end function
 -------------------------------------------------------------
 
 constant 
-  win = create(GtkWindow),
   group = create(GtkAccelGroup),
-  panel = create(GtkBox, VERTICAL, 2)
-set(win, "icon", join_path({wee_path, "wee.ico"}))
-set(win, "border width", 0)
+  win = create(GtkWindow, {
+    {"icon", wee_icon},
+    {"border width", 0},
+    {"add accel group", group},
+    {"default size", x_size, y_size},
+    {"move", x_pos, y_pos}}),
+  panel = create(GtkBox, VERTICAL)
+
 connect(win, "destroy", main_quit)
 connect(win, "configure-event", call_back(routine_id("configure_event")))
 connect(win, "delete-event", call_back(routine_id("delete_event")))
 connect(win, "focus-in-event", call_back(routine_id("window_set_focus")))
-set(win, "add accel group", group)
 add(win, panel)
-
-set(win, "default size", x_size, y_size)
-set(win, "move", x_pos, y_pos)
 
 constant
   about_dialog = create(GtkAboutDialog, {
@@ -775,10 +777,10 @@ constant
     {"program name", window_title},
     {"comments", "A small editor for Euphoria programming."},
     {"version", wee:version},
-    {"authors", {author, "Powered by EuGTK http://sites.google.com/site/euphoriagtk/Home/"}},
+    {"authors", {author, "EuGTK by Irv Mullins http://sites.google.com/site/euphoriagtk/Home/"}},
     {"website", "https://github.com/peberlein/WEE/"},
     {"website label", "Wee on GitHub"},
-    {"logo", create(GdkPixbuf, join_path({wee_path, "wee.ico"}))}
+    {"logo", wee_icon}
   })
 
 constant
@@ -790,24 +792,27 @@ constant
   menuRun = create(GtkMenuItem, "_Run"),
   menuOptions = create(GtkMenuItem, "_Options"),
   menuHelp = create(GtkMenuItem, "_Help"),
-  menuChooseInterpreter = create(GtkMenuItem, "Choose Interpreter"),
-  filemenu = sets(create(GtkMenu), {{"accel group", group}}),
-  editmenu = sets(create(GtkMenu), {{"accel group", group}}),
-  searchmenu = sets(create(GtkMenu), {{"accel group", group}}),
-  viewmenu = sets(create(GtkMenu), {{"accel group", group}}),
-  runmenu = sets(create(GtkMenu), {{"accel group", group}}),
-  optionsmenu = sets(create(GtkMenu), {{"accel group", group}}),
-  helpmenu = sets(create(GtkMenu), {{"accel group", group}}),
+  filemenu = create(GtkMenu, {{"accel group", group}}),
+  editmenu = create(GtkMenu, {{"accel group", group}}),
+  searchmenu = create(GtkMenu, {{"accel group", group}}),
+  viewmenu = create(GtkMenu, {{"accel group", group}}),
+  runmenu = create(GtkMenu, {{"accel group", group}}),
+  optionsmenu = create(GtkMenu, {{"accel group", group}}),
+  helpmenu = create(GtkMenu, {{"accel group", group}}),
   chooseinterpreter_menu = create(GtkMenu),
   tabmenu = create(GtkMenu)
 
 -- create a menu item with "activate" signal connected to local routine
 -- and add parsed accelerator key 
-function createmenuitem(sequence text, object r, object key = 0, integer check = -1)
+function createmenuitem(sequence text, object r, object key = 0, object check = -1)
   atom widget, x
-  if check = -1 then
+  if equal(check, -1) or sequence(check) then
     if sequence(key) then
       widget = create(GtkMenuItem, text, 0, 0, {group, key})
+      if sequence(check) then
+        -- check could be a second accelerator
+        set(widget, "add accelerator", {group, check})
+      end if
     else
       widget = create(GtkMenuItem, text)
     end if
@@ -852,12 +857,9 @@ add(editmenu, {
 set(menuEdit, "submenu", editmenu)
 
 add(searchmenu, {
-  sets(createmenuitem("Find...", "SearchFind", "<Control>F"),
-    {{"add accelerator", {group,"<Control>F3"}}}),
-  sets(createmenuitem("Find Next", "SearchFindNext", "<Control>G"),
-    {{"add accelerator", {group, "F3"}}}),
-  sets(createmenuitem("Find Previous", "SearchFindPrevious", "<Control><Shift>G"),
-    {{"add accelerator", {group, "<Shift>F3"}}}),
+  createmenuitem("Find...", "SearchFind", "<Control>F", "<Control>F3"),
+  createmenuitem("Find Next", "SearchFindNext", "<Control>G", "F3"),
+  createmenuitem("Find Previous", "SearchFindPrevious", "<Control><Shift>G", "<Shift>F3"),
   createmenuitem("Replace...", "SearchReplace", "<Control>R")
   })
 set(menuSearch, "submenu", searchmenu)
@@ -876,28 +878,13 @@ add(runmenu, {
   createmenuitem("Start", "RunStart", "F5"),
   createmenuitem("Start with Arguments", "RunStart", "<Shift>F5"),
   createmenuitem("Set Arguments...", "RunSetArguments"),
-  menuChooseInterpreter,
+  createmenuitem("Choose Interpreter...", "RunChooseInterpreter"),
   create(GtkSeparatorMenuItem),
   createmenuitem("Bind", "RunStart"),
   createmenuitem("Shroud", "RunStart"),
   createmenuitem("Translate", "RunStart")
   })
 set(menuRun, "submenu", runmenu)
-
-constant choose_interpreter_cb = call_back(routine_id("RunChooseInterpreter"))
-sequence interpreters = {"eui", "exu"}
-object tmp = NULL
-for i = 1 to length(interpreters) do
-    tmp = create(GtkRadioMenuItem, tmp, interpreters[i])
-    connect(tmp, "activate", choose_interpreter_cb)
-    if equal(interpreter, interpreters[i]) then
-        set(tmp, "active", 1)
-    end if
-    interpreters[i] = tmp
-end for
-
-add(chooseinterpreter_menu, interpreters)
-set(menuChooseInterpreter, "submenu", chooseinterpreter_menu)
 
 add(optionsmenu, {
   createmenuitem("Font...", "OptionsFont"),
@@ -983,20 +970,19 @@ function NotebookTabScroll(atom nb, atom event)
 end function
 
 constant
-  notebook = create(GtkNotebook),
-  status_label = create(GtkLabel, "status")
+  status_label = create(GtkLabel, "status"),
+  notebook = create(GtkNotebook, {
+    {"add_events", GDK_SCROLL_MASK},
+    {"scrollable", TRUE},
+    {"action widget", status_label, GTK_PACK_END}})
 
 pack(panel, notebook, TRUE, TRUE)
+show(status_label)
 
 connect(notebook, "switch-page", call_back(routine_id("notebook_switch_page")))
 connect(notebook, "button-press-event", call_back(routine_id("PopupTabMenu")))
-
-set(notebook, "add_events", GDK_SCROLL_MASK)
 connect(notebook, "scroll-event", call_back(routine_id("NotebookTabScroll")))
 
-show(status_label)
-set(notebook, "action widget", status_label, GTK_PACK_END)
-set(notebook, "scrollable", TRUE)
 
 
 --------------------------------------------------
@@ -1080,7 +1066,6 @@ global function ui_new_tab(sequence name)
 end function
 
 global procedure ui_close_tab(integer tab)
---  printf(1, "close tab\n", {})
     set(notebook, "remove page", tab-1)
 
     -- remove the window handle
@@ -1088,37 +1073,38 @@ global procedure ui_close_tab(integer tab)
 end procedure
 
 
-constant filter1 = sets(create(GtkFileFilter), {
+constant filter1 = create(GtkFileFilter, {
     {"name", "Euphoria files"},
     {"add pattern", "*.e"},
     {"add pattern", "*.ex"},
     {"add pattern", "*.exw"},
     {"add pattern", "*.ew"},
     {"add pattern", "ex.err"},
-    {"add pattern", "eu.cfg"}
-    })
+    {"add pattern", "eu.cfg"}})
 
-constant filter2 = sets(create(GtkFileFilter), {
+constant filter2 = create(GtkFileFilter, {
     {"name", "Text files"},
-    {"add mime type", "text/*"}
-    })
+    {"add mime type", "text/*"}})
 
-constant filter3 = sets(create(GtkFileFilter), {
+constant filter3 = create(GtkFileFilter, {
     {"name", "All files"},
-    {"add pattern", "*"}
-    })
+    {"add pattern", "*"}})
 
 global function ui_get_open_file_name()
   atom dialog
   sequence filename
   
-  dialog = create(GtkFileChooserDialog, "Open...", win, GTK_FILE_CHOOSER_ACTION_OPEN)
-  set(dialog, "select multiple", TRUE)
-  set(dialog, "add button", "gtk-cancel", GTK_RESPONSE_CLOSE)
-  set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
-  set(dialog, "position", GTK_WIN_POS_MOUSE)
-  set(dialog, "current folder", pathname(canonical_path(file_name)))
+  dialog = create(GtkFileChooserDialog, {
+    {"title", "Open..."},
+    {"transient for", win},
+    {"action", GTK_FILE_CHOOSER_ACTION_OPEN},
+    {"select multiple", TRUE},
+    {"add button", "gtk-cancel", GTK_RESPONSE_CLOSE},
+    {"add button", "gtk-ok", GTK_RESPONSE_OK},
+    {"position", GTK_WIN_POS_MOUSE},
+    {"current folder", pathname(canonical_path(file_name))}})
   add(dialog, {filter1, filter2, filter3})
+
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filenames")
     if length(filename) = 1 then
@@ -1136,15 +1122,19 @@ end function
 global function ui_get_save_file_name(sequence filename)
   atom dialog
   
-  dialog = create(GtkFileChooserDialog, "Save As...", win, GTK_FILE_CHOOSER_ACTION_SAVE)
-  set(dialog, "select multiple", FALSE)
-  set(dialog, "do overwrite confirmation", TRUE)
-  set(dialog, "add button", "gtk-cancel", GTK_RESPONSE_CLOSE)
-  set(dialog, "add button", "gtk-ok", GTK_RESPONSE_OK)
-  set(dialog, "filename", filename)
-  set(dialog, "position", GTK_WIN_POS_MOUSE)
-  set(dialog, "current folder", pathname(canonical_path(file_name)))
+  dialog = create(GtkFileChooserDialog, {
+    {"title", "Save As..."},
+    {"transient for", win},
+    {"action", GTK_FILE_CHOOSER_ACTION_SAVE},
+    {"select multiple", FALSE},
+    {"do overwrite confirmation", TRUE},
+    {"add button", "gtk-cancel", GTK_RESPONSE_CLOSE},
+    {"add button", "gtk-ok", GTK_RESPONSE_OK},
+    {"filename", filename},
+    {"position", GTK_WIN_POS_MOUSE},
+    {"current folder", pathname(canonical_path(file_name))}})
   add(dialog, {filter1, filter2, filter3})
+  
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
     filename = gtk:get(dialog, "filename")
   else
@@ -1165,15 +1155,16 @@ end function
 -- returns yes=1 no=0 cancel=-1
 global function ui_message_box_yes_no_cancel(sequence title, sequence message)
   atom dialog, result
-  dialog = create(GtkMessageDialog, win, 2, 2, GTK_BUTTONS_NONE)
-  set(dialog, "add button", "gtk-cancel", -1)
-  set(dialog, "add button", "gtk-no", 0)
-  set(dialog, "add button", "gtk-yes", 1)
-  set(dialog, "transient for", win)
-  set(dialog, "destroy with parent", TRUE)
-  set(dialog, "title", title)
-  set(dialog, "text", message)
-  set(dialog, "position", GTK_WIN_POS_CENTER_ON_PARENT)
+  dialog = create(GtkMessageDialog, {
+    {"title", title},
+    {"transient for", win},
+    {"add button", "gtk-cancel", -1},
+    {"add button", "gtk-no", 0},
+    {"add button", "gtk-yes", 1},
+    {"transient for", win},
+    {"destroy with parent", TRUE},
+    {"text", message},
+    {"position", GTK_WIN_POS_CENTER_ON_PARENT}})
   
   result = gtk:get(dialog, "run")
   set(dialog, "hide")
@@ -1194,15 +1185,16 @@ global procedure ui_view_error()
     err = get_ex_err()
     if length(err) = 0 then return end if
     
-    dialog = create(GtkDialog)
-    set(dialog, "default size", 200, 400)
-    set(dialog, "add button", "gtk-close", GTK_RESPONSE_CLOSE)
-    set(dialog, "add button", "Open Ex.Err", GTK_RESPONSE_YES)
-    set(dialog, "add button", "Goto Error", GTK_RESPONSE_OK)
-    set(dialog, "transient for", win)
-    set(dialog, "title", "View Error")
-    set(dialog, "default response", GTK_RESPONSE_OK)
-    set(dialog, "modal", TRUE)
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"default size", 200, 400},
+	{"add button", "gtk-close", GTK_RESPONSE_CLOSE},
+	{"add button", "Open Ex.Err", GTK_RESPONSE_YES},
+	{"add button", "Goto Error", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "View Error"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
     content = gtk:get(dialog, "content area")
 
     lbl = create(GtkLabel, err[2])
@@ -1240,14 +1232,14 @@ end procedure
 --------------------------------------------------
 -- help window
 
-constant helpwin = create(GtkWindow)
-    set(helpwin, "transient for", win)
-    set(helpwin,"title","Help")
-    set(helpwin,"default size",400,400)
-    set(helpwin,"border width",10)
-    set(helpwin,"deletable",FALSE) --!
-    set(helpwin,"resizable",FALSE)
-    connect(helpwin, "delete-event", call_back(routine_id("Hide")))
+constant helpwin = create(GtkWindow, {
+	{"transient for", win},
+	{"title", "Help"},
+	{"default size", 400, 400},
+	{"border width", 10},
+	{"deletable", FALSE}, --!
+	{"resizable", FALSE}})
+connect(helpwin, "delete-event", call_back(routine_id("Hide")))
 
 constant helplbl = create(GtkLabel)
     add(helpwin,helplbl)
@@ -1296,7 +1288,6 @@ global function ui_show_help(sequence html)
 end function
 
 global procedure ui_show_uri(sequence uri)
-    --puts(1, uri & "\n")
     show_uri(uri)
 end procedure
 
