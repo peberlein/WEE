@@ -34,6 +34,10 @@ include EuGTK/GtkEvents.e
 include wee.exw as wee
 include weeicon.e
 
+-- nifty shortcut, thanks Greg Haberek
+function callback(sequence name, atom rid = routine_id(name))
+    return call_back(rid)
+end function
 
 -- check to see if 64-bit callback arguments are broken
 ifdef BITS64 then
@@ -45,7 +49,7 @@ function check_callback_func(atom x)
 end function
 
 c_proc(define_c_proc("",
-		     call_back(routine_id("check_callback_func")),
+		     callback("check_callback_func"),
 		     {C_LONG}),
        {#100000000})
 end ifdef
@@ -61,8 +65,7 @@ constant wee_conf_file = getenv("HOME") & "/.wee_conf"
 load_wee_conf(wee_conf_file)
 
 -- bind the icon so it won't have to be found at runtime;
-constant wee_icon = gtk_func("gdk_pixbuf_new_from_xpm_data",
-        {P},
+constant wee_icon = gtk_func("gdk_pixbuf_new_from_xpm_data", {P},
         {allocate_string_pointer_array(wee_xpm)})
 
 --------------------------------------------------
@@ -73,7 +76,7 @@ constant
     GTK_RESPONSE_REPLACE = 2,
     GTK_RESPONSE_REPLACE_ALL = 3
 
-procedure find_dialog(integer rep)
+procedure find_dialog(integer replace_flag)
     atom dialog, content, row, vbox, hbox, lbl, hedit, 
 	find_entry, rep_entry, chk_word, chk_case, chk_backward
     integer flags, result, pos, backward
@@ -98,14 +101,13 @@ procedure find_dialog(integer rep)
 	{"title", "Find"},
 	{"modal", TRUE},
 	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT}})
-    if rep then
+    if replace_flag then
 	set(dialog, "add button", "Replace All", GTK_RESPONSE_REPLACE_ALL)
 	set(dialog, "add button", "Replace", GTK_RESPONSE_REPLACE)
-	set(dialog, "default response", GTK_RESPONSE_REPLACE)
-    else
-	set(dialog, "default response", GTK_RESPONSE_FIND)
     end if
     set(dialog, "add button", "Find Next", GTK_RESPONSE_FIND)
+    set(dialog, "default response", GTK_RESPONSE_FIND)
+
     content = gtk:get(dialog, "content area")
     
     vbox = create(GtkBox, VERTICAL, 5)
@@ -118,38 +120,33 @@ procedure find_dialog(integer rep)
     find_entry = create(GtkEntry, {
 	{"activates default", TRUE},
 	{"text", find_phrase}})
-    pack(hbox, find_entry)
+    pack(hbox, find_entry, TRUE, TRUE)
 
     hedit = tab_hedit()
 
-    if rep then
+    if replace_flag then
+	set(dialog, "default response", GTK_RESPONSE_REPLACE)
         hbox = create(GtkBox, HORIZONTAL, 5)
 	pack(vbox, hbox)
 	pack(hbox, create(GtkLabel, "Replace With:"))
 	rep_entry = create(GtkEntry, {
 	    {"activates default", TRUE},
 	    {"text", replace_phrase}})
-	pack(hbox, rep_entry)
+	pack(hbox, rep_entry, TRUE, TRUE)
 	
 	-- clear the target so that first replace won't reuse old one
 	SSM(hedit, SCI_SETTARGETSTART, 0)
 	SSM(hedit, SCI_SETTARGETEND, 0)
     end if
 
-    hbox = create(GtkBox, HORIZONTAL, 5)
-    pack(vbox, hbox)
     chk_word = create(GtkCheckButton, "Match whole word only")
-    pack(hbox, chk_word)
+    pack(vbox, chk_word, FALSE, FALSE)
     
-    hbox = create(GtkBox, HORIZONTAL, 5)
-    pack(vbox, hbox)
     chk_case = create(GtkCheckButton, "Match case")
-    pack(hbox, chk_case)
+    pack(vbox, chk_case)
 
-    hbox = create(GtkBox, HORIZONTAL, 5)
-    pack(vbox, hbox)
     chk_backward = create(GtkCheckButton, "Search backward")
-    pack(hbox, chk_backward)
+    pack(vbox, chk_backward)
 
     show_all(dialog)
     
@@ -300,7 +297,7 @@ function RowActivated(atom ctl, atom path, atom col, atom dialog)
     set(dialog, "response", GTK_RESPONSE_OK)
     return 0
 end function
-constant row_activated = call_back(routine_id("RowActivated"))
+constant row_activated = callback("RowActivated")
 
 -- contributed by Irv
 function ViewSubs()
@@ -449,8 +446,8 @@ function BoldToggle(atom ctl, atom flag)
     return 0
 end function
 
-constant color_button = call_back(routine_id("ColorButton"))
-constant bold_toggle = call_back(routine_id("BoldToggle"))
+constant color_button = callback("ColorButton")
+constant bold_toggle = callback("BoldToggle")
 
 function OptionsColors()
     atom dialog, grid
@@ -611,8 +608,30 @@ function RunSetArguments()
     return result
 end function
 
-function RunChooseInterpreter()--atom ctl)
-    atom dialog, text_entry, panel
+function ChooseInterpreter(atom ctl, atom text_entry)
+  atom dialog
+  sequence filenames
+
+  dialog = create(GtkFileChooserDialog, {
+    {"title", "Open..."},
+    {"transient for", win},
+    {"action", GTK_FILE_CHOOSER_ACTION_OPEN},
+    {"add button", "gtk-cancel", GTK_RESPONSE_CLOSE},
+    {"add button", "gtk-ok", GTK_RESPONSE_OK},
+    {"position", GTK_WIN_POS_MOUSE},
+    {"current folder", pathname(canonical_path(interpreter))}})
+
+  if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
+    set(text_entry, "text", gtk:get(dialog, "filename"))
+  end if
+  set(dialog, "hide")
+  return 0
+end function
+
+constant choose_interpreter = callback("ChooseInterpreter")
+
+function RunSetInterpreter()
+    atom dialog, text_entry, panel, row
     sequence interpreters = {"eui", "exu"}
     
     dialog = create(GtkDialog, {
@@ -624,42 +643,44 @@ function RunChooseInterpreter()--atom ctl)
 	{"default response", GTK_RESPONSE_OK},
 	{"modal", TRUE}})
 
-    panel = create(GtkBox, HORIZONTAL)
+    panel = create(GtkBox, VERTICAL, 5)
     add(gtk:get(dialog, "content area"), panel)
+    
+    add(panel, create(GtkLabel,
+`Enter an interpreter to use to run
+programs, or select one from the list.
+Leave blank for the default, or from
+the eu.cfg file.`))
+
+    row = create(GtkBox, HORIZONTAL)
+    add(panel, row)
     
     text_entry = create(GtkComboBoxEntry, {
 	{"margin bottom", 5},
 	{"activates default", TRUE}})
-    add(panel, text_entry)
+    add(row, text_entry)
     add(text_entry, interpreters)
+
+    add(row, create(GtkButton, "...", choose_interpreter, text_entry))
     
     show_all(dialog)
     if set(dialog, "run") = GTK_RESPONSE_OK then
-	terminal_program = gtk:get(text_entry, "text")
+	terminal_program = gtk:get(text_entry, "active text")
     end if
     hide(dialog)
     return 0
 end function
 
-function ChooseTerminal(atom ctl, atom text_entry)
-    object lbl = gtk:get(ctl, "label")
-    if equal(lbl, "gnome-terminal") then
-      set(text_entry, "text", lbl & " -x")
-    else
-      set(text_entry, "text", lbl & " -e")
-    end if
-    return 0
-end function
-
-constant choose_terminal = call_back(routine_id("ChooseTerminal"))
 constant terminals = {"x-terminal-emulator", "urxvt", "rxvt",
     "terminator", "Eterm", "aterm", "xterm", "gnome-terminal",
     "roxterm", "xfce4-terminal", "termite", "lxterminal",
     "mate-terminal", "terminology"}
 
-function OptionsTerminal()
+function RunSetTerminal()
     atom dialog, text_entry, panel
-    
+    sequence text
+    integer n = 0
+
     dialog = create(GtkDialog, {
 	{"border width", 5},
 	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT},
@@ -673,21 +694,38 @@ function OptionsTerminal()
     set(panel, "margin bottom", 5)
     add(gtk:get(dialog, "content area"), panel)
 
-    add(panel, create(GtkLabel, "Enter a terminal emulator to use when running programs,or select\none from below. Leave blank to run in parent terminal."))
+    add(panel, create(GtkLabel,
+`Enter a terminal emulator to use to run
+programs, or select one from the list. 
+Leave blank to run in parent terminal.`))
     
-    text_entry = create(GtkEntry, {
+    text_entry = create(GtkComboBoxEntry, {
+	{"margin bottom", 5},
 	{"activates default", TRUE}})
     add(panel, text_entry)
-    set(text_entry, "text", terminal_program)
     for i = 1 to length(terminals) do
         if system_exec("which " & terminals[i] & " >/dev/null 2>&1") = 0 then
-	    add(panel, create(GtkButton, terminals[i], choose_terminal, text_entry))
+	    text = terminals[i]
+	    if equal(text, "gnome-terminal") then
+	      text &= " -x"
+	    else
+	      text &= " -e"
+	    end if
+	    add(text_entry, {text})
+	    n += 1
+	    if equal(text, terminal_program) then
+	        set(text_entry, "active", n)
+	    end if
         end if
     end for
+    if length(terminal_program) and gtk:get(text_entry, "active") = 0 then
+	set(text_entry, "prepend text", terminal_program)
+	set(text_entry, "active", 1)
+    end if
 
     show_all(dialog)
     if set(dialog, "run") = GTK_RESPONSE_OK then
-	terminal_program = gtk:get(text_entry, "text")
+	terminal_program = gtk:get(text_entry, "active text")
     end if
     hide(dialog)
     return 0
@@ -757,17 +795,17 @@ end function
 constant 
   group = create(GtkAccelGroup),
   win = create(GtkWindow, {
-    {"icon", wee_icon},
     {"border width", 0},
     {"add accel group", group},
     {"default size", x_size, y_size},
     {"move", x_pos, y_pos}}),
   panel = create(GtkBox, VERTICAL)
 
+gtk_func("gtk_window_set_icon", {P,P}, {win, wee_icon})
 connect(win, "destroy", main_quit)
-connect(win, "configure-event", call_back(routine_id("configure_event")))
-connect(win, "delete-event", call_back(routine_id("delete_event")))
-connect(win, "focus-in-event", call_back(routine_id("window_set_focus")))
+connect(win, "configure-event", callback("configure_event"))
+connect(win, "delete-event", callback("delete_event"))
+connect(win, "focus-in-event", callback("window_set_focus"))
 add(win, panel)
 
 constant
@@ -878,7 +916,8 @@ add(runmenu, {
   createmenuitem("Start", "RunStart", "F5"),
   createmenuitem("Start with Arguments", "RunStart", "<Shift>F5"),
   createmenuitem("Set Arguments...", "RunSetArguments"),
-  createmenuitem("Choose Interpreter...", "RunChooseInterpreter"),
+  createmenuitem("Set Interpreter...", "RunSetInterpreter"),
+  createmenuitem("Set Terminal Emulator...", "RunSetTerminal"),
   create(GtkSeparatorMenuItem),
   createmenuitem("Bind", "RunStart"),
   createmenuitem("Shroud", "RunStart"),
@@ -894,8 +933,7 @@ add(optionsmenu, {
   createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap),
   createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs),
   createmenuitem("Complete Statements", "OptionsCompleteStatements", 0, complete_statements),
-  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces),
-  createmenuitem("Terminal...", "OptionsTerminal")
+  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces)
   })
 set(menuOptions, "submenu", optionsmenu)
 
@@ -974,14 +1012,15 @@ constant
   notebook = create(GtkNotebook, {
     {"add_events", GDK_SCROLL_MASK},
     {"scrollable", TRUE},
+    {"show border", FALSE}, -- seems to have opposite effect?
     {"action widget", status_label, GTK_PACK_END}})
 
 pack(panel, notebook, TRUE, TRUE)
 show(status_label)
 
-connect(notebook, "switch-page", call_back(routine_id("notebook_switch_page")))
-connect(notebook, "button-press-event", call_back(routine_id("PopupTabMenu")))
-connect(notebook, "scroll-event", call_back(routine_id("NotebookTabScroll")))
+connect(notebook, "switch-page", callback("notebook_switch_page"))
+connect(notebook, "button-press-event", callback("PopupTabMenu"))
+connect(notebook, "scroll-event", callback("NotebookTabScroll"))
 
 
 
@@ -991,23 +1030,15 @@ sequence ui_hedits
 ui_hedits = {}
 
 function tab_hedit()
-  integer tab
-  tab = gtk:get(notebook, "current page")
-  return ui_hedits[tab+1]
+    integer tab
+    tab = gtk:get(notebook, "current page")
+    return ui_hedits[tab+1]
 end function 
-
 
 --------------------------------------------------
 
-constant 
-  gtk_label_set_text = define_proc("gtk_label_set_text", {P,P})
-
 global procedure ui_update_status(sequence status)
-  atom text
-  text = allocate_string(status)
-  c_proc(gtk_label_set_text, {status_label, text})
-  free(text)
-  --set(status_label, "text", status)
+    set(status_label, "text", status)
 end procedure
 
 function file_open_recent(atom handle, integer idx)
@@ -1028,7 +1059,7 @@ global procedure ui_refresh_file_menu(sequence items)
 	    set(widget, "use underline", 0)
 	    filemenu_items &= widget
 	    add(filemenu, widget)
-	    connect(widget, "activate", call_back(routine_id("file_open_recent")), i)
+	    connect(widget, "activate", callback("file_open_recent"), i)
 	else
 	    set(filemenu_items[i], "label", items[i])
         end if
@@ -1048,7 +1079,7 @@ global procedure ui_update_tab_name(integer tab, sequence name)
   set(notebook, "tab_label_text", ui_hedits[tab], name)
 end procedure
 
-constant sci_notify_cb = call_back(routine_id("sci_notify"))
+constant sci_notify_cb = callback("sci_notify")
 
 global function ui_new_tab(sequence name)
   atom editor
@@ -1239,11 +1270,11 @@ constant helpwin = create(GtkWindow, {
 	{"border width", 10},
 	{"deletable", FALSE}, --!
 	{"resizable", FALSE}})
-connect(helpwin, "delete-event", call_back(routine_id("Hide")))
+connect(helpwin, "delete-event", callback("Hide"))
 
 constant helplbl = create(GtkLabel)
     add(helpwin,helplbl)
-    connect(helplbl, "activate-link", call_back(routine_id("HelpActivateLink")))
+    connect(helplbl, "activate-link", callback("HelpActivateLink"))
 
 function HelpActivateLink(atom handle, atom uri, atom userdata)
     puts(1, peek_string(uri)&"\n")
