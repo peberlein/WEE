@@ -76,19 +76,13 @@ constant
     GTK_RESPONSE_REPLACE = 2,
     GTK_RESPONSE_REPLACE_ALL = 3
 
-procedure find_dialog(integer replace_flag)
-    atom dialog, content, row, vbox, hbox, lbl, hedit, 
-	find_entry, rep_entry, chk_word, chk_case, chk_backward
-    integer flags, result, pos, backward
-    sequence text
--- Fi_nd What: __________________  [_Find Next]
--- [ ] Match _Whole Word Only      [  Cancel  ]
--- [ ] Match _Case
+integer find_backward = 0
 
--- Fi_nd What: __________________   [_Find Next]
--- Re_place With: _______________   [_Replace ]
--- [ ] Match _Whole Word Only       [Replace _All ]
--- [ ] Match _Case                  [Cancel]
+procedure find_dialog(integer replace_flag)
+    atom dialog, content, row, vbox, hbox, lbl, hedit,
+	find_entry, rep_entry, chk_word, chk_case, chk_backward
+    integer flags, result, pos
+    sequence text
 
     text = get_selection()
     if length(text) then
@@ -138,14 +132,22 @@ procedure find_dialog(integer replace_flag)
 	SSM(hedit, SCI_SETTARGETSTART, 0)
 	SSM(hedit, SCI_SETTARGETEND, 0)
     end if
-
-    chk_word = create(GtkCheckButton, "Match whole word only")
-    pack(vbox, chk_word, FALSE, FALSE)
     
-    chk_case = create(GtkCheckButton, "Match case")
+    flags = SSM(hedit, SCI_GETSEARCHFLAGS)
+
+    chk_word = create(GtkCheckButton, {
+	{"label", "Match whole word only"},
+	{"active", 0 != and_bits(flags, SCFIND_WHOLEWORD)}})
+    pack(vbox, chk_word)
+    
+    chk_case = create(GtkCheckButton, {
+	{"label", "Match case"},
+	{"active", 0 != and_bits(flags, SCFIND_MATCHCASE)}})
     pack(vbox, chk_case)
 
-    chk_backward = create(GtkCheckButton, "Search backward")
+    chk_backward = create(GtkCheckButton, {
+	{"label", "Search backward"},
+	{"active", find_backward}})
     pack(vbox, chk_backward)
 
     show_all(dialog)
@@ -159,13 +161,13 @@ procedure find_dialog(integer replace_flag)
 	if gtk:get(chk_case, "active") then
 	    flags += SCFIND_MATCHCASE
 	end if
-	backward = gtk:get(chk_backward, "active")
+	find_backward = gtk:get(chk_backward, "active")
 	
 	SSM(hedit, SCI_SETSEARCHFLAGS, flags)
 	find_phrase = gtk:get(find_entry, "text")
 
 	if result = GTK_RESPONSE_FIND then
-	    if search_find(find_phrase, backward) = 0 then
+	    if search_find(find_phrase, find_backward) = 0 then
 		Info(dialog, "Find", "Unable to find a match.")
 	    end if
 	else
@@ -179,7 +181,7 @@ procedure find_dialog(integer replace_flag)
 		end if
 	    else
 	        result = search_replace(replace_phrase)
-	        if search_find(find_phrase, backward) = 0 and result = 0 then
+	        if search_find(find_phrase, find_backward) = 0 and result = 0 then
 	           Info(dialog, "Replace", "Unable to find a match.") 
 	        end if
 	    end if
@@ -538,6 +540,87 @@ function OptionsCompleteBraces(atom handle)
     return 0
 end function
 
+function OptionsIndent(atom handle)
+    atom dialog, panel, hbox, hedit, indent_entry, tabs_entry, chk_guides, chk_usetabs
+    integer indent_width, tab_width, use_tabs
+    sequence val
+    
+    hedit = tab_hedit()
+    tab_width = SSM(hedit, SCI_GETTABWIDTH)
+    indent_width = SSM(hedit, SCI_GETINDENT)
+    use_tabs = SSM(hedit, SCI_GETUSETABS)
+    
+    dialog = create(GtkDialog, {
+	{"border width", 5},
+	{"add button", "gtk-close", GTK_RESPONSE_DELETE_EVENT},
+	{"add button", "gtk-ok", GTK_RESPONSE_OK},
+	{"transient for", win},
+	{"title", "Indent"},
+	{"default response", GTK_RESPONSE_OK},
+	{"modal", TRUE}})
+	
+    panel = create(GtkBox, VERTICAL, 5)
+    set(panel, "margin bottom", 5)
+    add(gtk:get(dialog, "content area"), panel)
+    
+    hbox = create(GtkBox, HORIZONTAL, 5)
+    add(panel, hbox)
+    add(hbox, create(GtkLabel, "Indent Size"))
+
+    indent_entry = create(GtkEntry, {
+	{"text", sprintf("%d", {indent_width})}})
+    add(hbox, indent_entry)
+    
+    chk_guides = create(GtkCheckButton, {
+	{"label", "Show indentation guides"},
+	{"active", indentation_guides}})
+    pack(panel, chk_guides)
+
+    chk_usetabs = create(GtkCheckButton, {
+	{"label", "Use tabs in indentation"},
+	{"active", use_tabs}})
+    pack(panel, chk_usetabs)
+
+    hbox = create(GtkBox, HORIZONTAL, 5)
+    add(panel, hbox)
+    add(hbox, create(GtkLabel, "Tab Size"))
+    
+    tabs_entry = create(GtkEntry, {
+	{"text", sprintf("%d", {tab_width})}})
+    add(hbox, tabs_entry)
+
+    show_all(dialog)
+    while set(dialog, "run") = GTK_RESPONSE_OK do
+	
+	val = value(gtk:get(indent_entry, "text"))
+	if val[1] = 0 and integer(val[2]) and val[2] >= 1 and val[2] <= 8 then
+	    indent_width = val[2]
+	else
+	    set(indent_entry, "grab focus")
+	    continue
+	end if
+
+	val = value(gtk:get(tabs_entry, "text"))
+	if val[1] = 0 and integer(val[2]) and val[2] >= 1 and val[2] <= 8 then
+	    tab_width = val[2]
+	else
+	    set(tabs_entry, "grab focus")
+	    continue
+	end if
+		    
+	use_tabs = gtk:get(chk_usetabs, "active")
+	indentation_guides = gtk:get(chk_guides, "active")
+	
+	SSM(hedit, SCI_SETTABWIDTH, tab_width)
+	SSM(hedit, SCI_SETINDENT, indent_width)
+	SSM(hedit, SCI_SETUSETABS, use_tabs)
+	reinit_all_edits()
+	exit
+
+    end while
+    hide(dialog)
+    return 0
+end function
 
 function RunStart(atom ctl)
     object lbl = gtk:get(ctl, "label")
@@ -644,23 +727,23 @@ function RunSetInterpreter()
 	{"modal", TRUE}})
 
     panel = create(GtkBox, VERTICAL, 5)
+    set(panel, "margin bottom", 5)
     add(gtk:get(dialog, "content area"), panel)
     
     add(panel, create(GtkLabel,
 `Enter an interpreter to use to run
 programs, or select one from the list.
 Leave blank for the default, or from
-the eu.cfg file.`))
+an 'eu.cfg' file.`))
 
-    row = create(GtkBox, HORIZONTAL)
+    row = create(GtkBox, HORIZONTAL, 5)
     add(panel, row)
-    
+
     text_entry = create(GtkComboBoxEntry, {
 	{"margin bottom", 5},
 	{"activates default", TRUE}})
     add(row, text_entry)
     add(text_entry, interpreters)
-
     add(row, create(GtkButton, "...", choose_interpreter, text_entry))
     
     show_all(dialog)
@@ -904,7 +987,7 @@ set(menuSearch, "submenu", searchmenu)
 
 add(viewmenu, {
   createmenuitem("Subroutines...", "ViewSubs", "F2"),
-  createmenuitem("Declaration", "ViewDecl", "<Control>F2"),
+  createmenuitem("Declaration", "ViewDecl", "<Control>D", "<Control>F2"),
   createmenuitem("Subroutine Arguments...", "ViewArgs", "<Shift>F2"),
   createmenuitem("Completions...", "ViewComp", "<Control>space"),
   createmenuitem("Goto Error", "ViewError", "F4"),
@@ -933,7 +1016,8 @@ add(optionsmenu, {
   createmenuitem("Line Wrap", "OptionsLineWrap", 0, line_wrap),
   createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs),
   createmenuitem("Complete Statements", "OptionsCompleteStatements", 0, complete_statements),
-  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces)
+  createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces),
+  createmenuitem("Indent...", "OptionsIndent")
   })
 set(menuOptions, "submenu", optionsmenu)
 
