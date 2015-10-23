@@ -36,6 +36,9 @@ include weeicon.e
 
 -- nifty shortcut, thanks Greg Haberek
 function callback(sequence name, atom rid = routine_id(name))
+    if rid = -1 then
+        crash("routine '"&name&"' is not visible")
+    end if
     return call_back(rid)
 end function
 
@@ -48,9 +51,7 @@ function check_callback_func(atom x)
   return 0
 end function
 
-c_proc(define_c_proc("",
-		     callback("check_callback_func"),
-		     {C_LONG}),
+c_proc(define_c_proc("", callback("check_callback_func"), {C_LONG}),
        {#100000000})
 end ifdef
 
@@ -730,21 +731,21 @@ function RunSetInterpreter()
     set(panel, "margin bottom", 5)
     add(gtk:get(dialog, "content area"), panel)
     
-    add(panel, create(GtkLabel,
+    pack(panel, create(GtkLabel,
 `Enter an interpreter to use to run
 programs, or select one from the list.
 Leave blank for the default, or from
 an 'eu.cfg' file.`))
 
     row = create(GtkBox, HORIZONTAL, 5)
-    add(panel, row)
+    pack(panel, row, TRUE)
 
     text_entry = create(GtkComboBoxEntry, {
 	{"margin bottom", 5},
 	{"activates default", TRUE}})
-    add(row, text_entry)
-    add(text_entry, interpreters)
-    add(row, create(GtkButton, "...", choose_interpreter, text_entry))
+    pack(row, text_entry, TRUE, TRUE)
+    pack(text_entry, interpreters)
+    pack(row, create(GtkButton, "...", choose_interpreter, text_entry))
     
     show_all(dialog)
     if set(dialog, "run") = GTK_RESPONSE_OK then
@@ -777,7 +778,7 @@ function RunSetTerminal()
     set(panel, "margin bottom", 5)
     add(gtk:get(dialog, "content area"), panel)
 
-    add(panel, create(GtkLabel,
+    pack(panel, create(GtkLabel,
 `Enter a terminal emulator to use to run
 programs, or select one from the list. 
 Leave blank to run in parent terminal.`))
@@ -785,7 +786,7 @@ Leave blank to run in parent terminal.`))
     text_entry = create(GtkComboBoxEntry, {
 	{"margin bottom", 5},
 	{"activates default", TRUE}})
-    add(panel, text_entry)
+    pack(panel, text_entry)
     for i = 1 to length(terminals) do
         if system_exec("which " & terminals[i] & " >/dev/null 2>&1") = 0 then
 	    text = terminals[i]
@@ -852,25 +853,10 @@ function delete_event()
   return TRUE
 end function
 
-function notebook_switch_page(atom nb, atom page, atom page_num)
-    select_tab(page_num + 1)
-    return 0
-end function
-
 function window_set_focus(atom widget)
     check_externally_modified_tabs()
     check_ex_err()
     return 0
-end function
-
-
-function accelerator_parse(sequence key)
-  atom x
-  x = allocate(8)
-  gtk_proc("gtk_accelerator_parse", {P,P,P}, {allocate_string(key, 1), x, x+4})
-  key = peek4u({x,2})
-  free(x)
-  return key
 end function
 
 -------------------------------------------------------------
@@ -1048,7 +1034,12 @@ add(menubar, {
 pack(panel, menubar)
 
 -------------------------------------------------
-function PopupTabMenu(atom nb, atom event)
+function NotebookSwitchPage(atom nb, atom page, atom page_num)
+    select_tab(page_num + 1)
+    return 0
+end function
+
+function NotebookButtonPressEvent(atom nb, atom event)
   integer button = events:button(event)
 
   -- right click or middle click
@@ -1056,8 +1047,8 @@ function PopupTabMenu(atom nb, atom event)
     atom x, y, lx, ly, lw, lh
     {x,y} = events:xy(event) -- get mouse coordinates
     atom allocation = allocate(4*4)
-    for i = 0 to gtk:get(nb, "n_pages")-1 do
-      atom pg = gtk:get(nb, "nth_page", i)
+    for i = 1 to gtk:get(nb, "n_pages") do
+      atom pg = gtk:get(nb, "nth_page", i-1)
       atom lbl = gtk:get(nb, "tab_label", pg)
 
       gtk_func("gtk_widget_get_allocation", {P,P}, {lbl, allocation})
@@ -1065,10 +1056,10 @@ function PopupTabMenu(atom nb, atom event)
 
       if x >= lx-10 and x <= lx+lw+10 then
         if button = 3 then -- right click
-          select_tab(i+1)
+          select_tab(i)
           set(tabmenu, "popup", NULL, NULL, NULL, NULL, 0, events:time(event))
 	elsif button = 2 then -- middle click
-	  select_tab(i+1)
+	  select_tab(i)
 	  close_tab()
         end if
         exit
@@ -1081,7 +1072,8 @@ function PopupTabMenu(atom nb, atom event)
   return 0
 end function
 
-function NotebookTabScroll(atom nb, atom event)
+-- switch tabs when mouse wheel is scrolled
+function NotebookScrollEvent(atom nb, atom event)
   integer dir = events:scroll_dir(event)
   if dir = 1 then
     select_tab(get_next_tab())
@@ -1090,6 +1082,21 @@ function NotebookTabScroll(atom nb, atom event)
   end if
   return 0
 end function
+
+-- detect <Control>Tab and <Shift><Control>Tab
+function NotebookKeyPressEvent(atom nb, atom event)
+    integer mod = events:state(event)
+    if key(event) = -9 and and_bits(mod, GDK_CONTROL_MASK) then
+	if and_bits(mod, GDK_SHIFT_MASK) then
+	    select_tab(get_prev_tab())
+	else
+	    select_tab(get_next_tab())
+	end if
+	return 1
+    end if
+    return 0
+end function
+
 
 constant
   status_label = create(GtkLabel, "status"),
@@ -1102,11 +1109,10 @@ constant
 pack(panel, notebook, TRUE, TRUE)
 show(status_label)
 
-connect(notebook, "switch-page", callback("notebook_switch_page"))
-connect(notebook, "button-press-event", callback("PopupTabMenu"))
-connect(notebook, "scroll-event", callback("NotebookTabScroll"))
-
-
+connect(notebook, "switch-page", callback("NotebookSwitchPage"))
+connect(notebook, "button-press-event", callback("NotebookButtonPressEvent"))
+connect(notebook, "scroll-event", callback("NotebookScrollEvent"))
+connect(notebook, "key-press-event", callback("NotebookKeyPressEvent"))
 
 --------------------------------------------------
 
