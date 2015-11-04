@@ -1,6 +1,6 @@
 -- parser.e
 -- 
--- Copyright (c) 2014 Pete Eberlein
+-- Copyright (c) 2015 Pete Eberlein
 --
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -93,10 +93,10 @@ global constant
 -- ast node types that are not opcodes
 global constant
   VAR_DECL = 256, -- {VAR_DECL, "type", {"name", pos, scope-start, [expr]}...}
-  ASSIGN = 257,   -- {ASSIGN, "name", expr}
-  FUNC = 258,     -- {FUNC, "name", [args...]}
-  PROC = 259,     -- {PROC, "name", [args...]}
-  VARIABLE = 260,
+  ASSIGN = 257,   -- {ASSIGN, "name", pos, expr}
+  FUNC = 258,     -- {FUNC, "name", pos, [args...]}
+  PROC = 259,     -- {PROC, "name", pos, [args...]}
+  VARIABLE = 260, -- {VARIABLE, "name", pos}
   SUBSCRIPT = 261, -- {SUBSCRIPT, expr, index-expr}
   SLICE = 262,     -- {SLICE, expr, start-expr, end-expr}
   CONST_DECL = 263, -- {CONST_DECL, {"name", pos, scope-start, expr}... }
@@ -116,19 +116,19 @@ global constant
                    --    scope-start, scope-end, stmts...}
   PROC_DECL = 274, -- {PROC_DECL, ...}
   TYPE_DECL = 275, -- {TYPE_DECL, ...}
-  ADDTO = 277,     -- {ADDTO, "name", expr}
+  ADDTO = 277,     -- {ADDTO, "name", pos, expr}
   SUBTO = 278,
   MULTO = 279,
   DIVTO = 280,
   CATTO = 281,
   STRING = 282,
-  SUB_ASSIGN = 283, -- {SUB_ASSIGN, {index-expr...}, expr}
+  SUB_ASSIGN = 283, -- {SUB_ASSIGN, "name", pos, index-expr..., expr}
   SUB_ADDTO = 294,
   SUB_SUBTO = 295,
   SUB_MULTO = 296,
   SUB_DIVTO = 297,
   SUB_CATTO = 298,
-  SLICE_ASSIGN = 299, -- {SLICE_ASSIGN, [index-expr...], start-expr, end-expr, expr}
+  SLICE_ASSIGN = 299, -- {SLICE_ASSIGN, "name", pos, index-expr..., start-expr, end-expr, expr}
   SLICE_ADDTO = 300,
   SLICE_SUBTO = 301,
   SLICE_MULTO = 302,
@@ -730,7 +730,7 @@ function expr(integer depth)
   if token("not") then
     e = {NOT, expr(depth)}
   elsif identifier() then
-    e = {VARIABLE, get_token()}
+    e = {VARIABLE, get_token(), tok_idx}
     --printf(1, "identifier %s\n", {e[2]})
     if token("(") then
       -- function call
@@ -871,7 +871,7 @@ function assignment_or_procedure_call()
     return {}
   end if
   
-  result = {0, get_token()}
+  result = {0, get_token(), tok_idx}
   if token("(") then
     result[1] = PROC
     if not token(")") then
@@ -891,11 +891,10 @@ function assignment_or_procedure_call()
   if token("[") then
     ops = {SUB_ASSIGN, SUB_ADDTO, SUB_SUBTO, SUB_MULTO, SUB_DIVTO, SUB_CATTO}
     tok = "["
-    result &= {{}}
     while token("[") do
-      result[3] = append(result[3], expr(1))
+      result = append(result, expr(1))
       if token("..") then
-        result[3] = append(result[3], expr(1))
+        result = append(result, expr(1))
         expect("]")
         ops = {SLICE_ASSIGN, SLICE_ADDTO, SLICE_SUBTO, SLICE_MULTO, SLICE_DIVTO, SLICE_CATTO}
         exit
@@ -1434,95 +1433,103 @@ end procedure
 
 
 
-constant builtins = {
-{"function", "abort", "integer", "errcode", 0},
-{"function", "and_bits", "object", "a", 0, "object", "b", 0},
-{"function", "append", "sequence", "target", 0, "object", "x", 0},
-{"function", "arctan", "object", "tangent", 0},
-{"type", "atom", "object", "x", 0},
-{"function", "c_func", "integer", "rid", 0, "sequence", "args", 1},
-{"procedure", "c_proc", "integer", "rid", 0, "sequence", "args", 1},
-{"function", "call", "integer", "id", 0, "sequence", "args", 1},
-{"function", "call_func", "integer", "id", 0, "sequence", "args", 1},
-{"procedure", "call_proc", "integer", "id", 0, "sequence", "args", 1},
-{"procedure", "clear_screen"},
-{"procedure", "close", "atom", "fn", 0},
-{"function", "command_line"},
-{"function", "compare", "object", "compared", 0, "object", "reference", 0},
-{"function", "cos", "object", "angle", 0},
-{"function", "date"},
-{"procedure", "delete", "object", "x", 0},
-{"function", "delete_routine", "object", "x", 0, "integer", "rid", 0},
-{"function", "equal", "object", "left", 0, "object", "right", 0},
-{"function", "find", "object", "needle", 0, "sequence", "haystack", 0, "integer", "start", 1},
-{"function", "floor", "object", "value", 0},
-{"function", "get_key"},
-{"function", "getc", "integer", "fn", 0},
-{"function", "getenv", "sequence", "var_name", 0},
-{"function", "gets", "integer", "fn", 0},
-{"function", "hash", "object", "source", 0, "atom", "algo", 0},
-{"function", "head", "sequence", "source", 0, "atom", "size", 1},
-{"function", "include_paths", "integer", "convert", 0},
-{"function", "insert", "sequence", "target", 0, "object", "what", 0, "integer", "index", 0},
-{"type", "integer", "object", "x", 0},
-{"function", "length", "object", "target", 0},
-{"function", "log", "object", "value", 0},
-{"function", "machine_func", "integer", "machine_id", 0, "object", "args", 1},
-{"procedure", "machine_proc", "integer", "machine_id", 0, "object", "args", 1},
-{"function", "match", "sequence", "needle", 0, "sequence", "haystack", 0, "integer", "start", 1},
-{"procedure", "mem_copy", "atom", "destination", 0, "atom", "origin", 0, "integer", "len", 0},
-{"procedure", "mem_set", "atom", "destination", 0, "integer", "byte_value", 0, "integer", "how_many", 0},
-{"function", "not_bits", "object", "a", 0},
-{"type", "object", "object", "x", 0},
-{"function", "open", "sequence", "path", 0, "sequence", "mode", 0, "integer", "cleanup", 1},
-{"function", "option_switches"},
-{"function", "or_bits", "object", "a", 0, "object", "b", 0},
-{"function", "peek", "object", "addr_n_length", 0},
-{"function", "peek2s", "object", "addr_n_length", 0},
-{"function", "peek2u", "object", "addr_n_length", 0},
-{"function", "peek4s", "object", "addr_n_length", 0},
-{"function", "peek4u", "object", "addr_n_length", 0},
-{"function", "peek_string", "atom", "addr", 0},
-{"function", "peeks", "object", "addr_n_length", 0},
-{"function", "pixel"},
-{"function", "platform"},
-{"procedure", "poke", "atom", "addr", 0, "object", "x", 0},
-{"procedure", "poke2", "atom", "addr", 0, "object", "x", 0},
-{"procedure", "poke4", "atom", "addr", 0, "object", "x", 0},
-{"procedure", "position", "integer", "row", 0, "integer", "column", 0},
-{"function", "power", "object", "base", 0, "object", "exponent", 0},
-{"function", "prepend", "sequence", "target", 0, "object", "x", 0},
-{"procedure", "print", "integer", "fn", 0, "object", "x", 0},
-{"procedure", "printf", "integer", "fn", 0, "sequence", "format", 0, "object", "values", 0},
-{"procedure", "puts", "integer", "fn", 0, "object", "text", 0},
-{"function", "rand", "object", "maximum", 0},
-{"function", "remainder", "object", "dividend", 0, "object", "divisor", 0},
-{"function", "remove", "sequence", "target", 0, "atom", "start", 0, "atom", "stop", 1},
-{"function", "repeat", "object", "item", 0, "atom", "count", 0},
-{"function", "replace", "sequence", "target", 0, "object", "replacement", 0, "integer", "start", 0, "integer", "stop", 1},
-{"function", "routine_id", "sequence", "routine_name", 0},
-{"type", "sequence", "object", "x", 0},
-{"function", "sin", "object", "angle", 0},
-{"function", "splice", "sequence", "target", 0, "object", "what", 0, "integer", "index", 0},
-{"function", "sprintf", "sequence", "format", 0, "object", "values", 0},
-{"function", "sqrt", "object", "value", 0},
-{"procedure", "system", "sequence", "command", 0, "integer", "mode", 1},
-{"function", "system_exec", "sequence", "command", 0, "integer", "mode", 1},
-{"function", "tail", "sequence", "source", 0, "atom", "size", 1},
-{"function", "tan", "object", "angle", 0},
-{"procedure", "task_clock_start"},
-{"procedure", "task_clock_stop"},
-{"function", "task_create", "integer", "rid", 0, "sequence", "args", 0},
-{"function", "task_list"},
-{"function", "task_schedule", "atom", "task_id", 0, "object", "schedule", 0},
-{"function", "task_self"},
-{"function", "task_schedule", "atom", "task_id", 0},
-{"function", "task_suspend", "atom", "task_id", 0},
-{"function", "task_yield"},
-{"function", "time"},
-{"procedure", "trace", "integer", "mode", 0},
-{"function", "xor_bits", "object", "a", 0, "object", "b", 0}
-}
+constant 
+  F = "function",
+  P = "procedure",
+  T = "type",
+  I = "integer",
+  O = "object",
+  S = "sequence",
+  A = "atom",
+  builtins = {
+  {F, "abort", I, "errcode", 0},
+  {F, "and_bits", O, "a", 0, O, "b", 0},
+  {F, "append", S, "target", 0, O, "x", 0},
+  {F, "arctan", O, "tangent", 0},
+  {T, A, O, "x", 0},
+  {F, "c_func", I, "rid", 0, S, "args", 1},
+  {P, "c_proc", I, "rid", 0, S, "args", 1},
+  {F, "call", I, "id", 0, S, "args", 1},
+  {F, "call_func", I, "id", 0, S, "args", 1},
+  {P, "call_proc", I, "id", 0, S, "args", 1},
+  {P, "clear_screen"},
+  {P, "close", A, "fn", 0},
+  {F, "command_line"},
+  {F, "compare", O, "compared", 0, O, "reference", 0},
+  {F, "cos", O, "angle", 0},
+  {F, "date"},
+  {P, "delete", O, "x", 0},
+  {F, "delete_routine", O, "x", 0, I, "rid", 0},
+  {F, "equal", O, "left", 0, O, "right", 0},
+  {F, "find", O, "needle", 0, S, "haystack", 0, I, "start", 1},
+  {F, "floor", O, "value", 0},
+  {F, "get_key"},
+  {F, "getc", I, "fn", 0},
+  {F, "getenv", S, "var_name", 0},
+  {F, "gets", I, "fn", 0},
+  {F, "hash", O, "source", 0, A, "algo", 0},
+  {F, "head", S, "source", 0, A, "size", 1},
+  {F, "include_paths", I, "convert", 0},
+  {F, "insert", S, "target", 0, O, "what", 0, I, "index", 0},
+  {T, I, O, "x", 0},
+  {F, "length", O, "target", 0},
+  {F, "log", O, "value", 0},
+  {F, "machine_func", I, "machine_id", 0, O, "args", 1},
+  {P, "machine_proc", I, "machine_id", 0, O, "args", 1},
+  {F, "match", S, "needle", 0, S, "haystack", 0, I, "start", 1},
+  {P, "mem_copy", A, "destination", 0, A, "origin", 0, I, "len", 0},
+  {P, "mem_set", A, "destination", 0, I, "byte_value", 0, I, "how_many", 0},
+  {F, "not_bits", O, "a", 0},
+  {T, O, O, "x", 0},
+  {F, "open", S, "path", 0, S, "mode", 0, I, "cleanup", 1},
+  {F, "option_switches"},
+  {F, "or_bits", O, "a", 0, O, "b", 0},
+  {F, "peek", O, "addr_n_length", 0},
+  {F, "peek2s", O, "addr_n_length", 0},
+  {F, "peek2u", O, "addr_n_length", 0},
+  {F, "peek4s", O, "addr_n_length", 0},
+  {F, "peek4u", O, "addr_n_length", 0},
+  {F, "peek_string", A, "addr", 0},
+  {F, "peeks", O, "addr_n_length", 0},
+  {F, "pixel"},
+  {F, "platform"},
+  {P, "poke", A, "addr", 0, O, "x", 0},
+  {P, "poke2", A, "addr", 0, O, "x", 0},
+  {P, "poke4", A, "addr", 0, O, "x", 0},
+  {P, "position", I, "row", 0, I, "column", 0},
+  {F, "power", O, "base", 0, O, "exponent", 0},
+  {F, "prepend", S, "target", 0, O, "x", 0},
+  {P, "print", I, "fn", 0, O, "x", 0},
+  {P, "printf", I, "fn", 0, S, "format", 0, O, "values", 0},
+  {P, "puts", I, "fn", 0, O, "text", 0},
+  {F, "rand", O, "maximum", 0},
+  {F, "remainder", O, "dividend", 0, O, "divisor", 0},
+  {F, "remove", S, "target", 0, A, "start", 0, A, "stop", 1},
+  {F, "repeat", O, "item", 0, A, "count", 0},
+  {F, "replace", S, "target", 0, O, "replacement", 0, I, "start", 0, I, "stop", 1},
+  {F, "routine_id", S, "routine_name", 0},
+  {T, S, O, "x", 0},
+  {F, "sin", O, "angle", 0},
+  {F, "splice", S, "target", 0, O, "what", 0, I, "index", 0},
+  {F, "sprintf", S, "format", 0, O, "values", 0},
+  {F, "sqrt", O, "value", 0},
+  {P, "system", S, "command", 0, I, "mode", 1},
+  {F, "system_exec", S, "command", 0, I, "mode", 1},
+  {F, "tail", S, "source", 0, A, "size", 1},
+  {F, "tan", O, "angle", 0},
+  {P, "task_clock_start"},
+  {P, "task_clock_stop"},
+  {F, "task_create", I, "rid", 0, S, "args", 0},
+  {F, "task_list"},
+  {F, "task_schedule", A, "task_id", 0, O, "schedule", 0},
+  {F, "task_self"},
+  {F, "task_schedule", A, "task_id", 0},
+  {F, "task_suspend", A, "task_id", 0},
+  {F, "task_yield"},
+  {F, "time"},
+  {P, "trace", I, "mode", 0},
+  {F, "xor_bits", O, "a", 0, O, "b", 0}
+  }
 
 global function get_builtins()
   sequence s
@@ -1549,51 +1556,51 @@ constant
 
   
 function get_include_filter(sequence s, sequence name_space, integer filter, integer prefix)
-    integer idx, include_filter
+  integer idx, include_filter
 
-    idx = s[2] -- cache[] index
-    if length(name_space) then
-      --if length(s) >= 3 then
-      --    printf(1, "filter=%x namespace=%s include as %s\n", {filter, name_space, s[3]})
-      --end if
-      if filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT then
-	  -- include as namespace -> include
-          include_filter = FILTER_PUBLIC
-      elsif filter = FILTER_PUBLIC and prefix = FILTER_PUBLIC then
-        -- a public include from nested include
+  idx = s[2] -- cache[] index
+  if length(name_space) then
+    --if length(s) >= 3 then
+    --    printf(1, "filter=%x namespace=%s include as %s\n", {filter, name_space, s[3]})
+    --end if
+    if filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT then
+        -- include as namespace -> include
         include_filter = FILTER_PUBLIC
-      elsif and_bits(filter, FILTER_INCLUDE_AS) and length(cache[idx]) >= 3 and 
-            equal(cache[idx][3], {NAMESPACE, name_space}) then
-        -- include has same namespace
-        include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
-      else
-        include_filter = 0
-      end if
-    elsif and_bits(filter, FILTER_INCLUDE_AS) then
-      -- top-level include
+    elsif filter = FILTER_PUBLIC and prefix = FILTER_PUBLIC then
+      -- a public include from nested include
+      include_filter = FILTER_PUBLIC
+    elsif and_bits(filter, FILTER_INCLUDE_AS) and length(cache[idx]) >= 3 and 
+          equal(cache[idx][3], {NAMESPACE, name_space}) then
+      -- include has same namespace
       include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
-    elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
-      -- public sub-include
-      include_filter = FILTER_GLOBAL + FILTER_PUBLIC
     else
-      -- sub-include
-      include_filter = FILTER_GLOBAL
+      include_filter = 0
     end if
-    idx = find(s[2], include_ids)
-    if idx = 0 then
-      -- new entry
-      include_ids &= s[2]
-      include_flags &= 0
-      idx = length(include_ids)
-    elsif and_bits(include_flags[idx], include_filter) = include_filter then
-      -- avoid adding the same symbols again
-      return -1
-    end if
+  elsif and_bits(filter, FILTER_INCLUDE_AS) then
+    -- top-level include
+    include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
+  elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
+    -- public sub-include
+    include_filter = FILTER_GLOBAL + FILTER_PUBLIC
+  else
+    -- sub-include
+    include_filter = FILTER_GLOBAL
+  end if
+  idx = find(s[2], include_ids)
+  if idx = 0 then
+    -- new entry
+    include_ids &= s[2]
+    include_flags &= 0
+    idx = length(include_ids)
+  elsif and_bits(include_flags[idx], include_filter) = include_filter then
+    -- avoid adding the same symbols again
+    return -1
+  end if
 
-    include_filter = and_bits(include_filter, not_bits(include_flags[idx]))
-    include_flags[idx] = or_bits(include_flags[idx], include_filter)
-   
-    return include_filter + FILTER_INCLUDE
+  include_filter = and_bits(include_filter, not_bits(include_flags[idx]))
+  include_flags[idx] = or_bits(include_flags[idx], include_filter)
+ 
+  return include_filter + FILTER_INCLUDE
 end function
 	
 
@@ -1866,6 +1873,9 @@ end function
 
 -- returns {word, namespace, start, end} otherwise {""}
 global function word_pos(sequence text, integer pos)
+  if pos > length(text) then
+    return {""}
+  end if
   for i = pos+1 to 1 by -1 do
     -- find the start of the word
     if i = 1 or not isalphanum(text[i-1]) then
