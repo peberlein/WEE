@@ -334,6 +334,9 @@ global constant
     GetStockObject = link_c_func(gdi32, "GetStockObject", {C_INT}, C_INT),
     DeleteObject = link_c_func(gdi32, "DeleteObject", {C_INT}, C_INT),
     CreateFontIndirect = link_c_func(gdi32, "CreateFontIndirectA", {C_POINTER}, C_INT),
+    CreateBitmap = link_c_func(gdi32, "CreateBitmap", {C_INT, C_INT, C_UINT, C_UINT, C_POINTER}, C_INT),
+    CreateIcon = link_c_func(user32, "CreateIcon", {C_POINTER, C_INT, C_INT, C_UINT, C_UINT, C_POINTER, C_POINTER}, C_INT),
+    CreateIconIndirect = link_c_func(user32, "CreateIconIndirect", {C_POINTER}, C_INT),
     RegisterClassEx = link_c_func(user32, "RegisterClassExA", {C_POINTER}, C_USHORT),
     CreateWindowEx = link_c_func(user32, "CreateWindowExA", 
      {C_UINT,C_POINTER,C_POINTER,C_UINT,C_INT,C_INT,C_INT,C_INT,C_UINT,C_UINT,C_UINT,C_POINTER},
@@ -509,6 +512,7 @@ global constant
 
     WM_NOTIFY = #4E,
 
+    WM_SETICON = #80, ICON_BIG = 1, ICON_SMALL = 0,
     WM_NCCREATE = #81,
     WM_NCDESTROY = #82,
     WM_NCCALCSIZE = #83,

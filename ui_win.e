@@ -41,13 +41,10 @@ constant
     Run_Start = 501,
     Run_WithArgs = 502,
     Run_Arguments = 503,
+    Run_Interpreter = 507,
     Run_Bind = 504,
     Run_Shroud = 505,
     Run_Translate = 506,
-    Run_euiw = 507,
-    Run_eui = 508,
-    Run_exw = 509,
-    Run_ex = 510,
     Options_Font = 601,
     Options_LineNumbers = 602,
     Options_SortedSubs = 603,
@@ -72,7 +69,7 @@ constant file_filters = allocate_string(
 
 atom hMainWnd, hFindDlg, hDlg, class,
     hmenu, hfilemenu, heditmenu, hsearchmenu, hviewmenu, 
-    hrunmenu, hoptionsmenu, hhelpmenu, htabmenu, hrunintmenu,
+    hrunmenu, hoptionsmenu, hhelpmenu, htabmenu,
     hstatus, htabs, hcode, hedit,
     WM_FIND
 
@@ -103,6 +100,12 @@ constant
     ansi_fixed_font = c_func(GetStockObject, {ANSI_FIXED_FONT})
 
 atom captionFont, smCaptionFont, menuFont, statusFont, messageFont
+
+
+-- nifty shortcut, thanks Greg Haberek
+function callback(sequence name, atom rid = routine_id(name))
+    return call_back(rid)
+end function
 
 
 global procedure ui_update_window_title(sequence file_name)
@@ -304,7 +307,8 @@ end procedure
 constant 
     DialogListID = 1000,
     DialogLabelID = 1001,
-    DialogEditID = 1002
+    DialogEditID = 1002,
+    DialogOpenID = 1003
 sequence subs
 
 function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
@@ -362,7 +366,7 @@ function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     return 0
 end function
 
-constant SubsDialogCallback = call_back(routine_id("SubsDialogProc"))
+constant SubsDialogCallback = callback("SubsDialogProc")
 
 -- used for struct DLGITEMTEMPLATE
 constant
@@ -451,7 +455,7 @@ function ViewErrorProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     return 0
 end function
 
-constant ViewErrorCallback = call_back(routine_id("ViewErrorProc"))
+constant ViewErrorCallback = callback("ViewErrorProc")
 
 global procedure ui_view_error()
     integer junk
@@ -568,6 +572,7 @@ function RunArgsProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
 
 	junk = c_func(SendMessage, {hEdit, WM_SETTEXT, 0, alloc_string(get_tab_arguments())})
         junk = c_func(SetFocus, {hEdit})
+        junk = c_func(SendMessage, {hEdit, EM_SETSEL, 0, -1})
 
     elsif iMsg = WM_COMMAND then
         if LOWORD(wParam) = IDOK then
@@ -575,9 +580,7 @@ function RunArgsProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
             len = 1 + c_func(SendMessage, {hEdit, WM_GETTEXTLENGTH, 0, 0})
             buf = allocate(len)
             junk = c_func(SendMessage, {hEdit, WM_GETTEXT, len, buf})
-            set_tab_arguments(peek_string(buf))
-            free(buf)
-            junk = c_func(EndDialog, {hdlg, 1})
+            junk = c_func(EndDialog, {hdlg, buf})
             return 1
         elsif LOWORD(wParam) = IDCANCEL then
             junk = c_func(EndDialog, {hdlg, 0})
@@ -591,25 +594,128 @@ function RunArgsProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     return 0
 end function
 
-constant RunArgsCallback = call_back(routine_id("RunArgsProc"))
+constant RunArgsCallback = callback("RunArgsProc")
 
 global procedure run_arguments()
     integer junk
     junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
         --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
 	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
-         50,50, 100,36, 0, 0, "Run Arguments"},
+         50,50, 200,36, 0, 0, "Set Arguments"},
         --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
         {{WS_CHILD, WS_VISIBLE, WS_BORDER, ES_AUTOHSCROLL}, 0,
-         4,4, 92,12, DialogEditID, DIALOG_CLASS_EDIT, get_tab_arguments()},
+         4,4, 192,12, DialogEditID, DIALOG_CLASS_EDIT, "tab arguments"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
-         4,20, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
+         104,20, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
         {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
-         52,20, 44,12, IDOK, DIALOG_CLASS_BUTTON, "OK"}
+         152,20, 44,12, IDOK, DIALOG_CLASS_BUTTON, "OK"}
         },
         hMainWnd, 
         RunArgsCallback,
         0)
+    if junk then
+	set_tab_arguments(peek_string(junk))
+	free(junk)
+    end if
+end procedure
+
+
+function RunInterpreterProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
+    atom junk, hEdit, hLabel, len, buf
+    sequence interpreters
+    integer index
+
+    --? {hdlg, iMsg, wParam, HIWORD(lParam), LOWORD(lParam)}
+
+    if iMsg = WM_INITDIALOG then
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDOK}), 
+                      WM_SETFONT, captionFont, 0})
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDCANCEL}), 
+                      WM_SETFONT, captionFont, 0})
+        junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, DialogOpenID}), 
+                      WM_SETFONT, captionFont, 0})
+        hLabel = c_func(GetDlgItem, {hdlg, DialogLabelID})
+        junk = c_func(SendMessage, {hLabel, WM_SETFONT, messageFont, 0})
+        hEdit = c_func(GetDlgItem, {hdlg, DialogEditID})
+        junk = c_func(SendMessage, {hEdit, WM_SETFONT, messageFont, 0})
+
+	interpreters = get_interpreters()
+	for i = 1 to length(interpreters) do
+	    junk = c_func(SendMessage, {hEdit, CB_ADDSTRING, 0, alloc_string(interpreters[i])})
+	end for
+	index = find(interpreter, interpreters)
+	if index then
+	    junk = c_func(SendMessage, {hEdit, CB_SETCURSEL, index-1, 0})
+	end if
+        
+        junk = c_func(SetFocus, {hEdit})
+        junk = c_func(SendMessage, {hEdit, EM_SETSEL, 0, -1})
+
+    elsif iMsg = WM_COMMAND then
+	if LOWORD(wParam) = DialogOpenID then
+	    sequence temp = GetOpenFileName({hMainWnd, 0, alloc_string("Executable Files (*.exe)"&0&"*.EXE"&0&0), 0, 
+		    "", 0, 0,
+		    OFN_EXPLORER + OFN_PATHMUSTEXIST + OFN_FILEMUSTEXIST + OFN_HIDEREADONLY
+		    , 0})
+	    if length(temp) then
+		temp = temp[2] -- just the filename
+		hEdit = c_func(GetDlgItem, {hdlg, DialogEditID})
+	        junk = c_func(SendMessage, {hEdit, CB_SELECTSTRING, -1, alloc_string(temp)})
+	        if junk = CB_ERR then
+		    -- add a new filename since it wasn't found
+	            junk = c_func(SendMessage, {hEdit, CB_INSERTSTRING, 0, alloc_string(temp)})
+	            junk = c_func(SendMessage, {hEdit, CB_SETCURSEL, 0, 0})
+	        end if
+	    end if
+	    free_strings()
+        elsif LOWORD(wParam) = IDOK then
+            hEdit = c_func(GetDlgItem, {hdlg, DialogEditID})
+            len = 1 + c_func(SendMessage, {hEdit, WM_GETTEXTLENGTH, 0, 0})
+            buf = allocate(len)
+            junk = c_func(SendMessage, {hEdit, WM_GETTEXT, len, buf})
+            junk = c_func(EndDialog, {hdlg, buf})
+            return 1
+        elsif LOWORD(wParam) = IDCANCEL then
+            junk = c_func(EndDialog, {hdlg, 0})
+            return 1
+        end if
+
+    elsif iMsg = WM_CLOSE then --closing dialog
+        junk = c_func(EndDialog, {hdlg, 0})
+    end if
+
+    return 0
+end function
+
+constant RunInterpreterCallback = callback("RunInterpreterProc")
+
+global procedure run_interpreter()
+    integer junk
+    junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
+        --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
+	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
+         50,50, 200,56, 0, 0, "Set Interpreter"},
+        --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
+        {{WS_CHILD, WS_VISIBLE}, 0,
+         4,4, 192,20, DialogLabelID, DIALOG_CLASS_STATIC, 
+	    "Enter an interpreter to use to run programs, or select one from the list.\n"&
+	    "Leave blank to use the default first item in the list."},
+        {{WS_CHILD, WS_VISIBLE, WS_BORDER, WS_HSCROLL, CBS_AUTOHSCROLL, CBS_DROPDOWN}, 0,
+         4,24, 176,12, DialogEditID, DIALOG_CLASS_COMBOBOX, "interpreter"},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         184,24, 12,12, DialogOpenID, DIALOG_CLASS_BUTTON, "..."},
+        {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
+         104,40, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
+        {{WS_CHILD, WS_VISIBLE, BS_DEFPUSHBUTTON}, 0,
+         152,40, 44,12, IDOK, DIALOG_CLASS_BUTTON, "OK"}
+        },
+        hMainWnd, 
+        RunInterpreterCallback,
+        0)
+    if junk then
+	interpreter = peek_string(junk)
+	free(junk)
+    end if
 end procedure
 
 procedure run_start(integer with_args)
@@ -632,9 +738,14 @@ procedure run_start(integer with_args)
         args &= ' ' & get_tab_arguments()
     end if
 
+    -- if interpreter is set, use it
+    -- elsif Eu file and eu.cfg points to eudir use it (.exw,.ew->euiw,exw, .ex,.e->eui,ex)
+    -- else let OS handle it
+    -- and if that fails use EUDIR or include_paths
+
     result = c_func(ShellExecute, {
 	hMainWnd, NULL,
-	alloc_string(get_eu_bin(interpreter)),
+	alloc_string(get_eu_bin("")),
 	alloc_string(args),
 	alloc_string(dirname(run_file_name)),
 	SW_SHOWNORMAL})
@@ -775,7 +886,7 @@ function ColorsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     return 0
 end function
 
-constant ColorsDialogCallback = call_back(routine_id("ColorsDialogProc"))
+constant ColorsDialogCallback = callback("ColorsDialogProc")
 
 global procedure choose_colors()
     integer junk
@@ -827,7 +938,53 @@ global procedure choose_colors()
         0)
 end procedure
 
+function icon_from_xpm(sequence xpm)
+    sequence colors = repeat(0,255), pixels = {}, andbits = {}
+    integer w = 0, h = 0, clear = 0
+    atom buf, handle, mask, iconinfo, hbmMask, hbmColor
+    
+    for i = 2 to length(xpm) do
+        if length(xpm[i]) >= 6 and xpm[i][3] = 'c' then
+	    if equal(xpm[i][5..$], "None") then
+	        clear = xpm[i][1]
+	    else
+		colors[xpm[i][1]] = value(xpm[i][5..$])
+	    end if
+	else
+	    w = length(xpm[i])
+	    h += 1
+	    for j = 1 to length(xpm[i]) do
+		if remainder(j, 8) = 1 then
+		    andbits &= 0
+		end if
+		if xpm[i][j] = clear then
+		    andbits[$] = or_bits(andbits[$], power(2, 7-and_bits(j-1,7)))
+		    pixels &= 0
+		else
+		    pixels &= #FF000000 + colors[xpm[i][j]][2]
+		end if
+	    end for
+        end if
+    end for
+    mask = allocate(length(andbits))
+    poke(mask, andbits)
+    buf = allocate(length(pixels)*4)
+    poke4(buf, pixels)
+    hbmMask = c_func(CreateBitmap, {w, h, 1, 1, mask})
+    hbmColor = c_func(CreateBitmap, {w, h, 1, 32, buf})
+    iconinfo = allocate_pack("iddpp", {1,0,0,hbmMask,hbmColor})
+    handle = c_func(CreateIconIndirect, {iconinfo})
+    c_func(DeleteObject, {hbmMask})
+    c_func(DeleteObject, {hbmColor})
+    free(buf)
+    free(mask)
+    free(iconinfo)
+    
+    return handle
+end function
 
+include weeicon.e
+constant wee_icon = icon_from_xpm(wee_xpm)
 
 function IndentDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     atom junk, len, buf
@@ -928,7 +1085,7 @@ function IndentDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
     return 0
 end function
 
-constant IndentDialogCallback = call_back(routine_id("IndentDialogProc"))
+constant IndentDialogCallback = callback("IndentDialogProc")
 
 global procedure indent_dialog()
     integer junk
@@ -1175,6 +1332,8 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Run_Arguments then
 		run_arguments()
 		return rc
+	    elsif wParam = Run_Interpreter then
+	        run_interpreter()
 	    elsif wParam = Run_Bind then
 	        run_convert("Bind", "eubind")
 	        return rc
@@ -1184,18 +1343,6 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Run_Translate then
 	        run_convert("Translate", "euc")
 	        return rc
-	    elsif wParam = Run_euiw then
-	        interpreter = "euiw"
-		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
-	    elsif wParam = Run_eui then
-	        interpreter = "eui"
-		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
-	    elsif wParam = Run_exw then
-	        interpreter = "exw"
-		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
-	    elsif wParam = Run_ex then
-	        interpreter = "ex"
-		return c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, wParam, MF_BYCOMMAND})
 	    elsif wParam = Options_Font then
 	        sequence s = ChooseFont(hMainWnd, font_name, font_height)
 	        if length(s) then
@@ -1504,16 +1651,6 @@ global procedure ui_main()
 	View_Error, alloc_string("Goto &Error\tF4")})
     junk = c_func(AppendMenu, {hviewmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	View_GoBack, alloc_string("Go &Back\tEsc")})
--- run choose interpreter submenu
-    hrunintmenu = c_func(CreateMenu, {})
-    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Run_euiw, alloc_string("euiw")})
-    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Run_eui, alloc_string("eui")})
-    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Run_exw, alloc_string("exw")})
-    junk = c_func(AppendMenu, {hrunintmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Run_ex, alloc_string("ex")})
 -- run menu
     hrunmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1522,8 +1659,8 @@ global procedure ui_main()
 	Run_WithArgs, alloc_string("Start with &Arguments\tShift-F5")})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Arguments, alloc_string("Set Arguments...")})
-    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED + MF_POPUP, 
-	hrunintmenu, alloc_string("Choose Interpreter")})
+    junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Run_Interpreter, alloc_string("Set Interpreter...")})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_SEPARATOR, 0, 0})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Bind, alloc_string("&Bind")})
@@ -1599,8 +1736,6 @@ global procedure ui_main()
     c_func(CheckMenuItem, {hoptionsmenu, Options_ReopenTabs, MF_CHECKED*reopen_tabs})
     c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteStatements, MF_CHECKED*complete_statements})
     c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteBraces, MF_CHECKED*complete_braces})
-    c_func(CheckMenuRadioItem, {hrunintmenu, Run_euiw, Run_ex, 
-	find(interpreter, {"euiw", "eui", "exw", "ex"})+Run_euiw-1, MF_BYCOMMAND})
 
 -- window creation
     hMainWnd = CreateWindow({
@@ -1616,7 +1751,6 @@ global procedure ui_main()
 		    hmenu,                   -- window menu handle
 		    0 ,                 --hInstance // program instance handle
 		    NULL})              -- creation parameters
-
 
     junk = c_func(LoadLibrary, {alloc_string("RICHED32.DLL")})  --needed for richedit
 
@@ -1643,6 +1777,9 @@ global procedure ui_main()
 	puts(1, "Couldn't CreateWindow\n")
 	abort(1)
     end if
+
+    c_func(SendMessage, {hMainWnd, WM_SETICON, ICON_BIG, wee_icon})
+    c_func(SendMessage, {hMainWnd, WM_SETICON, ICON_SMALL, wee_icon})
 
     -- open files from last time and on command line
     open_tabs()
