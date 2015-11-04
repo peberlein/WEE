@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.35"
+  version = "0.36"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -76,10 +76,12 @@ global constant
 --  Options to disable auto-completing statements or braces
 --  Auto-completion and syntax coloring disabled for non-Euphoria files
 --  Bold options for syntax coloring
---  64-bit supported on Windows (Linux/OSX)
+--  64-bit supported on Windows (joining Linux/OSX)
 --  select next tab (Ctrl+Tab) and previous tab (Shift+Ctrl+Tab)
 --  select next/prev tab using mouse wheel over tabs
 --  close tab with middle mouse button
+--  Windows icon built-in
+--  Run Set Interpreter now lets you override the interpreter used
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -174,7 +176,8 @@ global integer font_height, line_numbers, sorted_subs, line_wrap,
     auto_namespace, -- when typing ':'
     auto_complete, -- when typing two word chars or backspace
     auto_arguments, -- when typing '(' after an identifier
-    auto_indent -- when creating a new line
+    auto_indent, -- when creating a new line
+    auto_indicator -- underline words that are not in scope
 global sequence
     terminal_program -- for GTK, runs programs in a terminal
 global integer keyword_color, builtin_color, string_color,
@@ -195,7 +198,7 @@ sequence
 integer current_tab, modified, initial_tab
 atom hedit
 atom ex_err_timestamp
-integer expand_line, last_deleted_char
+integer expand_line, last_deleted_char, last_typed_pos
 sequence insert_chars
 sequence calltip_args -- {{start,end},...}
 integer calltip_pos
@@ -214,7 +217,7 @@ end function
 
 function crash_cleanup(object x)
     ui_message_box_error(window_title,
-	"Houston, Wee have a problem.\n\n" &
+	"Houston, Wee've had a problem.\n\n" &
 	"The editor crashed and is closing now.\n")
     save_modified_tabs()
     if length(wee_conf_filename) then
@@ -236,7 +239,8 @@ constant             -- colors of various syntax classes
     Red = #0000AA,
     Blue = #AA0000,
     LightBlue = #FFFFDD,
-    White = #FFFFFF
+    White = #FFFFFF,
+    BrightRed = #0000FF
 
 global procedure wee_init()
     sequence cmdline
@@ -260,11 +264,7 @@ global procedure wee_init()
     run_file_name = ""
     ex_err_name = "ex.err"
     ex_err_timestamp = get_timestamp(ex_err_name)
-    ifdef WINDOWS then
-	interpreter = "euiw"
-    elsedef
-	interpreter = "eui"
-    end ifdef
+    interpreter = ""
 
     tab_hedits = {}
     tab_file_names = {}
@@ -276,6 +276,7 @@ global procedure wee_init()
     expand_line = -1
     insert_chars = ""
     last_deleted_char = 0
+    last_typed_pos = -1
     auto_namespace = 1
     auto_complete = 1
     complete_statements = 1
@@ -285,6 +286,7 @@ global procedure wee_init()
     tab_width = 8
     indentation_guides = 0
     caret_width = 2
+    auto_indicator = 0
 
     calltip_args = {}
     calltip_pos = -1
@@ -449,7 +451,9 @@ global procedure load_wee_conf(sequence wee_conf_file)
             elsif equal(key, "line_wrap") and int_ok then
                 line_wrap = l[2]
             elsif equal(key, "interpreter") then
-                interpreter = val
+		if not find(val, {"eui","euiw","ex","exw"}) then
+		    interpreter = val
+		end if
             elsif equal(key, "reopen_tabs") and int_ok then
                 reopen_tabs = l[2]
             elsif equal(key, "open_tab") then
@@ -662,7 +666,7 @@ global procedure init_edit(atom edit)
 
     -- get modification events for deletetext
     ssm(SCI_SETMODEVENTMASK, SC_MOD_BEFOREDELETE)
-    
+
     ssm(SCI_SETWRAPMODE, line_wrap)
 
     ifdef WINDOWS then
@@ -680,6 +684,11 @@ global procedure init_edit(atom edit)
     ssm(SCI_REGISTERIMAGE, DECL_PROCEDURE, p_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_SEQUENCE, s_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_TYPE, t_xpm)
+    
+    ssm(SCI_INDICSETSTYLE, 3, INDIC_SQUIGGLE)
+    ssm(SCI_INDICSETFORE, 3, BrightRed)
+    ssm(SCI_SETINDICATORCURRENT, 3)
+    
 end procedure
 
 global procedure reinit_all_edits()
@@ -1563,7 +1572,14 @@ global procedure open_tutorial()
 -- Indent
 --    Indent block                Tab
 --    Unindent block              Shift Tab
+--    Comment/uncomment block     Control M
 
+-- Editor Tab Management
+--    Switch to next tab          Control PgDn / Control Tab
+--    Switch to previous tab      Control PgUp / Shift Control Tab
+--    Switch tabs                 Mouse wheel
+--    Tab menu                    Right click
+--    Close tab                   Middle click
 
 -- Wee offers autocompletion for the following keywords.
 -- Type a space at the end of each keyword below to see the 
@@ -1818,7 +1834,7 @@ global procedure view_error()
     file = s[1..colon-1]
     tab = find(file, tab_file_names)
     if tab then
-      select_tab(tab)
+	select_tab(tab)
     else
 	if ui_message_box_yes_no("Goto Error",
 		"The file ex.err refers to\n"&file&
@@ -1829,8 +1845,7 @@ global procedure view_error()
 	tab = open_file(file, 0)
     end if
     s = value(s[colon+1..length(s)])
-    if s[1] != GET_SUCCESS 
-    or not integer(s[2]) then
+    if s[1] != GET_SUCCESS or not integer(s[2]) then
         close(fn)
 	return
     end if
@@ -1881,7 +1896,7 @@ end procedure
 -- code syntax routines
 -------------------------------------------------------------------
 
--- move the cursor to the location when the word under the cursor was declared
+-- move to the declaration of the word under the cursor
 global procedure view_declaration()
     sequence text, decls, word, name_space
     integer pos
@@ -1900,6 +1915,50 @@ global procedure view_declaration()
         exit
       end if
     end for
+end procedure
+
+-- after typing a word, check to see if it is declared
+procedure check_last_typed()
+    sequence text, ast, decls, word, name_space
+    integer style, pos, len, declared = 0
+    atom t0, t1, t2
+
+    -- only check indentifiers
+    style = ssm(SCI_GETSTYLEAT, last_typed_pos-1)
+
+    text = get_edit_text()
+    word = word_pos(text, last_typed_pos)
+    last_typed_pos = -1
+    if length(word) < 4 then return end if
+    pos = word[3] - 1
+    len = word[4] - pos
+    name_space = word[2]
+    word = word[1]
+
+    if style != SCE_LUA_IDENTIFIER then
+	ssm(SCI_INDICATORCLEARRANGE, pos, len)
+        return
+    end if
+
+    t0 = time()
+    ast = parse(text, file_name)
+    t1 = time()
+    decls = get_declarations(ast, pos, name_space)
+    t2 = time()
+    printf(1, "decls took %g %g\n", {t1-t0, t2-t1})
+    for i = 1 to length(decls) do
+      if equal(decls[i][1], word) then
+	declared = 1
+	exit
+      end if
+    end for
+    
+    -- underline if not declared
+    if declared then
+	ssm(SCI_INDICATORCLEARRANGE, pos, len)
+    else
+	ssm(SCI_INDICATORFILLRANGE, pos, len)    
+    end if
 end procedure
 
 -- show a list of possible words when autocomplete is triggered
@@ -2360,6 +2419,7 @@ global procedure toggle_comment()
 	    exit
         end if
     end for
+    -- insert/remove comment markers
     ssm(SCI_BEGINUNDOACTION)
     for i = line_start to line_end do
 	pos = ssm(SCI_POSITIONFROMLINE, i)
@@ -2370,6 +2430,7 @@ global procedure toggle_comment()
         end if
     end for
     ssm(SCI_ENDUNDOACTION)
+    -- adjust the selection to be the same column as it was before
     pos = ssm(SCI_POSITIONFROMLINE, line_pos) + col_pos
     anchor = ssm(SCI_POSITIONFROMLINE, line_anchor) + col_anchor
     if col_pos != 0 then
@@ -2385,26 +2446,94 @@ end procedure
 -- eu.cfg handling
 -------------------------------------------------------------------
 
-global function get_eu_bin(sequence bin)
-    sequence paths, try
+-- returns a list of interpreters that exist on disk
+global function get_interpreters()
+    sequence paths, try, exe, bin, result = {}
+    integer index
+    if find(fileext(file_name), {"ew","exw"}) then
+	bin = {"euiw", "eui", "exw", "ex"}
+    else
+	bin = {"eui", "euiw", "ex", "exw"}
+    end if
+    ifdef UNIX then
+	bin = append(bin, "exu")
+    end ifdef
     paths = parse_eu_cfg(dirname(file_name) & SLASH & "eu.cfg")
     paths &= include_paths(0) -- fallback to running interpreter
-    ifdef WINDOWS then
-	bin &= ".exe"
-    end ifdef
     for i = 1 to length(paths) do
 	try = paths[i]
 	if try[$] = SLASH then
 	    try = try[1..$-1]
 	end if
-        try = canonical_path(try & join_path({"..", "bin", bin}))
-        if file_exists(try) then
-            return try
-        end if
+	for j = 1 to length(bin) do
+	    exe = try & join_path({"..", "bin", bin[j]})
+	    ifdef WINDOWS then
+		exe &= ".exe"
+	    end ifdef
+	    exe = canonical_path(exe)
+	    if not find(exe, result) and file_exists(exe) then
+		result = append(result, exe)
+	    end if
+	end for
     end for
-    return bin
+    if length(interpreter) and not find(interpreter, result) then
+	result = prepend(result, interpreter)
+    end if
+    return result
 end function
 
+-- if bin="" returns an interpreter from one of these locations:
+--   interpreter global variable if set
+--   some interpreter from the paths in eu.cfg
+--   the running interpreter's include_paths
+-- if bin is "eubind" "eushroud" or "euc" then use the same search 
+--   paths as above to locate it
+global function get_eu_bin(sequence bin)
+    sequence paths, try, exe
+
+    if length(bin) = 0 then
+	if length(interpreter) != 0 then
+	    return interpreter
+	end if
+	if find(fileext(file_name), {"ew","exw"}) then
+	    bin = {"euiw", "eui", "exw", "ex"}
+	else
+	    bin = {"eui", "euiw", "ex", "exw"}
+	end if
+	ifdef UNIX then
+	    bin = append(bin, "exu")
+	end ifdef
+    else
+	bin = {bin}
+    end if
+
+    paths = parse_eu_cfg(dirname(file_name) & SLASH & "eu.cfg")
+    paths &= include_paths(0) -- fallback to running interpreter
+    try = dirname(interpreter)
+    if length(try) then
+        paths = prepend(paths, try)
+    end if
+    for i = 1 to length(paths) do
+	try = paths[i]
+	if try[$] = SLASH then
+	    try = try[1..$-1]
+	end if
+	for j = 1 to length(bin) do
+	    exe = try & join_path({"..", "bin", bin[j]})
+	    ifdef WINDOWS then
+		exe &= ".exe"
+	    end ifdef
+	    exe = canonical_path(exe)
+	    if file_exists(exe) then
+		--printf(1, "Using %s\n", {exe})
+		return exe
+	    end if
+	end for
+    end for
+    return bin[1]
+end function
+
+-- returns text in quotes if it contains spaces
 global function quote_spaces(sequence text)
     if find(' ', text) then
 	return '"' & text & '"'
@@ -2542,6 +2671,9 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
     end if
     update_status()
     do_brace_highlight(hedit)
+    if auto_indicator and last_typed_pos != -1 and get_pos() != last_typed_pos then
+        check_last_typed()
+    end if
 
   elsif code = SCN_SAVEPOINTREACHED or code = SCN_SAVEPOINTLEFT then
     modified = (code = SCN_SAVEPOINTLEFT)
@@ -2550,7 +2682,7 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   elsif code = SCN_KEY then
     ch = peek4s(notification+NOTIFICATION_CH)
     modifiers = peek4s(notification+NOTIFICATION_MODIFIERS)
-    -- on OSX, META and SHIFT are the only modifiers we receive
+    -- on OSX X11, META and SHIFT are the only modifiers we receive
     
     if ch = 'Z' and and_bits(modifiers, SCMOD_CTRL+SCMOD_META) then
       if and_bits(modifiers, SCMOD_SHIFT) then
@@ -2594,12 +2726,12 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
       insert_pair()
     elsif ch = '"' or ch = '\'' and complete_braces then
       insert_pair()
---    elsif auto_complete and (
---	(ch >= 'a' and ch <= 'z') or
---	(ch >= 'A' and ch <= 'Z') or
---	(ch >= '0' and ch <= '9') or
---	ch = '_') then
---        view_completions()
+    elsif auto_indicator and (
+	(ch >= 'a' and ch <= 'z') or
+	(ch >= 'A' and ch <= 'Z') or
+	(ch >= '0' and ch <= '9') or
+	ch = '_') then
+	last_typed_pos = get_pos()
     end if
 
   elsif code = SCN_AUTOCSELECTION then
@@ -2621,7 +2753,8 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 
   elsif code = SCN_URIDROPPED then
     open_uri(notification_text(notification))
-    
+  elsif code = SCN_PAINTED then
+    -- could run some background processing during painted, every time cursor blinks
   end if
   return 0
 end function
