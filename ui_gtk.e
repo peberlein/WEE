@@ -706,7 +706,8 @@ function ChooseInterpreter(atom ctl, atom text_entry)
     {"current folder", pathname(canonical_path(interpreter))}})
 
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
-    set(text_entry, "text", gtk:get(dialog, "filename"))
+    set(text_entry, "prepend text", gtk:get(dialog, "filename"))
+    set(text_entry, "active", 1)
   end if
   set(dialog, "hide")
   return 0
@@ -716,7 +717,8 @@ constant choose_interpreter = callback("ChooseInterpreter")
 
 function RunSetInterpreter()
     atom dialog, text_entry, panel, row
-    sequence interpreters = {"eui", "exu"}
+    sequence interpreters = get_interpreters()
+    integer index
     
     dialog = create(GtkDialog, {
 	{"border width", 5},
@@ -732,10 +734,8 @@ function RunSetInterpreter()
     add(gtk:get(dialog, "content area"), panel)
     
     pack(panel, create(GtkLabel,
-`Enter an interpreter to use to run
-programs, or select one from the list.
-Leave blank for the default, or from
-an 'eu.cfg' file.`))
+`Enter an interpreter to use to run programs, or select one from the list.
+Leave blank to use the default first item in the list.`))
 
     row = create(GtkBox, HORIZONTAL, 5)
     pack(panel, row, TRUE)
@@ -744,12 +744,16 @@ an 'eu.cfg' file.`))
 	{"margin bottom", 5},
 	{"activates default", TRUE}})
     pack(row, text_entry, TRUE, TRUE)
-    pack(text_entry, interpreters)
+    add(text_entry, interpreters)
+    index = find(interpreter, interpreters)
+    if index then
+        set(text_entry, "active", index)
+    end if
     pack(row, create(GtkButton, "...", choose_interpreter, text_entry))
     
     show_all(dialog)
     if set(dialog, "run") = GTK_RESPONSE_OK then
-	terminal_program = gtk:get(text_entry, "active text")
+	interpreter = gtk:get(text_entry, "active text")
     end if
     hide(dialog)
     return 0
@@ -779,9 +783,8 @@ function RunSetTerminal()
     add(gtk:get(dialog, "content area"), panel)
 
     pack(panel, create(GtkLabel,
-`Enter a terminal emulator to use to run
-programs, or select one from the list. 
-Leave blank to run in parent terminal.`))
+`Enter a terminal emulator to use to run programs, or select one
+from the list. Leave blank to run in parent terminal.`))
     
     text_entry = create(GtkComboBoxEntry, {
 	{"margin bottom", 5},
