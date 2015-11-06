@@ -744,10 +744,12 @@ Leave blank to use the default first item in the list.`))
 	{"margin bottom", 5},
 	{"activates default", TRUE}})
     pack(row, text_entry, TRUE, TRUE)
-    add(text_entry, interpreters)
-    index = find(interpreter, interpreters)
-    if index then
-        set(text_entry, "active", index)
+    if length(interpreters) then
+	add(text_entry, interpreters)
+	index = find(interpreter, interpreters)
+	if index then
+	    set(text_entry, "active", index)
+	end if
     end if
     pack(row, create(GtkButton, "...", choose_interpreter, text_entry))
     
