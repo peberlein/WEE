@@ -761,10 +761,21 @@ Leave blank to use the default first item in the list.`))
     return 0
 end function
 
-constant terminals = {"x-terminal-emulator", "urxvt", "rxvt",
-    "terminator", "Eterm", "aterm", "xterm", "gnome-terminal",
-    "roxterm", "xfce4-terminal", "termite", "lxterminal",
-    "mate-terminal", "terminology"}
+constant terminals = {
+    "x-terminal-emulator -e",
+    "urxvt -e",
+    "rxvt -e",
+    "terminator -e",
+    "Eterm -e",
+    "aterm -e",
+    "xterm -e",
+    "gnome-terminal -x",
+    "roxterm -e",
+    "xfce4-terminal -x",
+    "termite -e",
+    "lxterminal -e",
+    "mate-terminal -e",
+    "terminology -e"}
 
 function RunSetTerminal()
     atom dialog, text_entry, panel
@@ -795,11 +806,6 @@ from the list. Leave blank to run in parent terminal.`))
     for i = 1 to length(terminals) do
         if system_exec("which " & terminals[i] & " >/dev/null 2>&1") = 0 then
 	    text = terminals[i]
-	    if equal(text, "gnome-terminal") then
-	      text &= " -x"
-	    else
-	      text &= " -e"
-	    end if
 	    add(text_entry, {text})
 	    n += 1
 	    if equal(text, terminal_program) then
