@@ -1206,22 +1206,22 @@ global procedure ui_close_tab(integer tab)
 end procedure
 
 
-constant filter1 = create(GtkFileFilter, {
-    {"name", "Euphoria files"},
-    {"add pattern", "*.e"},
-    {"add pattern", "*.ex"},
-    {"add pattern", "*.exw"},
-    {"add pattern", "*.ew"},
-    {"add pattern", "ex.err"},
-    {"add pattern", "eu.cfg"}})
-
-constant filter2 = create(GtkFileFilter, {
-    {"name", "Text files"},
-    {"add mime type", "text/*"}})
-
-constant filter3 = create(GtkFileFilter, {
-    {"name", "All files"},
-    {"add pattern", "*"}})
+constant filters = {
+    create(GtkFileFilter, {
+	{"name", "Euphoria files"},
+	{"add pattern", "*.e"},
+	{"add pattern", "*.ex"},
+	{"add pattern", "*.exw"},
+	{"add pattern", "*.ew"},
+	{"add pattern", "ex.err"},
+	{"add pattern", "eu.cfg"}}),
+    create(GtkFileFilter, {
+	{"name", "Text files"},
+	{"add mime type", "text/*"}}),
+    create(GtkFileFilter, {
+	{"name", "All files"},
+	{"add pattern", "*"}})}
+atom current_filter = filters[1]
 
 global function ui_get_open_file_name()
   atom dialog
@@ -1236,9 +1236,11 @@ global function ui_get_open_file_name()
     {"add button", "gtk-ok", GTK_RESPONSE_OK},
     {"position", GTK_WIN_POS_MOUSE},
     {"current folder", pathname(canonical_path(file_name))}})
-  add(dialog, {filter1, filter2, filter3})
+  add(dialog, filters)
+  set(dialog, "filter", current_filter)
 
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
+    current_filter = gtk:get(dialog, "filter")
     filename = gtk:get(dialog, "filenames")
     if length(filename) = 1 then
 	-- single filename selected
@@ -1266,9 +1268,10 @@ global function ui_get_save_file_name(sequence filename)
     {"filename", filename},
     {"position", GTK_WIN_POS_MOUSE},
     {"current folder", pathname(canonical_path(file_name))}})
-  add(dialog, {filter1, filter2, filter3})
+  add(dialog, filters)
   
   if gtk:get(dialog, "run") = GTK_RESPONSE_OK then
+    current_filter = gtk:get(dialog, "filter")
     filename = gtk:get(dialog, "filename")
   else
     filename = ""
