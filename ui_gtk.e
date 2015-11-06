@@ -1368,6 +1368,16 @@ end procedure
 --------------------------------------------------
 -- help window
 
+function HelpActivateLink(atom handle, atom uri, atom userdata)
+    puts(1, peek_string(uri)&"\n")
+    return 1
+end function
+
+function Hide(atom handle)
+    set(handle,"visible",FALSE)
+    return 1
+end function
+
 constant helpwin = create(GtkWindow, {
 	{"transient for", win},
 	{"title", "Help"},
@@ -1378,18 +1388,8 @@ constant helpwin = create(GtkWindow, {
 connect(helpwin, "delete-event", callback("Hide"))
 
 constant helplbl = create(GtkLabel)
-    add(helpwin,helplbl)
-    connect(helplbl, "activate-link", callback("HelpActivateLink"))
-
-function HelpActivateLink(atom handle, atom uri, atom userdata)
-    puts(1, peek_string(uri)&"\n")
-    return 1
-end function
-
-function Hide(atom handle)
-    set(handle,"visible",FALSE)
-    return 1
-end function
+add(helpwin,helplbl)
+connect(helplbl, "activate-link", callback("HelpActivateLink"))
 
 function re(sequence txt, sequence rx, sequence rep)
     return regex:find_replace(regex:new(rx), txt, rep)
