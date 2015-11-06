@@ -1038,7 +1038,6 @@ global function make_tab_name()
             end if
         end for
     end if
-    if modified then name &= "*" end if
     return name
 end function
 
@@ -1068,15 +1067,17 @@ global procedure select_tab(integer tab)
     calltip_stack = {}
     calltip_text = ""
     ui_select_tab(tab)
-    ui_update_window_title(file_name)
+    ui_update_window_title(make_tab_name())
     update_status()
 
     update_lexer()
 end procedure
 
 global procedure update_tab_name()
-    ui_update_window_title(file_name)
-    ui_update_tab_name(current_tab, make_tab_name())
+    sequence name = make_tab_name()
+    ui_update_window_title(name)
+    if modified then name &= "*" end if
+    ui_update_tab_name(current_tab, name)
 end procedure
 
 global procedure new_tab(sequence file_name)

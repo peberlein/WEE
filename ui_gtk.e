@@ -1172,12 +1172,13 @@ global procedure ui_select_tab(integer tab)
   gtk_proc("gtk_widget_grab_focus", {P}, ui_hedits[tab])
 end procedure
 
-global procedure ui_update_window_title(sequence file_name)
-  set(win, "title", window_title & " [" & file_name & "]")
+global procedure ui_update_window_title(sequence name)
+  set(win, "title", name & " ~ " & window_title)
 end procedure
 
 global procedure ui_update_tab_name(integer tab, sequence name)
-  set(notebook, "tab_label_text", ui_hedits[tab], name)
+  set(notebook, "tab label text", ui_hedits[tab], name)
+  set(gtk:get(notebook, "tab label", ui_hedits[tab]), "tooltip text", file_name)
 end procedure
 
 constant sci_notify_cb = callback("sci_notify")

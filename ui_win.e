@@ -70,7 +70,7 @@ constant file_filters = allocate_string(
 atom hMainWnd, hFindDlg, hDlg, class,
     hmenu, hfilemenu, heditmenu, hsearchmenu, hviewmenu, 
     hrunmenu, hoptionsmenu, hhelpmenu, htabmenu,
-    hstatus, htabs, hcode, hedit,
+    hstatus, htabs, hcode, hedit, htooltip,
     WM_FIND
 
 sequence ui_hedits
@@ -108,10 +108,10 @@ function callback(sequence name, atom rid = routine_id(name))
 end function
 
 
-global procedure ui_update_window_title(sequence file_name)
+global procedure ui_update_window_title(sequence name)
     atom result
     result = c_func(SendMessage, {hMainWnd, WM_SETTEXT, 0, 
-        alloc_string(window_title&" [" & file_name & "]")})
+        alloc_string(name & " ~ " & window_title)})
     free_strings()
 end procedure
 
@@ -174,6 +174,18 @@ global procedure ui_select_tab(integer tab)
     free(rect)
     c_proc(ShowWindow, {hedit, SW_SHOW})
     junk = c_func(SetFocus, {hedit})
+
+    junk = allocate_pack("zdppddddps", { -- TOOLINFO
+	TTF_IDISHWND + TTF_SUBCLASS, -- uFlags
+	hMainWnd, -- hwnd
+	htabs, -- uId
+	0,0,0,0, -- rect
+	0, -- hinst
+	file_name -- lpszText
+	})
+    c_func(SendMessage, {htooltip, TTM_UPDATETIPTEXT, 0, junk})
+    free(junk)
+
 end procedure
 
 global function ui_new_tab(sequence name)
@@ -1212,6 +1224,17 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	elsif code = NM_RCLICK then
 	    rightclick_tab()
 	end if
+      elsif hwndFrom = htooltip and code = TTN_NEEDTEXT then
+	junk = allocate_pack("zdppddddps", { -- TOOLINFO
+	    TTF_IDISHWND + TTF_SUBCLASS, -- uFlags
+	    hMainWnd, -- hwnd
+	    htabs, -- uId
+	    0,0,0,0, -- rect
+	    0, -- hinst
+	    file_name -- lpszText
+	    })
+	c_func(SendMessage, {htooltip, TTM_UPDATETIPTEXT, 0, junk})
+	free(junk)
       end if
     end if
 
@@ -1771,15 +1794,34 @@ global procedure ui_main()
                 0,
                 NULL})
     junk = c_func(SendMessage, {htabs, WM_SETFONT, statusFont, 0})
+    
+    htooltip = CreateWindow({0, "tooltips_class32", 0,
+		    {WS_POPUP,TTS_ALWAYSTIP},
+		    CW_USEDEFAULT, CW_USEDEFAULT,
+		    CW_USEDEFAULT, CW_USEDEFAULT,
+		hMainWnd, NULL,
+		0, NULL})
 
     --printf(1, "hMainWnd=%x hstatus=%x htabs=%x\n", {hMainWnd, hstatus, htabs})
-    if hMainWnd = 0 or hstatus = 0 or htabs = 0 then
+    if hMainWnd = 0 or hstatus = 0 or htabs = 0 or htooltip = 0 then
 	puts(1, "Couldn't CreateWindow\n")
 	abort(1)
     end if
 
     c_func(SendMessage, {hMainWnd, WM_SETICON, ICON_BIG, wee_icon})
     c_func(SendMessage, {hMainWnd, WM_SETICON, ICON_SMALL, wee_icon})
+
+    -- attach tooltip to tab control
+    junk = allocate_pack("zdppddddps", { -- TOOLINFO
+	TTF_IDISHWND + TTF_SUBCLASS, -- uFlags
+	hMainWnd, -- hwnd
+	htabs, -- uId
+	0,0,0,0, -- rect
+	0, -- hinst
+	LPSTR_TEXTCALLBACK -- lpszText
+	})
+    c_func(SendMessage, {htooltip, TTM_ADDTOOL, 0, junk})
+    free(junk)
 
     -- open files from last time and on command line
     open_tabs()
