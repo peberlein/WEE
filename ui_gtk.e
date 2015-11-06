@@ -1309,7 +1309,7 @@ global function ui_message_box_yes_no_cancel(sequence title, sequence message)
 end function
 
 global function ui_message_box_error(sequence title, sequence message)
-  Error(win, title, "", message, , GTK_BUTTONS_OK)
+  Error(win, title, , message, GTK_BUTTONS_OK)
   return 0
 end function
 
