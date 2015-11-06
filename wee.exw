@@ -1340,8 +1340,11 @@ global procedure check_externally_modified_tabs()
 		tab_timestamps[i] = -1
                 if ui_message_box_yes_no(window_title, tab_file_names[i] & 
                                          "\n\nThis file has been modified by another application.  Do you want to reload it?") then
+		    integer pos
                     select_tab(i)
+                    pos = get_pos()
                     open_file(tab_file_names[i], 1)
+                    goto_pos(pos)
                 else
                     tab_timestamps[i] = ts
                 end if
