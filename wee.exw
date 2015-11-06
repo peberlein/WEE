@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.36"
+  version = "0.37"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -82,6 +82,8 @@ global constant
 --  close tab with middle mouse button
 --  Windows icon built-in
 --  Run Set Interpreter now lets you override the interpreter used
+--  Filename first in window title
+--  Tabs now have mouseover tooltip with full path (win32: only the active tab)
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -114,6 +116,7 @@ global constant
 --    No message when opening saved tab whose file no longer exists
 --    Fix crash on parsing "-type ..." (thanks dcuny)
 --    Allow quoted include filename (thanks dcuny)
+--    Crash when interpreter list is empty (thanks Irv)
 
 -- todo:
 --  bug with reloading files, first few characters get garbled
