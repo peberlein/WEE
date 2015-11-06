@@ -655,7 +655,7 @@ function RunStart(atom ctl)
 	system(cmd & get_eu_bin("eubind") & ' ' & quote_spaces(file_name))
     elsif equal(lbl, "Shroud") then
 	system(cmd & get_eu_bin("eushroud") & ' ' & quote_spaces(file_name))
-    elsif equal(lbl, "Translate") then
+    elsif equal(lbl, "Translate and Compile") then
 	system(cmd & get_eu_bin("euc") & ' ' & quote_spaces(file_name))
     else
 	crash("Unable to get menu label")
@@ -993,7 +993,7 @@ add(runmenu, {
   create(GtkSeparatorMenuItem),
   createmenuitem("Bind", "RunStart"),
   createmenuitem("Shroud", "RunStart"),
-  createmenuitem("Translate", "RunStart")
+  createmenuitem("Translate and Compile", "RunStart")
   })
 set(menuRun, "submenu", runmenu)
 
