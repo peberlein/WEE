@@ -784,7 +784,7 @@ procedure run_convert(sequence name, sequence cmd)
 	hMainWnd, NULL,
 	alloc_string(get_eu_bin(cmd)),
 	alloc_string(quote_spaces(file_name)),
-	alloc_string(dirname(run_file_name)),
+	alloc_string(dirname(file_name)),
 	SW_SHOWNORMAL})
     if result < 33 then
         ui_message_box_error(name, cmd & " failed")
@@ -1690,7 +1690,7 @@ global procedure ui_main()
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Run_Shroud, alloc_string("S&hroud")})
     junk = c_func(AppendMenu, {hrunmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
-	Run_Translate, alloc_string("&Translate")})
+	Run_Translate, alloc_string("&Translate and Compile")})
 -- options menu
     hoptionsmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
