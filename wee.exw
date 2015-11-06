@@ -1461,9 +1461,13 @@ global procedure context_help()
     text = get_edit_text()
     pos = get_pos()
     word = word_pos(text, pos)
-    if length(word) < 2 then return end if
-    name_space = word[2]
-    word = word[1]
+    if length(word) < 2 then
+	name_space = ""
+	word = ""
+    else
+	name_space = word[2]
+	word = word[1]
+    end if
 
     -- load the search.dat file
     if length(search_dat) = 0 then
@@ -1502,7 +1506,7 @@ global procedure context_help()
 	    return
 	end if
     end if
-    
+
     -- search search.dat for matching entry
     help = {}
     for i = 1 to length(search_idx) do
@@ -1512,6 +1516,10 @@ global procedure context_help()
         end if
     end for
     if atom(help) or length(help) = 0 then
+	ui_message_box_error("Help", 
+	    "Didn't find any help on the topic: "&word&
+	    "\nPlease put the cursor over an Euphoria identifier"&
+	    "\nor standard library routine and try again.")
 	return
     end if
 
@@ -2454,6 +2462,7 @@ end procedure
 global function get_interpreters()
     sequence paths, try, exe, bin, result = {}
     integer index
+
     if find(fileext(file_name), {"ew","exw"}) then
 	bin = {"euiw", "eui", "exw", "ex"}
     else
