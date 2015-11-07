@@ -626,6 +626,9 @@ end function
 -- runs the cmd, maybe in a terminal emulator
 procedure Run(sequence cmd)
     if length(terminal_program) then
+        if run_waitkey then
+            cmd &= " ; read -p \"Press any key...\" -n1 -s"
+        end if
         if ends(" -e", terminal_program) then
             cmd = quote_spaces(cmd)
         end if
@@ -858,6 +861,11 @@ function RunBackground(atom handle)
     return 0
 end function
 
+function RunWaitKey(atom handle)
+    run_waitkey = gtk:get(handle, "active")
+    return 0
+end function
+
 
 
 function HelpAbout()
@@ -1034,6 +1042,7 @@ add(runmenu, {
   createmenuitem("Set Interpreter...", "RunSetInterpreter"),
   createmenuitem("Set Terminal Emulator...", "RunSetTerminal"),
   createmenuitem("Run Terminal Emulator", "RunStart"),
+  createmenuitem("Wait for Keypress after Running in Terminal", "RunWaitKey", 0, run_waitkey),
   create(GtkSeparatorMenuItem),
   createmenuitem("Bind", "RunStart"),
   createmenuitem("Shroud", "RunStart"),

@@ -183,7 +183,8 @@ global integer font_height, line_numbers, sorted_subs, line_wrap,
     auto_indent, -- when creating a new line
     auto_indicator, -- underline words that are not in scope
     run_testrun, -- run exe after bind/shroud/translate
-    run_background -- for GTK, run programs/terminal in background
+    run_background, -- for GTK, run programs/terminal in background
+    run_waitkey -- wait for keypress after running in a terminal
 global sequence
     terminal_program -- for GTK, runs programs in a terminal
 global integer keyword_color, builtin_color, string_color,
@@ -295,6 +296,7 @@ global procedure wee_init()
     auto_indicator = 0
     run_testrun = 0
     run_background = 1
+    run_waitkey = 1
 
     calltip_args = {}
     calltip_pos = -1
@@ -494,6 +496,8 @@ global procedure load_wee_conf(sequence wee_conf_file)
 	        run_testrun = l[2]
 	    elsif equal(key, "run_background") and int_ok then
 	        run_background = l[2]
+            elsif equal(key, "run_waitkey") and int_ok then
+	        run_waitkey = l[2]
             end if
         end if
         l = gets(f)
@@ -547,6 +551,7 @@ global procedure save_wee_conf(sequence wee_conf_file)
     printf(f, "terminal_program=%s\n", {terminal_program})
     printf(f, "run_testrun=%d\n", {run_testrun})
     printf(f, "run_background=%d\n", {run_background})
+    printf(f, "run_waitkey=%d\n", {run_waitkey})
     close(f)
 end procedure
 
