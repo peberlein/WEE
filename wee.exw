@@ -84,6 +84,7 @@ global constant
 --  Run Set Interpreter now lets you override the interpreter used
 --  Filename first in window title
 --  Tabs now have mouseover tooltip with full path (win32: only the active tab)
+--  Adding run options: background and test run (thanks KDR)
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -180,7 +181,9 @@ global integer font_height, line_numbers, sorted_subs, line_wrap,
     auto_complete, -- when typing two word chars or backspace
     auto_arguments, -- when typing '(' after an identifier
     auto_indent, -- when creating a new line
-    auto_indicator -- underline words that are not in scope
+    auto_indicator, -- underline words that are not in scope
+    run_testrun, -- run exe after bind/shroud/translate
+    run_background -- for GTK, run programs/terminal in background
 global sequence
     terminal_program -- for GTK, runs programs in a terminal
 global integer keyword_color, builtin_color, string_color,
@@ -290,6 +293,8 @@ global procedure wee_init()
     indentation_guides = 0
     caret_width = 2
     auto_indicator = 0
+    run_testrun = 0
+    run_background = 1
 
     calltip_args = {}
     calltip_pos = -1
@@ -485,6 +490,10 @@ global procedure load_wee_conf(sequence wee_conf_file)
 	        caret_width = l[2]
 	    elsif equal(key, "terminal_program") then
 		terminal_program = val
+	    elsif equal(key, "run_testrun") and int_ok then
+	        run_testrun = l[2]
+	    elsif equal(key, "run_background") and int_ok then
+	        run_background = l[2]
             end if
         end if
         l = gets(f)
@@ -536,6 +545,8 @@ global procedure save_wee_conf(sequence wee_conf_file)
     printf(f, "indentation_guides=%d\n", {indentation_guides})
     printf(f, "caret_width=%d\n", {caret_width})
     printf(f, "terminal_program=%s\n", {terminal_program})
+    printf(f, "run_testrun=%d\n", {run_testrun})
+    printf(f, "run_background=%d\n", {run_background})
     close(f)
 end procedure
 
@@ -2552,6 +2563,11 @@ end function
 -- returns text in quotes if it contains spaces
 global function quote_spaces(sequence text)
     if find(' ', text) then
+	for i = length(text) to 1 by -1 do
+	    if text[i] = '"' then
+	        text = text[1..i-1] & '\\' & text[i..$]
+	    end if
+	end for
 	return '"' & text & '"'
     end if
     return text

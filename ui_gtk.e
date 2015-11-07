@@ -623,19 +623,28 @@ function OptionsIndent(atom handle)
     return 0
 end function
 
+-- runs the cmd, maybe in a terminal emulator
+procedure Run(sequence cmd)
+    if length(terminal_program) then
+        if ends(" -e", terminal_program) then
+            cmd = quote_spaces(cmd)
+        end if
+        cmd = terminal_program & ' ' & cmd
+    end if
+    if run_background then
+        cmd &= " &"
+    end if
+    system(cmd)
+end procedure
+
 function RunStart(atom ctl)
     object lbl = gtk:get(ctl, "label")
-    sequence cmd
+    sequence cmd = ""
 
     if save_if_modified(0) = 0 or length(file_name) = 0 then
         return 0 -- cancelled, or no name
     end if
 
-    cmd = terminal_program
-    if length(cmd) and cmd[$] != ' ' then
-        cmd &= ' '
-    end if
-    
     run_file_name = file_name
     chdir(dirname(run_file_name))
     if match("Start", lbl) = 1 then
@@ -649,18 +658,37 @@ function RunStart(atom ctl)
 	    end if
 	    cmd &= ' ' & get_tab_arguments()
 	end if
-	system(cmd)
+	Run(cmd)
 	check_ex_err()
     elsif equal(lbl, "Bind") then
-	system(cmd & get_eu_bin("eubind") & ' ' & quote_spaces(file_name))
+	cmd &= get_eu_bin("eubind") & ' ' & quote_spaces(file_name)
+	if system_exec("which upx") = 0 then
+	    cmd &= "; upx " & filebase(file_name)
+	end if
+	if run_testrun then
+	    cmd &= " && ./" & filebase(file_name)
+	end if
+	Run(cmd)
     elsif equal(lbl, "Shroud") then
-	system(cmd & get_eu_bin("eushroud") & ' ' & quote_spaces(file_name))
+	cmd &= get_eu_bin("eushroud") & ' ' & quote_spaces(file_name)
+	if run_testrun then
+	    cmd &= " && ./" & filebase(file_name) & ".il"
+	end if
+	Run(cmd)
     elsif equal(lbl, "Translate and Compile") then
-	system(cmd & get_eu_bin("euc") & ' ' & quote_spaces(file_name))
+	cmd &= get_eu_bin("euc") & ' ' & quote_spaces(file_name)
+	if system_exec("which upx") = 0 then
+	    cmd &= " && upx " & filebase(file_name)
+	end if
+	if run_testrun then
+	    cmd &= " && ./" & filebase(file_name)
+	end if
+	Run(cmd)
+    elsif equal(lbl, "Run Terminal Emulator") then
+	Run("$SHELL")
     else
 	crash("Unable to get menu label")
     end if
-    
     return 0
 end function
 
@@ -761,21 +789,10 @@ Leave blank to use the default first item in the list.`))
     return 0
 end function
 
-constant terminals = {
-    "x-terminal-emulator -e",
-    "urxvt -e",
-    "rxvt -e",
-    "terminator -e",
-    "Eterm -e",
-    "aterm -e",
-    "xterm -e",
-    "gnome-terminal -x",
-    "roxterm -e",
-    "xfce4-terminal -x",
-    "termite -e",
-    "lxterminal -e",
-    "mate-terminal -e",
-    "terminology -e"}
+constant terminals = {"x-terminal-emulator", "urxvt", "rxvt", 
+    "terminator", "Eterm", "aterm", "xterm", "gnome-terminal",
+    "roxterm", "xfce4-terminal", "termite", "lxterminal",
+    "mate-terminal", "terminology"}
 
 function RunSetTerminal()
     atom dialog, text_entry, panel
@@ -806,6 +823,11 @@ from the list. Leave blank to run in parent terminal.`))
     for i = 1 to length(terminals) do
         if system_exec("which " & terminals[i] & " >/dev/null 2>&1") = 0 then
 	    text = terminals[i]
+	    if find(text, {"gnome-terminal", "xfce4-terminal"}) then
+	        text &= " -x"
+	    else
+		text &= " -e"
+	    end if
 	    add(text_entry, {text})
 	    n += 1
 	    if equal(text, terminal_program) then
@@ -825,6 +847,17 @@ from the list. Leave blank to run in parent terminal.`))
     hide(dialog)
     return 0
 end function
+
+function RunTestRun(atom handle)
+    run_testrun = gtk:get(handle, "active")
+    return 0
+end function
+
+function RunBackground(atom handle)
+    run_background = gtk:get(handle, "active")
+    return 0
+end function
+
 
 
 function HelpAbout()
@@ -996,12 +1029,17 @@ add(runmenu, {
   createmenuitem("Start", "RunStart", "F5"),
   createmenuitem("Start with Arguments", "RunStart", "<Shift>F5"),
   createmenuitem("Set Arguments...", "RunSetArguments"),
+  createmenuitem("Run In Background", "RunBackground", 0, run_background),
+  create(GtkSeparatorMenuItem),
   createmenuitem("Set Interpreter...", "RunSetInterpreter"),
   createmenuitem("Set Terminal Emulator...", "RunSetTerminal"),
+  createmenuitem("Run Terminal Emulator", "RunStart"),
   create(GtkSeparatorMenuItem),
   createmenuitem("Bind", "RunStart"),
   createmenuitem("Shroud", "RunStart"),
-  createmenuitem("Translate and Compile", "RunStart")
+  createmenuitem("Translate and Compile", "RunStart", "F9"),
+  create(GtkSeparatorMenuItem),
+  createmenuitem("Test Run after Bind/Shroud/Translate", "RunTestRun", 0, run_testrun)
   })
 set(menuRun, "submenu", runmenu)
 
