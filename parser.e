@@ -33,6 +33,7 @@
 include std/filesys.e
 include std/os.e
 include std/text.e
+include std/map.e
 
 constant 
     OE4 = 1, -- enable OpenEuphoria 4 syntax
@@ -160,12 +161,8 @@ global constant ast_names = { "var_decl", "assign", "func", "proc", "variable",
 "proc_decl", "elsif", "else", "qprint", "addto", "subto", 
 "multo", "divto", "catto", "string" }
 
-sequence cache
--- { {"path", timestamp, stmts...} ...}
+sequence cache -- { {"path", timestamp, stmts...} ...}
 cache = {}
-
-sequence types
-types = {}
 
 sequence keywords
 keywords = {"global", "function", "procedure", "type", "end", "if", "then",
@@ -448,14 +445,14 @@ function multiline_string_literal()
 end function
 
 function character_literal()
-  integer c
-  c = text[idx]
-  if c = '\n' or c = '\r' then
-    error("unterminated character literal")
-  end if
-  idx += 1
-  if c = '\\' then
-    if idx <= length(text) then
+  integer c = 0
+  if idx <= length(text) then
+    c = text[idx]
+    if c = '\n' or c = '\r' then
+      error("unterminated character literal")
+    end if
+    idx += 1
+    if c = '\\' and idx <= length(text) then
       c = escape_character(text[idx])
       idx += 1
     end if
@@ -549,14 +546,6 @@ global function get_timestamp(sequence filename)
          info[D_YEAR]))))
 end function
 
---function uppercase(sequence s)
---  for i = 1 to length(s) do
---    if s[i] >= 'a' and s[i] <= 'z' then
---      s[i] += 'A'-'a'
---    end if
---  end for
---  return s
---end function
 
 -- returns index of new/existing cache entry, or -1 if not found
 function cache_entry(sequence filename)
@@ -966,7 +955,6 @@ function enum_declaration()
     if identifier() then
       result[2] = get_token()
       result[3] = tok_idx
-      types = append(types, result[2])
     else
       error("expected enum type name")
     end if
@@ -1332,7 +1320,6 @@ function statements(integer mode, integer sub)
     elsif token("type") then
       if check_mode(mode, "type") then exit end if
       s = subroutine_declaration(TYPE_DECL)
-      types = append(types, s[2])
       s &= statements(TYPE_DECL, FUNC)
       expect("type")
 
@@ -1399,12 +1386,6 @@ global function parse(sequence source_text, sequence file_name)
   idx = 1
   tok_idx = 1
   tok = ""
-  types = {
-    "object",
-    "integer",
-    "atom",
-    "sequence"
-  }
   ifdef_ok = 1
 
   ast = statements(NONE, 0)
