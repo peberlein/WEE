@@ -118,6 +118,7 @@ global constant
 --    Fix crash on parsing "-type ..." (thanks dcuny)
 --    Allow quoted include filename (thanks dcuny)
 --    Crash when interpreter list is empty (thanks Irv)
+--    Crash on error while saving (thanks sdpringle) 
 
 -- todo:
 --  bug with reloading files, first few characters get garbled
@@ -155,6 +156,7 @@ include std/sequence.e
 include std/text.e
 include std/machine.e
 include std/error.e
+include std/io.e
 include weeicon.e
 
 -- The ui includes are circular includes: 
@@ -1261,21 +1263,35 @@ global procedure open_tabs()
     end if
 end procedure
 
-procedure save_file()
+-- returns 1 if ok, 0 on error
+function save_file()
     atom fn, junk
+    sequence text
 
     ssm(SCI_SETSAVEPOINT, 0, 0)
     modified = 0
 
     fn = open(file_name, "wb")
-    puts(fn, get_edit_text())
+    if fn = -1 then
+        ui_message_box_error("Save", "Unable to save file. Please make sure the file location is not read-only.")
+        return 0
+    end if
+    text = get_edit_text()
+    puts(fn, text)
+    junk = where(fn)
     close(fn)
+
+    if junk != length(text) then
+        ui_message_box_error("Save", "The file could not be written completely. Please make sure there is enough free space.")
+	return 0
+    end if
 
     update_tab_name()
     update_tab_timestamp()
-end procedure
+    return 1
+end function
 
-global function save_file_as()  -- returns 1 if ok, 0 if cancelled
+global function save_file_as()  -- returns 1 if ok, 0 if cancelled/error
     object temp
 
     temp = ui_get_save_file_name(file_name)
@@ -1283,14 +1299,16 @@ global function save_file_as()  -- returns 1 if ok, 0 if cancelled
 
     file_name = canonical_path(temp, 0, CORRECT)
     tab_file_names[current_tab] = file_name
-    save_file()
+    if save_file() = 0 then
+        return 0
+    end if
     update_tab_name()
     update_lexer()
     return 1
 end function
 
 
-global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if cancelled
+global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if cancelled/error
     atom result, junk
     sequence text
     
@@ -1313,8 +1331,7 @@ global function save_if_modified(integer confirm)  -- returns 1 if ok, 0 if canc
     if length(file_name) = 0 then
         return save_file_as()
     end if
-    save_file()
-    return 1
+    return save_file()
 end function
 
 global function save_modified_tabs()  --returns 1 if ok, 0 if cancelled
@@ -1587,8 +1604,8 @@ global procedure open_tutorial()
 -- Cursor Movement
 --   Go to start of document         Control Home
 --   Go to end of document           Control End
---   Go to start of line             Control Home
---   Go to end of line               Control End
+--   Go to start of line             Home
+--   Go to end of line               End
 --   Go to previous paragraph        Control Up
 --   Go to next paragraph            Control Down
 --   Go to previous word             Control Left
