@@ -1010,6 +1010,10 @@ function IndentDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
                       WM_SETFONT, captionFont, 0})
         junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, IDCANCEL}), 
                       WM_SETFONT, captionFont, 0})
+	for i = 1000 to 1005 do
+	    junk = c_func(SendMessage, {c_func(GetDlgItem, {hdlg, i}), 
+			  WM_SETFONT, captionFont, 0})
+	end for
 	hDlg = hdlg
 	
 	tab_width = c_func(SendMessage, {hedit, SCI_GETTABWIDTH, 0, 0})
