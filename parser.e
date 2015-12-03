@@ -181,6 +181,7 @@ function read_file(sequence filename)
 
   f = open(filename, "rb")
   if f = -1 then
+    puts(2, "Warning: unable to read file: "&filename&"\n")
     return -1
   end if
   line = gets(f)
@@ -567,6 +568,7 @@ function include_file(sequence filename)
   sequence state, tmp, paths
   integer e
   atom ts = -1
+  object new_text
 
   tmp = filename
   ts = get_timestamp(tmp)
@@ -613,6 +615,10 @@ function include_file(sequence filename)
   end if
 
   filename = canonical_path(tmp, 0, CORRECT)
+  new_text = read_file(filename)
+  if atom(new_text) then
+    return -1 -- unable to read file
+  end if
   --printf(1, "%s %d\n", {tmp, ts})
   e = cache_entry(filename)
   if cache[e][2] = ts then
@@ -622,7 +628,7 @@ function include_file(sequence filename)
 
   state = {text, source_filename, idx, tok_idx, tok, e}
   source_filename = filename
-  text = read_file(filename)
+  text = new_text
 --printf(1, "including %s, length %d, ts %d\n", {source_filename, length(text), ts})
   idx = 1
   tok_idx = 1
@@ -1394,7 +1400,11 @@ global function parse(sequence source_text, sequence file_name)
 end function
 
 global function parse_file(sequence filename)
-  return parse(read_file(filename), filename)
+  object text = read_file(filename)
+  if atom(text) then
+    return {} -- unable to read file
+  end if
+  return parse(text, filename)
 end function
 
 -- during get_decls we might need to reparse a file if its timestamp changed
