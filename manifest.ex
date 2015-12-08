@@ -58,6 +58,7 @@ for i = 1 to length(files) do
   pipeio:kill(p)
 
   printf(1, "%s %s %d %d\n", {files[i][1], files[i][3], files[i][2], h})
+  files[i][2] = h
 end for
 
 --display(files)
