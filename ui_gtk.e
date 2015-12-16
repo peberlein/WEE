@@ -541,6 +541,11 @@ function OptionsCompleteBraces(atom handle)
     return 0
 end function
 
+function OptionsErrorIndicators(atom handle)
+    auto_indicator = gtk:get(handle, "active")
+    return 0
+end function
+
 function OptionsIndent(atom handle)
     atom dialog, panel, hbox, hedit, indent_entry, tabs_entry, chk_guides, chk_usetabs
     integer indent_width, tab_width, use_tabs
@@ -627,7 +632,9 @@ end function
 procedure Run(sequence cmd)
     if length(terminal_program) then
         if run_waitkey then
-            cmd &= " ; read -p \"Press any key...\" -n1 -s"
+            -- don't show "Press Enter" on errors
+            cmd = match_replace("eui ", cmd, "eui -batch ")
+            cmd &= " ; read -p \"\nPress any key...\" -n1 -s"
         end if
         if run_waitkey or ends(" -e", terminal_program) then
             cmd = quote_spaces(cmd)
@@ -866,8 +873,6 @@ function RunWaitKey(atom handle)
     return 0
 end function
 
-
-
 function HelpAbout()
   set(about_dialog, "run")
   set(about_dialog, "hide")
@@ -941,6 +946,7 @@ constant
     {"website label", "Wee on GitHub"},
     {"logo", wee_icon}
   })
+
 
 constant
   menubar = create(GtkMenuBar),
@@ -1061,7 +1067,8 @@ add(optionsmenu, {
   createmenuitem("Reopen Tabs Next Time", "OptionsReopenTabs", 0, reopen_tabs),
   createmenuitem("Complete Statements", "OptionsCompleteStatements", 0, complete_statements),
   createmenuitem("Complete Braces", "OptionsCompleteBraces", 0, complete_braces),
-  createmenuitem("Indent...", "OptionsIndent")
+  createmenuitem("Indent...", "OptionsIndent"),
+  createmenuitem("Error Indicators", "OptionsErrorIndicators", 0, auto_indicator)
   })
 set(menuOptions, "submenu", optionsmenu)
 

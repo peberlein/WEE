@@ -54,6 +54,7 @@ constant
     Options_CompleteStatements = 607,
     Options_CompleteBraces = 608,
     Options_Indent = 609,
+    Options_ErrorIndicators = 610,
     Help_About = 701,
     Help_Tutorial = 702,
     Help_Context = 703,
@@ -1108,7 +1109,7 @@ global procedure indent_dialog()
     junk = DialogBoxIndirectParam(c_func(GetModuleHandle, {NULL}), {
         --DLGTEMPLATE{style, exstyle, x, y, cx, cy, menu, wndclass, text}
 	  {{WS_POPUP, WS_CAPTION, WS_SYSMENU, DS_MODALFRAME}, 0,
-         50,50, 100,86, 0, 0, "Indent"},
+         50,50, 100,82, 0, 0, "Indent"},
         --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
         
         {{WS_CHILD, WS_VISIBLE}, 0,
@@ -1401,6 +1402,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Options_CompleteBraces then
 	        complete_braces = not complete_braces
 	        return c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteBraces, MF_CHECKED*complete_braces})
+	    elsif wParam = Options_ErrorIndicators then
+	        auto_indicator = not auto_indicator
+	        return c_func(CheckMenuItem, {hoptionsmenu, Options_ErrorIndicators, MF_CHECKED*auto_indicator})
 	    elsif wParam = Options_Indent then
 	        indent_dialog()
 	        return rc
@@ -1715,6 +1719,8 @@ global procedure ui_main()
 	Options_CompleteBraces, alloc_string("Complete Braces")})
     junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
 	Options_Indent, alloc_string("&Indents...")})
+    junk = c_func(AppendMenu, {hoptionsmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED,
+	Options_ErrorIndicators, alloc_string("Error Indicators")})
 -- help menu
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
@@ -1763,6 +1769,7 @@ global procedure ui_main()
     c_func(CheckMenuItem, {hoptionsmenu, Options_ReopenTabs, MF_CHECKED*reopen_tabs})
     c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteStatements, MF_CHECKED*complete_statements})
     c_func(CheckMenuItem, {hoptionsmenu, Options_CompleteBraces, MF_CHECKED*complete_braces})
+    c_func(CheckMenuItem, {hoptionsmenu, Options_ErrorIndicators, MF_CHECKED*auto_indicator})
 
 -- window creation
     hMainWnd = CreateWindow({

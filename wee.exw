@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.38"
+  version = "0.39"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -85,6 +85,7 @@ global constant
 --  Filename first in window title
 --  Tabs now have mouseover tooltip with full path (win32: only the active tab)
 --  Adding run options: background and test run (thanks KDR)
+--  Error indicators and mouse dwell message
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -208,16 +209,18 @@ sequence
 integer current_tab, modified, initial_tab
 atom hedit
 atom ex_err_timestamp
-integer expand_line, last_deleted_char, last_typed_pos
+integer expand_line, last_deleted_char
 sequence insert_chars
 sequence calltip_args -- {{start,end},...}
 integer calltip_pos
 sequence calltip_stack -- {calltip_pos, calltip_args...}
 sequence calltip_text -- "routine_name(type1 arg1, ...)"
+integer calltip_dwell -- flag indicating calltip from mouse dwell
 sequence wee_conf_filename
 sequence search_idx, search_dat
 sequence expansions
-
+sequence last_errors
+atom change_time  -- when to perform error indicator checking
 
 -- shorthand helper function
 function ssm(integer m, object w=0, object l=0)
@@ -281,12 +284,12 @@ global procedure wee_init()
     tab_timestamps = {}
     tab_arguments = {}
     tab_pos_stack = {}
+    last_errors = {}
 
     modified = 0
     expand_line = -1
     insert_chars = ""
     last_deleted_char = 0
-    last_typed_pos = -1
     auto_namespace = 1
     auto_complete = 1
     complete_statements = 1
@@ -296,7 +299,7 @@ global procedure wee_init()
     tab_width = 8
     indentation_guides = 0
     caret_width = 2
-    auto_indicator = 0
+    auto_indicator = 1
     run_testrun = 0
     run_background = 1
     run_waitkey = 1
@@ -305,6 +308,7 @@ global procedure wee_init()
     calltip_pos = -1
     calltip_stack = {}
     calltip_text = ""
+    calltip_dwell = 0
 
     current_tab = 0
 
@@ -684,10 +688,13 @@ global procedure init_edit(atom edit)
     ssm(SCI_AUTOCSETCANCELATSTART)
 
     -- call tips display above text
-    --ssm(SCI_CALLTIPSETPOSITION, 1)
+    ssm(SCI_CALLTIPSETPOSITION, 1)
 
     -- get modification events for deletetext
-    ssm(SCI_SETMODEVENTMASK, SC_MOD_BEFOREDELETE)
+    ssm(SCI_SETMODEVENTMASK, 
+	SC_MOD_INSERTTEXT + 
+	SC_MOD_DELETETEXT + 
+	SC_MOD_BEFOREDELETE)
 
     ssm(SCI_SETWRAPMODE, line_wrap)
 
@@ -710,6 +717,7 @@ global procedure init_edit(atom edit)
     ssm(SCI_INDICSETSTYLE, 3, INDIC_SQUIGGLE)
     ssm(SCI_INDICSETFORE, 3, BrightRed)
     ssm(SCI_SETINDICATORCURRENT, 3)
+    ssm(SCI_SETMOUSEDWELLTIME, 500) -- milliseconds
     
 end procedure
 
@@ -817,11 +825,15 @@ global procedure go_back()
     object pos = ssm(SCI_GETCURRENTPOS)
 
     -- clear any active autocomplete, and return
-    if ssm(SCI_AUTOCACTIVE) then
-	ssm(SCI_AUTOCCANCEL, 0, 0)
+    -- cancel any active call tip, and return
+    if ssm(SCI_AUTOCACTIVE) or ssm(SCI_CALLTIPACTIVE) then
+	ssm(SCI_AUTOCCANCEL)
+        ssm(SCI_CALLTIPCANCEL)
+        calltip_pos = -1
+        calltip_stack = {}
 	return
     end if
-    
+
     -- clear any selection, and return
     if pos != ssm(SCI_GETANCHOR) then
         ssm(SCI_SETEMPTYSELECTION, pos)
@@ -1088,11 +1100,13 @@ global procedure select_tab(integer tab)
     calltip_pos = -1
     calltip_stack = {}
     calltip_text = ""
+    last_errors = {}
     ui_select_tab(tab)
     ui_update_window_title(make_tab_name())
     update_status()
 
     update_lexer()
+    change_time = time() + .5
 end procedure
 
 global procedure update_tab_name()
@@ -1966,48 +1980,35 @@ global procedure view_declaration()
     end for
 end procedure
 
--- after typing a word, check to see if it is declared
-procedure check_last_typed()
-    sequence text, ast, decls, word, name_space
-    integer style, pos, len, declared = 0
-    atom t0, t1, t2
-
-    -- only check indentifiers
-    style = ssm(SCI_GETSTYLEAT, last_typed_pos-1)
-
-    text = get_edit_text()
-    word = word_pos(text, last_typed_pos)
-    last_typed_pos = -1
-    if length(word) < 4 then return end if
-    pos = word[3] - 1
-    len = word[4] - pos
-    name_space = word[2]
-    word = word[1]
-
-    if style != SCE_LUA_IDENTIFIER then
-	ssm(SCI_INDICATORCLEARRANGE, pos, len)
+-- check the current document for errors, show underline indicators
+procedure do_error_indicators()
+    if ssm(SCI_GETLEXER) != SCLEX_LUA then
+      return
+    end if
+    sequence text = get_edit_text()
+    sequence s = parse_errors(text, file_name)
+    if equal(s, last_errors) then
         return
     end if
-
-    t0 = time()
-    ast = parse(text, file_name)
-    t1 = time()
-    decls = get_declarations(ast, pos, name_space)
-    t2 = time()
-    printf(1, "decls took %g %g\n", {t1-t0, t2-t1})
-    for i = 1 to length(decls) do
-      if equal(decls[i][1], word) then
-	declared = 1
-	exit
-      end if
+    last_errors = s
+    ssm(SCI_INDICATORCLEARRANGE, 0, ssm(SCI_GETTEXTLENGTH))
+    for i = 1 to length(s) by 3 do
+	ssm(SCI_INDICATORFILLRANGE, s[i]-1, s[i+1])
     end for
-    
-    -- underline if not declared
-    if declared then
-	ssm(SCI_INDICATORCLEARRANGE, pos, len)
-    else
-	ssm(SCI_INDICATORFILLRANGE, pos, len)    
-    end if
+end procedure
+
+-- when the mouse hovers over an error, show the message in calltip
+procedure dwell_error(integer dwell_pos)
+    integer pos, len
+    for i = 1 to length(last_errors) by 3 do
+        pos = last_errors[i]-1
+        len = last_errors[i+1]
+        if dwell_pos >= pos and dwell_pos < pos + len then
+            ssm(SCI_CALLTIPSHOW, pos, last_errors[i+2])
+            calltip_dwell = 1
+            return
+        end if
+    end for
 end procedure
 
 -- show a list of possible words when autocomplete is triggered
@@ -2117,7 +2118,8 @@ global procedure view_subroutine_arguments()
         calltip_text = text
         ssm(SCI_CALLTIPSHOW, pos, text)
         if length(calltip_args) then
-            ssm(SCI_CALLTIPSETHLT, calltip_args[1][1], calltip_args[1][2])
+            --ssm(SCI_CALLTIPSETHLT, calltip_args[1][1], calltip_args[1][2])
+            calltip_pos = end_pos+1
         else
 	    calltip_pos = -1 -- no arguments, no need to update
         end if
@@ -2146,13 +2148,14 @@ procedure update_subroutine_arguments()
     sequence text
     integer pos, arg, ch
     
-    pos = get_pos()-1
+    pos = get_pos()
  
-    ch = ssm(SCI_GETCHARAT, pos, 0)
-    if ch != ',' and ch != ')' and ssm(SCI_GETCHARAT, pos+1, 0) != ',' then
+    ch = ssm(SCI_GETCHARAT, pos-1, 0)
+    if ch != ',' and ch != '(' and ch != ')' and ssm(SCI_GETCHARAT, pos, 0) != ',' and last_deleted_char != ',' then
+        -- this isn't reliable; backspace over comma, or delete selection containing comma, etc.
         return
     end if
-    --? {calltip_pos, pos}
+
     while 1 do
     
 	while calltip_pos = -1 or pos < calltip_pos do
@@ -2168,11 +2171,10 @@ procedure update_subroutine_arguments()
 	end while
 	
 	-- get the text from after '(' up to the cursor
-	text = repeat(0, pos - calltip_pos + 1)
+	text = repeat(0, pos - calltip_pos)
 	for i = 1 to length(text) do
 	    text[i] = ssm(SCI_GETCHARAT, calltip_pos+i-1)
 	end for
-	--puts(1, text&"\n")
 	
 	arg = parse_argument_position(text)
 	if arg = 0 then
@@ -2199,9 +2201,8 @@ function ltrim(sequence s)
       return s[i..$]
     end if
   end for
-  return "" 
+  return ""
 end function
-
 
 function rtrim(sequence s)
   for i = length(s) to 1 by -1 do
@@ -2209,7 +2210,7 @@ function rtrim(sequence s)
       return s[1..i]
     end if
   end for
-  return "" 
+  return ""
 end function
 
 
@@ -2701,11 +2702,9 @@ function notification_text(atom notification)
     end ifdef
 end function
 
-
-
 global function sci_notify(atom hedit, atom data, atom notification, atom userdata)
   integer code, pos, ch, modifiers, updated, len
-  
+
   if notification = 0 then return 0 end if
   --log_notification(notification)
   code = peek4u(notification+NOTIFICATION_CODE)
@@ -2713,6 +2712,9 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   if code = SCN_UPDATEUI then
     updated = peek4u(notification+NOTIFICATION_UPDATED)
     --? {updated, insert_chars, last_deleted_char}
+    if ssm(SCI_CALLTIPACTIVE) then
+        update_subroutine_arguments()
+    end if
     if and_bits(updated, SC_UPDATE_SELECTION+SC_UPDATE_CONTENT) = SC_UPDATE_SELECTION then
 	-- selection moved and content was not changed
 	--? {updated, insert_chars}
@@ -2721,14 +2723,11 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 	delete_pair()
         last_deleted_char = 0
     end if
-    if ssm(SCI_CALLTIPACTIVE) then
-        update_subroutine_arguments()
+    if and_bits(updated, SC_UPDATE_SELECTION) then
+      update_status()
     end if
-    update_status()
+
     do_brace_highlight(hedit)
-    if auto_indicator and last_typed_pos != -1 and get_pos() != last_typed_pos then
-        check_last_typed()
-    end if
 
   elsif code = SCN_SAVEPOINTREACHED or code = SCN_SAVEPOINTLEFT then
     modified = (code = SCN_SAVEPOINTLEFT)
@@ -2775,18 +2774,12 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 	insert_pair()
       end if
       if auto_arguments then
-        view_subroutine_arguments()    
+        view_subroutine_arguments()
       end if
     elsif ch = '{' or ch = '[' and complete_braces then
       insert_pair()
     elsif ch = '"' or ch = '\'' and complete_braces then
       insert_pair()
-    elsif auto_indicator and (
-	(ch >= 'a' and ch <= 'z') or
-	(ch >= 'A' and ch <= 'Z') or
-	(ch >= '0' and ch <= '9') or
-	ch = '_') then
-	last_typed_pos = get_pos()
     end if
 
   elsif code = SCN_AUTOCSELECTION then
@@ -2805,11 +2798,33 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 	    last_deleted_char = ssm(SCI_GETCHARAT, pos)
 	end if
     end if
+    if auto_indicator and ssm(SCI_GETLEXER) = SCLEX_LUA and
+        and_bits(modifiers, SC_MOD_INSERTTEXT + SC_MOD_DELETETEXT) then
+      change_time = time() + .5
+    end if
 
   elsif code = SCN_URIDROPPED then
     open_uri(notification_text(notification))
+    
+  elsif code = SCN_DWELLSTART then
+    pos = peek4u(notification+NOTIFICATION_POS)
+    if change_time = 0 then
+	dwell_error(pos)
+    end if
+
+  elsif code = SCN_DWELLEND then
+    if calltip_dwell then
+      ssm(SCI_CALLTIPCANCEL)
+      calltip_dwell = 0    
+    end if
+    
   elsif code = SCN_PAINTED then
     -- could run some background processing during painted, every time cursor blinks
+    
+    if auto_indicator and change_time and change_time <= time() then
+	do_error_indicators()
+	change_time = 0
+    end if
   end if
   return 0
 end function
