@@ -2095,6 +2095,11 @@ global procedure view_subroutine_arguments()
     end_pos = word[4]
     name_space = word[2]
     word = word[1]
+    
+    if length(word) = 0 then
+        calltip_pos = calltip_save
+        return
+    end if
 
     decls = get_subroutine_arguments(parse(text, file_name), word, name_space)
     if length(decls) then
