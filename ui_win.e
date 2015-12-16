@@ -1472,6 +1472,14 @@ procedure translate_editor_keys(atom msg)
 	m = {hMainWnd, WM_COMMAND, File_Close, 0}
 	pack(msg, "pdpp", m)
       end if
+    elsif hwnd = htabs and iMsg = WM_MOUSEWHEEL then
+      -- select prev/next tabs when scrolled by mouse wheel 
+      if HIWORD(wParam) < #8000 then
+        m = {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0}
+      else
+        m = {hMainWnd, WM_COMMAND, Select_Next_Tab, 0}
+      end if
+      pack(msg, "pdpp", m)
     end if
     return
   end if
@@ -1557,20 +1565,6 @@ procedure translate_editor_keys(atom msg)
     else
       return
     end if
-  elsif iMsg = WM_MOUSEWHEEL then
-    atom point
-    point = allocate(12)
-    poke4(point, {LOWORD(lParam), HIWORD(lParam), 0})
-    c_func(ScreenToClient, {hMainWnd, point})
-    if c_func(SendMessage, {htabs, TCM_HITTEST, 0, point}) >= 0 then
-      -- select prev/next tabs when scrolled by mouse wheel 
-      if HIWORD(wParam) < #8000 then
-	m = {hMainWnd, WM_COMMAND, Select_Prev_Tab, 0}
-      else
-	m = {hMainWnd, WM_COMMAND, Select_Next_Tab, 0}
-      end if
-    end if
-    free(point)
   else
     return
   end if
