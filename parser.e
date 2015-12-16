@@ -34,9 +34,7 @@ include std/filesys.e
 include std/os.e
 include std/text.e
 include std/map.e
-include std/dll.e
-include std/machine.e
-include std/pretty.e
+
 
 constant 
     OE4 = 1, -- enable OpenEuphoria 4 syntax
@@ -50,6 +48,18 @@ elsif platform() = LINUX then
   defined_words &= {"LINUX", "UNIX"}
 elsif platform() = OSX then
   defined_words &= {"OSX", "UNIX"}
+end if
+
+ifdef WINDOWS then
+-- don't try to open these as files
+constant dos_devices = {"CON","PRN","AUX","CLOCK$","NUL","COM1","LPT1","LPT2","LPT3","COM2","COM3","COM4"}
+end ifdef
+
+-- where to search for standard include files
+global sequence include_search_paths
+include_search_paths = include_paths(0)
+if sequence(getenv("EUDIR")) then
+  include_search_paths = append(include_search_paths, getenv("EUDIR") & SLASH & "include")
 end if
 
 -- ast node types that are also opcodes
@@ -188,12 +198,18 @@ if OE4 then
 end if
 
 -- returns text from file, else -1
-function read_file(sequence filename)
+function read_file(sequence file_name)
   integer f
   object line
   sequence text
 
-  f = open(filename, "rb")
+  ifdef WINDOWS then
+    if find(upper(filename(file_name)), dos_devices) then
+      return -1
+    end if
+  end ifdef
+  
+  f = open(file_name, "rb")
   if f = -1 then
     return -1
   end if
@@ -345,6 +361,10 @@ procedure error(sequence msg)
   line = 1
   start = 1
   
+  if tok_idx > length(text) then
+    tok_idx = length(text)
+  end if
+
   for i = 1 to tok_idx do
     if text[i] = '\n' then
       line += 1
@@ -630,7 +650,7 @@ end function
 
 -- returns a bare or quoted filename following an include statement
 -- when quoted, backslashes must be escaped
-function filename()
+function include_filename()
   sequence s
   skip_whitespace()
   if idx <= length(text) and text[idx] = '\"' then
@@ -689,15 +709,22 @@ function locate_eu_cfg(sequence current_dir)
 end function
 
 -- returns a unique timestamp for filename, or -1 if doesn't exist or is a directory
-global function get_timestamp(sequence filename)
+global function get_timestamp(sequence file_name)
   object info
-  info = dir(filename)
+  
+  ifdef WINDOWS then
+    if find(upper(filename(file_name)), dos_devices) then
+      return -1
+    end if
+  end ifdef
+  
+  info = dir(file_name)
   if atom(info) or length(info) = 0 or length(info[1]) < 9 then
     return -1
   end if
   info = info[1]
-  if find('d', info[D_ATTRIBUTES]) then
-    return -1 -- don't work on directories
+  if find('d', info[D_ATTRIBUTES]) or find('D', info[D_ATTRIBUTES]) then
+    return -1 -- don't work on directories or devices
   end if
   -- timestamp is contrived (unlike seconds since epoch)
   -- just needs to be unique so we can tell if a file was changed.
@@ -732,7 +759,6 @@ end function
 function include_file(sequence filename)
   sequence state, tmp, paths
   atom ts = -1
-  object new_text
   integer f
 
   tmp = filename
@@ -761,7 +787,8 @@ function include_file(sequence filename)
   end if
   if ts = -1 then
     -- search standard include paths (of the editor interpreter instance)
-    paths = include_paths(0)
+    paths = include_search_paths
+    -- try EUDIR too
     for i = 1 to length(paths) do
         tmp = paths[i]
         if tmp[$] != SLASH then
@@ -1470,16 +1497,17 @@ function statements(integer mode, integer sub)
 
     elsif token("include") then
       if check_mode(mode, "include") then exit end if
-      s = filename()
+      tok = include_filename()
       if ifdef_ok then
-        state = include_file(s)
+        state = include_file(tok)
         if state != -1 then
-          s = {INCLUDE, state, idx}  
+          s = {INCLUDE, state, idx}
         else
-          error("can't find '"&s&"'")
+          error("can't find '"&tok&"'")
         end if
-        
+        tok = ""
       end if
+
       if prefix = PUBLIC then
         --puts(1, "public include next_token="&tok&"\n")
         s = PUBLIC & s
@@ -2154,7 +2182,7 @@ global function suggest_includes(sequence word, sequence name_space)
   suggested_includes = {}
   suggested_word = word
   suggested_namespace = name_space
-  paths = include_paths(0)
+  paths = include_search_paths
   for i = 1 to length(paths) do
     path = paths[i]
     --puts(1, "include_dir="&paths[i]&"\n")

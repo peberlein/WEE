@@ -2510,7 +2510,7 @@ global function get_interpreters()
 	bin = append(bin, "exu")
     end ifdef
     paths = parse_eu_cfg(dirname(file_name) & SLASH & "eu.cfg")
-    paths &= include_paths(0) -- fallback to running interpreter
+    paths &= include_search_paths -- fallback to running interpreter
     for i = 1 to length(paths) do
 	try = paths[i]
 	if try[$] = SLASH then
@@ -2559,7 +2559,7 @@ global function get_eu_bin(sequence bin)
     end if
 
     paths = parse_eu_cfg(dirname(file_name) & SLASH & "eu.cfg")
-    paths &= include_paths(0) -- fallback to running interpreter
+    paths &= include_search_paths -- fallback to running interpreter
     try = dirname(interpreter)
     if length(try) then
         paths = prepend(paths, try)
