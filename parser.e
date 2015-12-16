@@ -34,6 +34,9 @@ include std/filesys.e
 include std/os.e
 include std/text.e
 include std/map.e
+include std/dll.e
+include std/machine.e
+include std/pretty.e
 
 constant 
     OE4 = 1, -- enable OpenEuphoria 4 syntax
@@ -93,7 +96,7 @@ global constant
 
 -- ast node types that are not opcodes
 global constant
-  VAR_DECL = 256, -- {VAR_DECL, "type", {"name", pos, scope-start, [expr]}...}
+  VAR_DECL = 256, -- {VAR_DECL, "type", pos, {"name", pos, scope-start, [expr]}...}
   ASSIGN = 257,   -- {ASSIGN, "name", pos, expr}
   FUNC = 258,     -- {FUNC, "name", pos, [args...]}
   PROC = 259,     -- {PROC, "name", pos, [args...]}
@@ -101,11 +104,11 @@ global constant
   SUBSCRIPT = 261, -- {SUBSCRIPT, expr, index-expr}
   SLICE = 262,     -- {SLICE, expr, start-expr, end-expr}
   CONST_DECL = 263, -- {CONST_DECL, {"name", pos, scope-start, expr}... }
-  CAT = 264,
+  CAT = 264,    -- {CAT, expr, expr}
   RETURN = 265, -- {RETURN, [expr]}
   EXIT = 266,   -- {EXIT}
   SEQ = 267,    -- {SEQ, [expr,]...}
-  INTEGER = 268,
+  NUMBER = 268,
   WHILE = 269,  -- {WHILE, expr, scope-start, scope-end, stmts...}
   IF = 270,     -- {IF, expr, {scope-start, scope-end, stmts...}, 
                 --     [expr, {scope-start, scope-end, elsif-stmts...},]... 
@@ -117,59 +120,70 @@ global constant
                    --    scope-start, scope-end, stmts...}
   PROC_DECL = 274, -- {PROC_DECL, ...}
   TYPE_DECL = 275, -- {TYPE_DECL, ...}
+  SEQ_ASSIGN = 276, -- {SEQ_ASSIGN, ["name1", pos1,]... expr}
   ADDTO = 277,     -- {ADDTO, "name", pos, expr}
   SUBTO = 278,
   MULTO = 279,
   DIVTO = 280,
   CATTO = 281,
-  STRING = 282,
+  STRING = 282, -- {STRING, "string-literal"}
   SUB_ASSIGN = 283, -- {SUB_ASSIGN, "name", pos, index-expr..., expr}
-  SUB_ADDTO = 294,
-  SUB_SUBTO = 295,
-  SUB_MULTO = 296,
-  SUB_DIVTO = 297,
-  SUB_CATTO = 298,
-  SLICE_ASSIGN = 299, -- {SLICE_ASSIGN, "name", pos, index-expr..., start-expr, end-expr, expr}
-  SLICE_ADDTO = 300,
-  SLICE_SUBTO = 301,
-  SLICE_MULTO = 302,
-  SLICE_DIVTO = 303,
-  SLICE_CATTO = 304,
-  SEQ_LEN = 305, -- {SEQ_LEN}, shorthand for length of enclosing sequence
-  ENUM_DECL = 306, -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
+  SUB_ADDTO = 284,
+  SUB_SUBTO = 285,
+  SUB_MULTO = 286,
+  SUB_DIVTO = 287,
+  SUB_CATTO = 288,
+  SLICE_ASSIGN = 289, -- {SLICE_ASSIGN, "name", pos, index-expr..., start-expr, end-expr, expr}
+  SLICE_ADDTO = 290,
+  SLICE_SUBTO = 291,
+  SLICE_MULTO = 292,
+  SLICE_DIVTO = 293,
+  SLICE_CATTO = 294,
+  SEQ_LEN = 295, -- {SEQ_LEN}, shorthand for length of enclosing sequence in SUBSCRIPT, SLICE, SUB_*, SLICE_*
+  ENUM_DECL = 296, -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
                   --             {"name", pos, scope-start, [expr]}...}
-  INCLUDE = 307, -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
-  GLOBAL = 308,    -- {GLOBAL, decl...}
-  PUBLIC = 309,    -- {PUBLIC, decl...}
-  EXPORT = 310,    -- {EXPORT, decl...}
-  NAMESPACE = 311, -- {NAMESPACE, "name"}
-  IFDEF = 312,     -- same layout as IF
-  ELSEDEF = 313,
-  SWITCH = 314,  -- {SWITCH, expr, bool-fallthru, label-string,
+  INCLUDE = 297, -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
+  GLOBAL = 298,    -- {GLOBAL, decl...}
+  PUBLIC = 299,    -- {PUBLIC, decl...}
+  EXPORT = 300,    -- {EXPORT, decl...}
+  NAMESPACE = 301, -- {NAMESPACE, "name"}
+  IFDEF = 302,     -- same layout as IF
+  ELSEDEF = 303,
+  SWITCH = 304,  -- {SWITCH, expr, bool-fallthru, label-string,
                  --   [{case-values...}, {scope-start, scope-end, stmts...},]... }
-                 --  ("case else" with have case-values={} )
-  BREAK = 315,    -- {BREAK, [label-string]}
-  CONTINUE = 316, -- {CONTINUE, [label-string]}
-  DEFAULT = 317,  -- {DEFAULT}, used for default arguments in subroutine calls
-  ENTRY = 318,    -- {ENTRY}, used with while loops
-  GOTO = 319      -- {GOTO, "label"}
+                 --  ("case else" will have case-values={} )
+  BREAK = 305,    -- {BREAK, [label-string]}
+  CONTINUE = 306, -- {CONTINUE, [label-string]}
+  DEFAULT = 307,  -- {DEFAULT}, used for default arguments in subroutine calls
+  ENTRY = 308,    -- {ENTRY}, used with while loops
+  RETRY = 309,    -- {RETRY}, used with while loops
+  LABEL = 310,    -- {LABEL, "label"}
+  GOTO = 311,     -- {GOTO, "label"}
+  SYNTAX_ERROR = 312 -- {SYNTAX_ERROR, pos, len, "message"}
 
 global constant ast_names = { "var_decl", "assign", "func", "proc", "variable",
-"subscript", "slice", "const_decl", "not", "mul", "div", "add", "sub",
-"cat", "lt", "gt", "lte", "gte", "eq", "neq", "and", "or", "xor",
-"seq", "integer", "while", "if", "for", "proc", "func_decl",
-"proc_decl", "elsif", "else", "qprint", "addto", "subto", 
-"multo", "divto", "catto", "string" }
+  "subscript", "slice", "const_decl", "not", "mul", "div", "add", "sub",
+  "cat", "lt", "gt", "lte", "gte", "eq", "neq", "and", "or", "xor",
+  "seq", "integer", "while", "if", "for", "proc", "func_decl",
+  "proc_decl", "elsif", "else", "qprint", "addto", "subto", 
+  "multo", "divto", "catto", "string" }
 
 sequence cache -- { {"path", timestamp, stmts...} ...}
 cache = {}
+
+sequence maps -- map "decl-name" -> { locator... }
+maps = {}
+-- functions, procedures, types, enum types:
+--   locator = ast-index
+-- variables, constants, enum values:
+--   locator = { ast-index, pos, scope-start, [scope-end] }
 
 sequence keywords
 keywords = {"global", "function", "procedure", "type", "end", "if", "then",
             "else", "elsif", "for", "to", "by", "while", "do", "include", 
             "with", "without"}
 if OE4 then
-  keywords &= {"enum", "label", "break", "case", "fallthru", "routine"}
+  keywords &= {"enum", "label", "break", "case", "fallthru", "routine", "entry", "retry"}
   -- "namespace" is not a reserved word, since it can be used as an identifier
 end if
 
@@ -194,19 +208,139 @@ function read_file(sequence filename)
   return text
 end function
 
-sequence text, source_filename, tok
+sequence text, source_filename, tok, errors
 text = ""
 source_filename = "<none>"
 tok = ""
+errors = {} -- { {SYNTAX_ERROR, pos, len, msg}... }
 
-integer idx, tok_idx, ifdef_ok
+integer idx, tok_idx, ifdef_ok, ast_idx
 idx = 1
 tok_idx = 1
 ifdef_ok = 1
+ast_idx = 1 -- current top-level ast index used for declaring stuff
+
+map:map cur_map -- the current maps[] during parsing
+
+
+-- declare name, with name = "name" or {"name", pos, scope-start, [scope-end]}
+procedure declare(sequence name)
+  object loc = ast_idx
+  
+  if length(name) = 0 or length(name[1]) = 0 then
+    return
+  end if
+
+  if sequence(name[1]) then
+    loc = name
+--    if length(value) < 3 or
+--       not sequence(value[1]) or
+--       not atom(value[2]) or
+--       not atom(value[3]) or
+--       (length(value) >= 4 and (not atom(value[4]) or value[4] <= value[3])) then
+--      puts(1, "invalid declaration\n")
+--      pretty_print(1, value)
+--      return
+--    end if
+    name = name[1]
+    loc[1] = ast_idx
+  end if
+  
+  map:put(cur_map, name, append(map:get(cur_map, name, {}), loc))
+end procedure
+
+function prefixed(sequence s)
+  return s[1] = GLOBAL or s[1] = PUBLIC or s[1] = EXPORT
+end function
+
+-- update the declarations in this ast to the end of scope
+procedure declare_ast(sequence ast, integer start_idx, integer scope_end, integer top = 0)
+
+  for j = start_idx to length(ast) do
+    sequence s = ast[j]
+    integer n = prefixed(s)
+    integer decl = s[n+1]
+    
+    if top then
+      ast_idx = j
+    end if
+
+    if decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
+      -- {FUNC_DECL, "name", pos,
+      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
+      --    scope-start, scope-end, stmts...}
+      declare(s[n+2])
+      sequence args = s[n+4]
+      integer sub_scope_end = s[n+6]
+      for i = 1 to length(args) do
+        declare(args[i][2..4] & sub_scope_end)
+      end for
+      declare_ast(s, n+7, sub_scope_end)
+
+    elsif decl = VAR_DECL then
+      -- {VAR_DECL, "type", pos, {"name", pos, scope-start, [expr]}...}
+      for i = n+4 to length(s) do
+        declare(s[i][1..3] & scope_end)
+      end for
+      
+    elsif decl = CONST_DECL then
+      -- {CONST_DECL, {"name", pos, scope-start, expr}... }
+      for i = n+2 to length(s) do
+        declare(s[i][1..3] & scope_end)
+      end for
+      
+    elsif decl = WHILE then
+      -- {WHILE, expr, scope-start, scope-end, stmts...}
+      declare_ast(s, n+5, s[n+4])
+      
+    elsif decl = IF then
+      -- {IF, expr, {scope-start, scope-end, stmts...}, 
+      --     [expr, {scope-start, scope-end, elsif-stmts...},]... 
+      --     [{scope-start, scope-end, else-stmts...}]}
+      for i = n+2 to length(s) by 2 do
+        if i = length(s) then
+          declare_ast(s[i], 3, s[i][2])
+        else
+          declare_ast(s[i+1], 3, s[i+1][2])
+        end if
+      end for
+
+    elsif decl = FOR then
+      -- {FOR, "name", pos, expr, expr, by, scope-start, scope-end, stmts...}
+      declare(s[n+2..n+3] & s[n+7..n+8])
+      declare_ast(s, n+9, s[n+8])
+
+    elsif decl = ENUM_DECL then
+      -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
+      --             {"name", pos, scope-start, [expr]}...}
+      if length(s[n+2]) then
+        declare(s[n+2])
+      end if
+      for i = n+6 to length(s) do
+        declare(s[i][1..3] & scope_end)
+      end for
+
+    elsif decl = SWITCH then
+      -- {SWITCH, expr, bool-fallthru, label-string,
+      --   [{case-values...}, {scope-start, scope-end, stmts...},]... }
+      --  ("case else" will have case-values={} )
+      for i = n+6 to length(s) by 2 do
+        declare_ast(s[i], 3, s[i][2])
+      end for
+
+    end if
+  end for
+end procedure
+
 
 -- prints an error message indicated at tok_idx
 procedure error(sequence msg)
   integer line, start
+
+  if length(tok) then
+    errors = append(errors, {SYNTAX_ERROR, tok_idx, length(tok), msg})
+  end if
+  
   if not ERROR_PRINT then return end if
 
   line = 1
@@ -316,6 +450,8 @@ procedure num_token()
       if idx < length(text) and text[idx] = '.' and text[idx+1] != '.' then
         idx += 1
       end if
+    else
+      idx += 1
     end if
     while idx <= length(text) and isnum(text[idx]) do
       idx += 1
@@ -371,7 +507,8 @@ end function
 
 procedure expect(sequence try)
   if not token(try) then
-    error("expected '" & try & "', saw '"&tok&"'")
+    error("expected '" & try & "', not '"&tok&"'")
+    tok = ""
   end if
 end procedure
 
@@ -407,6 +544,23 @@ end function
 function string_literal()
   sequence s
   s = ""
+
+  -- check for triple-quoted string
+  if idx+1 <= length(text) and text[idx] = '"' and text[idx+1] = '"' then
+    -- triple-quoted string
+    integer start_idx = idx+2
+    idx += 2
+    while text[idx] != '"' or text[idx+1] != '"' or text[idx+2] != '"' do
+      idx += 1
+      if idx+2 > length(text) then
+        error("unexpected end of file")
+        exit
+      end if
+    end while
+    idx += 3
+    return text[start_idx..idx-4]
+  end if
+ 
   while idx <= length(text) and text[idx] != '"' do
     if text[idx] = '\n' or text[idx] = '\r' then
       error("unterminated string literal")
@@ -477,9 +631,11 @@ function filename()
   skip_whitespace()
   if idx <= length(text) and text[idx] = '\"' then
     idx += 1
+    tok_idx = idx
     return string_literal()
   end if
   s = ""
+  tok_idx = idx
   while idx <= length(text) and not find(text[idx], "\t\r\n ") do
     s &= text[idx]
     idx += 1
@@ -490,7 +646,7 @@ end function
 
 -- returns a sequence of paths from the eu.cfg
 -- name is path to eu.cfg file, mode can be "interpret", "translate", "bind"
-global function parse_eu_cfg(sequence name, sequence mode="interpret")
+global function parse_eu_cfg(sequence name, sequence mode = "interpret")
     integer fd, section_ok = 1
     object line
     sequence result = {}
@@ -536,7 +692,7 @@ global function get_timestamp(sequence filename)
     return -1
   end if
   info = info[1]
-  -- timestamp is meaningless (unlike seconds since epoch)
+  -- timestamp is contrived (unlike seconds since epoch)
   -- just needs to be unique so we can tell if a file was changed.
   -- there will be gaps since not all months have 31 days.
   return info[D_SECOND] + 60 * (
@@ -547,28 +703,38 @@ global function get_timestamp(sequence filename)
          info[D_YEAR]))))
 end function
 
-
--- returns index of new/existing cache entry, or -1 if not found
+-- returns index of new/existing cache entry, or -1 if file can't be opened
 function cache_entry(sequence filename)
   object tmp
+  integer f
 
+  -- find an existing entry
   for i = 1 to length(cache) do
     if equal(cache[i][1], filename) then
       return i
     end if
   end for
+
+  -- verify that the file can be opened
+  f = open(filename, "rb")
+  if f = -1 then
+    puts(2, "Warning: unable to read file: "&filename&"\n")
+    return -1 -- unable to read file
+  end if
+  close(f)
+
+  -- create new cache and map entries
   cache = append(cache, {filename, 0})
+  maps = append(maps, map:new())
   return length(cache)
 end function
 
--- returns -1 if not found, 
--- or positive integer if cache entry exists and is unchanged
--- or sequence "state" to be passed to end_include
+-- returns -1 if not found, or index of cache entry
 function include_file(sequence filename)
   sequence state, tmp, paths
-  integer e
   atom ts = -1
   object new_text
+  integer f
 
   tmp = filename
   ts = get_timestamp(tmp)
@@ -613,48 +779,18 @@ function include_file(sequence filename)
   if ts = -1 then 
     return -1 -- file not found
   end if
-
-  filename = canonical_path(tmp, 0, CORRECT)
-  new_text = read_file(filename)
-  if atom(new_text) then
-    return -1 -- unable to read file
-  end if
+  
   --printf(1, "%s %d\n", {tmp, ts})
-  e = cache_entry(filename)
-  if cache[e][2] = ts then
-     return e -- file unchanged
-  end if
-  cache[e][2] = ts
-
-  state = {text, source_filename, idx, tok_idx, tok, e}
-  source_filename = filename
-  text = new_text
---printf(1, "including %s, length %d, ts %d\n", {source_filename, length(text), ts})
-  idx = 1
-  tok_idx = 1
-  tok = ""
-  return state
-end function
-
-function end_include(sequence state, sequence ast)
-  -- restore the previous state
-  text = state[1]
-  source_filename = state[2]
-  idx = state[3]
-  tok_idx = state[4]
-  tok = state[5]
-  -- store the included ast
-  cache[state[6]] &= ast[3..$]
---printf(1, "end_include %s, ast length %d\n", {cache[state[6]][1], length(ast)})
-  return state[6]
+  return cache_entry(canonical_path(tmp, 0, CORRECT))
 end function
 
 
-function to_integer(sequence s)
-  atom x
+function to_number(sequence s)
+  atom x, y
   integer base, start
 
   x = 0
+  y = 0
   base = 10
   start = 1
 
@@ -662,23 +798,35 @@ function to_integer(sequence s)
     base = 16
     start = 2
   elsif OE4 and length(s) >= 2 and s[1] = '0' then
-    if s[2] = 'b' then
+    if s[2] = 'b' or s[2] = 'B' then
       base = 2
       start = 2
-    elsif s[2] = 'x' then
+    elsif s[2] = 'x' or s[2] = 'X' then
       base = 16
       start = 2
-    elsif s[2] = 'o' then
+    elsif s[2] = 'o' or s[2] = 'O' then
       base = 8
       start = 2
     end if
   end if
 
   for i = start to length(s) do
-    if s[i] != '_' then
-      x = x * base + s[i] - '0'
-      if s[i] >= 'A' then
-        x += 10 - 'A'
+    if s[i] = '.' then
+      y = 1
+    elsif s[i] != '_' then
+      if y = 0 then
+        x = x * base + (s[i] - '0')
+        if s[i] >= 'A' then
+          x += (10 - 'A')
+        end if
+      else
+        -- fractional part
+        y /= base
+        x += y * (s[i] - '0')
+        -- FIXME, this is probably not accurate
+        if s[i] >= 'A' then
+          x += y * (10 - 'A')
+        end if
       end if
     end if
   end for
@@ -729,8 +877,8 @@ function expr(integer depth)
     --printf(1, "identifier %s\n", {e[2]})
     if token("(") then
       -- function call
+      e[1] = FUNC
       if not token(")") then
-        e[1] = FUNC
         --printf(1, "function call %s\n", {e[2]})
         ok = 1
         while ok do
@@ -772,13 +920,14 @@ function expr(integer depth)
     end if
 
   elsif token("..") then
-    error("expected expression")
+    --error("expected an expression")
+    e = {SYNTAX_ERROR, tok_idx, length(tok), "expected an expression"}
   elsif length(tok) and (isnum(tok[1]) or tok[1] = '#' or tok[1] = '.') then
-    e = {INTEGER, to_integer(get_token())}
+    e = {NUMBER, to_number(get_token())}
   elsif token("-") then
     e = {NEG, expr(depth)}
-    if length(e[2]) and e[2][1] = INTEGER then
-      e = {INTEGER, -e[2][2]}
+    if length(e[2]) and e[2][1] = NUMBER then
+      e = {NUMBER, -e[2][2]}
     end if
   elsif token("+") then
     e = expr(depth)
@@ -787,12 +936,12 @@ function expr(integer depth)
   elsif OE4 and token("`") then
     e = {STRING, multiline_string_literal()}
   elsif token("'") then
-    e = {INTEGER, character_literal()}
+    e = {NUMBER, character_literal()}
   elsif token("$") then
     e = {SEQ_LEN}
   else
-    error("expected expression  tok="&tok)
-    e = {}
+    --error("expected an expression  tok="&tok)
+    e = {SYNTAX_ERROR, tok_idx, length(tok), "expected an expression"}
   end if
   
   --printf(1, "expr(%d): ", {depth})
@@ -823,8 +972,16 @@ function variable_declaration()
   integer save_idx
 
   save_idx = idx
-  result = {VAR_DECL, get_token()}
-  while identifier() do
+  result = {VAR_DECL, get_token(), tok_idx}
+  if not identifier() then
+    -- restore the last token
+    tok = result[2]
+    tok_idx = result[3]
+    idx = save_idx
+    return {}
+  end if
+
+  while 1 do
     tmp = {get_token(), tok_idx, 0}
     if OE4 and token("=") then
       tmp = append(tmp, expr(1))
@@ -832,17 +989,20 @@ function variable_declaration()
     tmp[3] = tok_idx -- scope-start
     result = append(result, tmp)
     if not token(",") or (OE4 and token("$")) then
-      return result
+      exit
+    end if
+    if not identifier() then
+      error("expected an identifier")
+      exit
     end if
   end while
 
-  tok = result[2]
-  idx = save_idx
-  return {}
+  return result
 end function
 
 function constant_declaration()
   sequence result, tmp
+
   result = {CONST_DECL}
   while identifier() do
     tmp = {get_token(), tok_idx, 0, 0}
@@ -854,20 +1014,21 @@ function constant_declaration()
       return result
     end if
   end while
-  error("expected constant name")
+  error("expected an identifier name")
   return result
 end function
 
 function assignment_or_procedure_call()
   sequence result, ops
-  integer ok
-
+  integer ok, save_idx = idx
+  
   if not identifier() then
     return {}
   end if
-  
+
   result = {0, get_token(), tok_idx}
   if token("(") then
+    -- procedure call
     result[1] = PROC
     if not token(")") then
       ok = 1
@@ -882,8 +1043,8 @@ function assignment_or_procedure_call()
       expect(")")
     end if
     return result
-  end if
-  if token("[") then
+  
+  elsif token("[") then
     ops = {SUB_ASSIGN, SUB_ADDTO, SUB_SUBTO, SUB_MULTO, SUB_DIVTO, SUB_CATTO}
     tok = "["
     while token("[") do
@@ -913,6 +1074,9 @@ function assignment_or_procedure_call()
   elsif token("&=") then
     result[1] = ops[6]
   else
+    tok = result[2]
+    tok_idx = result[3]
+    idx = save_idx
     return {}
   end if
   return append(result, expr(1))
@@ -920,27 +1084,31 @@ end function
 
 function subroutine_declaration(integer subroutine)
   sequence result, args, tmp
-  if not identifier() then
-    error("expected subroutine name")
+  result = {subroutine, "", 0}
+  if identifier() then
+    result[2] = get_token()
+    result[3] = tok_idx
+  else
+    error("expected an identifier name")
   end if
-  result = {subroutine, get_token(), tok_idx}
   expect("(")
   args = {}
   while not token(")") do
     if length(args) and not token(",") then
       error("expected ',' or ')'")
+      exit
     end if
     if identifier() then
       tmp = {get_token(), 0, 0, 0}
     else
-      error("expected type name")
+      error("expected a type name")
       exit
     end if
     if identifier() then
       tmp[2] = get_token()
       tmp[3] = tok_idx
     else
-      error("expected argument name")
+      error("expected an argument name")
       exit
     end if
     if OE4 and token("=") then
@@ -956,13 +1124,13 @@ end function
 function enum_declaration()
   sequence result, tmp
 
-  result = {ENUM_DECL, "", 0, '+', {INTEGER, 1}}
+  result = {ENUM_DECL, "", 0, '+', {NUMBER, 1}}
   if token("type") then
     if identifier() then
       result[2] = get_token()
-      result[3] = tok_idx
+      result[3] = tok_idx -- scope-start
     else
-      error("expected enum type name")
+      error("expected an identifier name")
     end if
   end if
   if token("by") then
@@ -983,7 +1151,7 @@ function enum_declaration()
     if token("=") then
       tmp = append(tmp, expr(1))
     end if
-    tmp[3] = tok_idx
+    tmp[3] = tok_idx -- scope-start
     result = append(result, tmp)
     if not token(",") or (OE4 and token("$")) then
       exit
@@ -998,10 +1166,13 @@ end function
 
 function for_declaration()
     sequence result
-    if not identifier() then
-      error("expected for variable name")
+    result = {FOR, "", 0}
+    if identifier() then
+      result[2] = get_token()
+      result[3] = tok_idx
+    else
+      error("expected an identifier name")
     end if
-    result = {FOR, get_token(), tok_idx}
     expect("=")
     result = append(result, expr(1))
     expect("to")
@@ -1009,13 +1180,13 @@ function for_declaration()
     if token("by") then
       result = append(result, expr(1))
     else
-      result = append(result, {INTEGER, 1})
+      result = append(result, {NUMBER, 1})
     end if
     if OE4 and token("label") then
-        if token("\"") and length(string_literal()) then
-        else
-            error("expected label string")
-        end if
+      if token("\"") and length(string_literal()) then
+      else
+          error("expected a label string")
+      end if
     end if
     expect("do")
     return result
@@ -1040,8 +1211,8 @@ procedure with_or_without(integer mode)
     end if
     if token("=") or token("&=") or token("+=") then
     end if
-    if token("(") then
-      while tok_idx < length(text) and not token(")") do
+    if token("{") then
+      while tok_idx < length(text) and not token("}") do
         get_token()
       end while
     end if
@@ -1052,7 +1223,7 @@ procedure with_or_without(integer mode)
   elsif OE4 and token("indirect_includes") then
   elsif OE4 and token("inline") then
   else
-    error("unknown without option")
+    error("unknown with/without option")
   end if
 end procedure
 
@@ -1093,7 +1264,8 @@ function check_mode(integer mode, sequence token)
   return 1
 end function
 
-
+-- mode is NONE, FUNC_DEC, PROC_DECL, TYPE_DECL, IF, IFDEF, SWITCH, WHILE, FOR
+-- sub is 0, FUNC, PROC (used to determine if return needs expr)
 function statements(integer mode, integer sub)
   sequence ast, s
   integer var_decl_ok, prefix, prefix_idx, saved_ifdef_ok
@@ -1124,7 +1296,7 @@ function statements(integer mode, integer sub)
       if mode != NONE then
         exit
       end if
-      error("end was not expected here")
+      error("'end' was not expected here")
     end if
     prefix = 0
 
@@ -1154,7 +1326,7 @@ function statements(integer mode, integer sub)
         if token("\"") and length(string_literal()) then
             -- optional label string
         else
-            error("expected label string")
+            error("expected a label string")
         end if
       end if
       expect("do")
@@ -1163,13 +1335,22 @@ function statements(integer mode, integer sub)
 
     elsif OE4 and token("entry") then
       s = {ENTRY}
+    
+    elsif OE4 and token("label") then
+      if token("\"") then
+          s = {LABEL, string_literal()}-- optional label string
+      else
+          error("expected a label string")
+      end if
 
     elsif token("for") then
       s = for_declaration()
       s &= statements(FOR, sub)
+      -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
       expect("for")
 
     elsif token("exit") then
+      -- FIXME: error if not in a loop
       s = {EXIT}
       if OE4 and token("\"") then
         s &= {string_literal()}  -- optional label string
@@ -1190,13 +1371,13 @@ function statements(integer mode, integer sub)
       expect("if")
 
     elsif OE4 and token("ifdef") then
-      if not identifier() then error("expected identifier") end if
+      if not identifier() then error("expected an identifier") end if
       saved_ifdef_ok = ifdef_ok
       ifdef_ok = ifdef_reduce(expr(1)) and saved_ifdef_ok
       expect("then")
       s = choose(ifdef_ok, statements(IFDEF, sub), {})
       while token("elsifdef") do
-        if not identifier() then error("expected identifier") end if
+        if not identifier() then error("expected an identifier") end if
         ifdef_ok = ifdef_reduce(expr(1)) and length(s) = 0 and saved_ifdef_ok
         expect("then")
         s = choose(ifdef_ok, statements(IFDEF, sub), s)
@@ -1223,7 +1404,7 @@ function statements(integer mode, integer sub)
         if token("\"") then
             s[4] = string_literal()  -- optional label string
         else
-            error("expected label string")
+            error("expected a label string")
         end if
       end if
       expect("do")
@@ -1283,13 +1464,12 @@ function statements(integer mode, integer sub)
       s = filename()
       if ifdef_ok then
         state = include_file(s)
-        if sequence(state) then
-          --s = source_filename
-          --printf(1, "start parsing %s\n", {s})
-          state = end_include(state, statements(NONE, 0))
-          --printf(1, "done parsing %s, state=%d\n  resuming %s\n", {s, state, source_filename})
+        if state != -1 then
+          s = {INCLUDE, state, idx}  
+        else
+          error("can't find '"&s&"'")
         end if
-        s = {INCLUDE, state, idx}
+        
       end if
       if prefix = PUBLIC then
         --puts(1, "public include next_token="&tok&"\n")
@@ -1300,7 +1480,7 @@ function statements(integer mode, integer sub)
         if identifier() then 
 	  s = append(s, get_token())
 	else 
-	  error("expected identifier")
+	  error("expected an identifier")
 	end if
       end if
       if not ifdef_ok then
@@ -1341,12 +1521,24 @@ function statements(integer mode, integer sub)
         error("expected namespace identifier")
       end if
       s = {NAMESPACE, get_token()}
+
+    elsif OE4 and token("{") then
+      s = {SEQ_ASSIGN}
+      while identifier() do
+        s &= {get_token(), tok_idx}
+        if not token(",") then
+          exit
+        end if
+      end while
+      expect("}")
+      expect("=")
+      s &= {expr(1)}
     
     elsif identifier() then
       if var_decl_ok then
         s = variable_declaration()
       end if
-      if length(s) = 0 then 
+      if length(s) = 0 then
         s = assignment_or_procedure_call()
       end if
       if length(s) = 0 then
@@ -1372,6 +1564,10 @@ function statements(integer mode, integer sub)
     if length(s) then
       ast = append(ast, s)
     end if
+    if length(errors) then
+      ast &= errors
+      errors = {}
+    end if
   end while
   if mode != NONE and idx > length(text) then
     error("unexpected end of input")
@@ -1381,11 +1577,11 @@ function statements(integer mode, integer sub)
 end function
 
 global function parse(sequence source_text, sequence file_name)
-  integer i
+  integer cache_idx
   sequence ast
 
   file_name = canonical_path(file_name, 0, CORRECT)
-  i = cache_entry(file_name)
+  cache_idx = cache_entry(file_name)
 
   source_filename = file_name
   text = source_text
@@ -1393,32 +1589,39 @@ global function parse(sequence source_text, sequence file_name)
   tok_idx = 1
   tok = ""
   ifdef_ok = 1
-
+  ast_idx = 3
+  cur_map = maps[cache_idx]
+  map:clear(cur_map)
   ast = statements(NONE, 0)
-  cache[i] = cache[i][1..2] & ast[3..$]
+  declare_ast(ast, 3, length(text), 1)
+  ast[1..2] = cache[cache_idx][1..2]
+  cache[cache_idx] = ast
+
   return ast
 end function
 
-global function parse_file(sequence filename)
-  object text = read_file(filename)
+global function parse_file(sequence file_name)
+  object text = read_file(file_name)
   if atom(text) then
     return {} -- unable to read file
   end if
-  return parse(text, filename)
+  return parse(text, file_name)
 end function
 
 -- during get_decls we might need to reparse a file if its timestamp changed
 procedure check_cache_timestamp(integer idx)
-    sequence ast, filename
+    sequence ast, file_name
     atom ts
-    filename = cache[idx][1]
-    ts = get_timestamp(filename)
+    file_name = cache[idx][1]
+    ts = get_timestamp(file_name)
     if cache[idx][2] != ts then
         cache[idx][2] = ts
-        ast = parse_file(filename)
-        ast[1] = filename
-        ast[2] = ts
-        cache[idx] = ast
+        ast = parse_file(file_name)
+        if length(ast) >= 2 then
+          ast[1] = file_name
+          ast[2] = ts
+          cache[idx] = ast
+        end if
     end if
 end procedure
 
@@ -1480,6 +1683,8 @@ constant
   {F, "peek2u", O, "addr_n_length", 0},
   {F, "peek4s", O, "addr_n_length", 0},
   {F, "peek4u", O, "addr_n_length", 0},
+  {F, "peek8s", O, "addr_n_length", 0},
+  {F, "peek8u", O, "addr_n_length", 0},
   {F, "peek_string", A, "addr", 0},
   {F, "peeks", O, "addr_n_length", 0},
   {F, "pixel"},
@@ -1487,6 +1692,7 @@ constant
   {P, "poke", A, "addr", 0, O, "x", 0},
   {P, "poke2", A, "addr", 0, O, "x", 0},
   {P, "poke4", A, "addr", 0, O, "x", 0},
+  {P, "poke8", A, "addr", 0, O, "x", 0},
   {P, "position", I, "row", 0, I, "column", 0},
   {F, "power", O, "base", 0, O, "exponent", 0},
   {F, "prepend", S, "target", 0, O, "x", 0},
@@ -1521,6 +1727,11 @@ constant
   {P, "trace", I, "mode", 0},
   {F, "xor_bits", O, "a", 0, O, "b", 0}
   }
+
+map:map builtins_map = map:new()
+for i = 1 to length(builtins) do
+  
+end for
 
 global function get_builtins()
   sequence s
@@ -1711,7 +1922,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
 
     if decl = INCLUDE and and_bits(filter, FILTER_INCLUDE) then
       -- {INCLUDE, includes-index, scope-start, ["namespace"]}
-      x = s[2]
+      x = s[2] -- includes-index into cache
       if x != -1 then
         --printf(1, "include %s filter=%x\n", {cache[x][1], filter})
         if length(name_space) and and_bits(filter, FILTER_INCLUDE_AS) and 
@@ -1749,9 +1960,9 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
       end for
 
     elsif decl = VAR_DECL then
-      -- {VAR_DECL, "type", {"name", pos, scope-start, [expr]}...}
+      -- {VAR_DECL, "type", pos, {"name", pos, scope-start, [expr]}...}
       --printf(1, s[2] & "\n", {})
-      for j = 3 to length(s) do
+      for j = 4 to length(s) do
         --printf(1, "  %s: %d\n", {s[j][1], s[j][2]})
         if length(s[j]) >= 3 and (pos >= s[j][3] or filter) then -- in scope?
           result = append(result, {s[j][1], s[j][2], type_to_decl(s[2])})
@@ -1832,22 +2043,19 @@ end function
 
 global function get_subroutines(sequence ast)
   sequence result, s
-  integer decl
+  integer decl, n
 
   result = {}
   for i = 3 to length(ast) do
     s = ast[i]
-
-    if find(s[1], {GLOBAL, PUBLIC, EXPORT}) then
-      s = s[2..$] -- remove prefix      
-    end if
-    decl = s[1]
+    n = prefixed(s)
+    decl = s[n+1]
 
     if decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
       -- {FUNC_DECL, "name", pos,
       --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
       --    scope-start, scope-end, stmts...}
-      result = append(result, {s[2], s[3]})
+      result = append(result, {s[n+2], s[n+3]})
     end if
   end for
   return result
@@ -1904,10 +2112,9 @@ function walk_include(sequence path_name, sequence dirent)
       -- path_name doesn't end with .e or .E
       return 0
     end if
-    --puts(1, path_name&"\n")
-    state = include_file(path_name)
-    if sequence(state) then
-      state = end_include(state, statements(NONE, 0))
+    state = cache_entry(canonical_path(path_name, 0, CORRECT))
+    if state > 0 then
+      check_cache_timestamp(state)
     end if
     if state > 0 then
       include_ids = {}
@@ -1934,6 +2141,7 @@ constant walk_include_id = routine_id("walk_include")
 -- returns a list of include files which contain a declaration decl
 global function suggest_includes(sequence word, sequence name_space)
   sequence paths, path
+
   suggested_includes = {}
   suggested_word = word
   suggested_namespace = name_space
@@ -1946,7 +2154,8 @@ global function suggest_includes(sequence word, sequence name_space)
     end if
     if length(path) > 8 and equal(path[$-7..$], SLASH & "include") then
       suggested_path = path
-      if walk_dir(path, walk_include_id, 1) then
+      if walk_dir(path, walk_include_id, 1) = 0 then
+        -- success!
       end if
     end if
   end for
@@ -1955,8 +2164,9 @@ end function
 
 -- parse argument expressions, returning the last argument position
 global function parse_argument_position(sequence source_text)
-  integer arg
+  integer arg, old_idx
   sequence e
+
   text = source_text
   idx = 1
   tok_idx = 1
@@ -1972,14 +2182,518 @@ global function parse_argument_position(sequence source_text)
     if token(",") then
         arg += 1
     end if
+    old_idx = tok_idx
     e = expr(1)
     --? {e, tok, tok_idx}
-    if length(e) = 0 and length(tok) = 0 then
-	return arg
+    --if length(e) = 0 and length(tok) = 0 then
+    if old_idx = tok_idx then
+      return arg
     end if
   end for
   printf(1, "stuck parsing argument position for \"%s\"\n", {text})
   ? e
   ? tok
   return arg
+end function
+
+-- cur_ast: {cache-idx...}
+-- cur_scope: {FILTER_* or'd...}
+-- cur_namespace: {"namespace"...}
+sequence cur_ast, cur_scope, cur_namespace, check_result = {}
+integer cur_sub = 0 -- whether or not inside subroutine
+
+-- scan ast for a declaration at pos, returns 0 if not found, otherwise
+-- one of FUNC_DECL, PROC_DECL, TYPE_DEC, VAR_DECL, CONST_DECL or FOR
+function decl_kind(sequence ast, integer start_idx, integer pos)
+  for j = start_idx to length(ast) do
+    sequence s = ast[j]
+    integer decl = s[1]
+
+    if decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
+      -- {FUNC_DECL, "name", pos,
+      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
+      --    scope-start, scope-end, stmts...}
+      if pos = s[3] then
+        return decl
+      end if
+      sequence args = s[4]
+      for i = 1 to length(args) do
+        if pos = args[i][3] then
+          return VAR_DECL
+        end if
+      end for
+      decl = decl_kind(s, 7, pos)
+      if decl then
+        return decl
+      end if
+      
+    elsif decl = VAR_DECL then
+      -- {VAR_DECL, "type", pos, {"name", pos, scope-start, [expr]}...}
+      for i = 4 to length(s) do
+        if pos = s[i][2] then
+          return decl
+        end if
+      end for
+      
+    elsif decl = CONST_DECL then
+      -- {CONST_DECL, {"name", pos, scope-start, expr}... }
+      for i = 2 to length(s) do
+        if pos = s[i][2] then
+          return decl
+        end if
+      end for
+      
+    elsif decl = WHILE then
+      -- {WHILE, expr, scope-start, scope-end, stmts...}
+      if pos >= s[3] and pos <= s[4] then
+        decl = decl_kind(s, 5, pos)
+        if decl then
+          return decl
+        end if
+      end if
+      
+    elsif decl = IF then
+      -- {IF, expr, {scope-start, scope-end, stmts...}, 
+      --     [expr, {scope-start, scope-end, elsif-stmts...},]... 
+      --     [{scope-start, scope-end, else-stmts...}]}
+      decl = 0
+      for i = 2 to length(s) by 2 do
+        if i = length(s) then
+          if pos >= s[i][1] and pos <= s[i][2] then
+            decl = decl_kind(s[i], 3, pos)
+          end if
+        else
+          if pos >= s[i+1][1] and pos <= s[i+1][2] then
+            decl = decl_kind(s[i+1], 3, pos)
+          end if
+        end if
+        if decl then
+          return decl
+        end if
+      end for
+
+    elsif decl = FOR then
+      -- {FOR, "name", pos, expr, expr, by, scope-start, scope-end, stmts...}
+      if pos = s[3] then
+        return decl
+      end if
+      if pos >= s[7] and pos <= s[8] then
+        decl = decl_kind(s, 9, pos)
+        if decl then
+          return decl
+        end if
+      end if
+
+    elsif decl = ENUM_DECL then
+      -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
+      --             {"name", pos, scope-start, [expr]}...}
+      if pos = s[3] then
+        return TYPE_DECL
+      end if
+      for i = 6 to length(s) do
+        if pos = s[i][2] then
+          return CONST_DECL
+        end if
+      end for
+
+    elsif decl = SWITCH then
+      -- {SWITCH, expr, bool-fallthru, label-string,
+      --   [{case-values...}, {scope-start, scope-end, stmts...},]... }
+      --  ("case else" will have case-values={} )
+      for i = 6 to length(s) by 2 do
+        if pos >= s[i][1] and pos <= s[i][2] then
+          decl = decl_kind(s[i], 3, pos)
+          if decl then
+            return decl
+          end if
+        end if
+      end for
+    end if
+  end for
+  return 0
+end function
+
+-- returns the decl kind if pos in scope of loc d, otherwise 0
+function decl_check(sequence ast, object d, integer pos, integer filter)
+  sequence s
+  if sequence(d) then  
+    -- variable, constant, enum value or for-variable declaration
+    s = ast[d[1]]
+  else
+    -- function, procedure, type or enum-type declaration
+    s = ast[d]
+  end if
+  -- get scope modifier bits
+  integer prefix = power(2, find(s[1], {GLOBAL, PUBLIC, EXPORT}))
+  if and_bits(prefix, filter) = 0 then
+    return 0
+  end if
+  if prefix > 1 then
+    s = s[2..$] -- remove scope modifier
+  end if
+  if atom(d) then
+    return s[1]
+  end if
+  -- d: { ast-index, pos, scope-start, [scope-end] }
+  if s[1] = VAR_DECL or s[1] = CONST_DECL or s[1] = ENUM_DECL then
+    -- top level always in scope
+    if and_bits(filter, FILTER_LOCAL) and cur_sub = 0 and pos < d[3] and cur_ast[1] = d[1] then
+      -- euphoria currently doesn't allow top-level forward references in the same file
+      return 0
+    end if
+    return s[1]
+  end if
+  if and_bits(filter, FILTER_LOCAL) and pos >= d[3] and (length(d) < 4 or pos <= d[4]) then
+    -- in scope
+    return decl_kind({s}, 1, d[2])
+  end if
+  return 0
+end function
+
+-- returns 1 if the type of declaration "name" at pos is in the list of decls
+-- otherwise 0
+function check_name(sequence name, integer pos, sequence decls)
+  integer ns = find(':', name)
+  integer first = 1, last = length(cur_ast)
+  if ns then
+    -- search includes with "as"
+    last = find(name[1..ns-1], cur_namespace)
+    if last then
+      first = last
+    else
+      -- search includes with namespaces
+      for i = 1 to length(cur_ast) do
+        integer cache_idx = cur_ast[i]
+        sequence ast = cache[cache_idx]
+        if length(ast) >= 3 and ast[3][1] = NAMESPACE and equal(ast[3][2], name[1..ns-1]) then
+          first = i
+          last = i
+          exit
+        end if
+      end for
+    end if
+    if last then
+      name = name[ns+1..$]
+    end if
+  end if
+  for j = first to last do
+    integer cache_idx = cur_ast[j]
+    sequence entries = map:get(maps[cache_idx], name, {})
+    sequence ast = cache[cache_idx]
+    integer filter = cur_scope[j]
+    for i = 1 to length(entries) do
+      integer decl = decl_check(ast, entries[i], pos, filter)
+      if find(decl, decls) then 
+        return 1
+      end if
+    end for
+  end for
+  sequence sub_decls = {PROC_DECL, FUNC_DECL, TYPE_DECL}
+  -- check builtins
+  for i = 1 to length(builtins) do
+    if equal(builtins[i][2], name) then
+      return find(sub_decls[find(builtins[i][1], {P, F, T})], decls)
+    end if
+  end for
+  return 0
+end function
+
+
+-- scan for variables only, which may be used for assignment
+procedure check_var(sequence name, integer pos)
+  if not check_name(name, pos, {VAR_DECL}) then
+    check_result &= {pos, length(name), "variable '"&name&"' has not been declared"}
+  end if
+end procedure
+
+-- scan for variables, constants, enum values, or for-variables
+procedure check_identifier(sequence name, integer pos)
+  if not check_name(name, pos, {VAR_DECL, CONST_DECL, ENUM_DECL, FOR}) then
+    check_result &= {pos, length(name), "identifier '"&name&"' has not been declared"}
+  end if
+end procedure
+
+-- scan for functions or types, used for function call
+procedure check_func(sequence name, integer pos)
+  if not check_name(name, pos, {FUNC_DECL, TYPE_DECL, ENUM_DECL}) then
+    check_result &= {pos, length(name), "function '"&name&"' has not been declared"}
+  end if
+end procedure
+
+-- scan for types or typed enum, used for variable declaration
+procedure check_type(sequence name, integer pos)
+  if not check_name(name, pos, {TYPE_DECL, ENUM_DECL}) then
+    check_result &= {pos, length(name), "type '"&name&"' has not been declared"}
+  end if
+end procedure
+
+constant proc_list = choose(OE4, {PROC_DECL, FUNC_DECL, TYPE_DECL, ENUM_DECL}, {PROC_DECL})
+
+-- scan for procedures (OE4: or functions or types)
+procedure check_proc(sequence name, integer pos)
+  if not check_name(name, pos, proc_list) then
+    check_result &= {pos, length(name), "procedure '"&name&"' has not been declared"}
+  end if
+end procedure
+
+procedure check_expr(sequence expr)
+  integer decl
+
+  if length(expr) = 0 then return end if
+
+  decl = expr[1]
+  if decl = VARIABLE then
+    -- {VARIABLE, "name", pos}
+    check_identifier(expr[2], expr[3])
+
+  elsif decl = FUNC then
+    -- {FUNC, "name", pos, [args...]}
+    check_func(expr[2], expr[3])
+    for i = 4 to length(expr) do
+      check_expr(expr[i])
+    end for
+
+  elsif find(decl, {ADD, SUB, MUL, DIV, NEG, NOT, GT, LT, GTE, LTE, EQ,
+                    NEQ, OR, XOR, AND, SUBSCRIPT, CAT, SLICE, SEQ}) then
+    for i = 2 to length(expr) do
+      check_expr(expr[i])
+    end for
+
+  elsif decl = SYNTAX_ERROR then
+    -- {SYNTAX_ERROR, pos, len, "message"}
+    check_result &= expr[2..4]
+  
+  end if
+end procedure
+
+-- scan "name" at pos for redefinitions
+procedure check_redefinition(sequence name, integer pos)
+  integer cache_idx = cur_ast[1]
+  sequence ast = cache[cache_idx]
+  sequence entries = map:get(maps[cache_idx], name, {})
+
+  for i = 1 to length(entries) do
+    object d = entries[i]
+    if atom(d) then
+      sequence s = ast[d]
+      -- d: ast-index (func/proc/type/enum-type)
+      if not cur_sub then
+        integer n = prefixed(s)
+        if not find(s[n+1], {FUNC_DECL, PROC_DECL, TYPE_DECL, ENUM_DECL}) then
+          printf(1, "%s %d %d\n", {name, s[n+1], d})
+          ? entries
+        elsif n+3 <= length(s) and s[n+3] < pos then
+          check_result &= {pos, length(name), "attempt to redefine '"&name&"'"}
+          return
+        end if
+      end if
+    elsif d[2] < pos then
+      -- d: {ast-index, pos, scope-start, [scope-end]}
+      sequence s = ast[d[1]]
+      integer top_level = 1
+      integer n = prefixed(s)
+      if find(s[n+1], {FUNC_DECL, PROC_DECL, TYPE_DECL}) and s[n+3] != d[2] then
+        top_level = 0
+      end if
+      if cur_sub != top_level and decl_check(ast, d, pos, FILTER_LOCAL) then
+        check_result &= {pos, length(name), "attempt to redefine '"&name&"'"}    
+        return
+      end if
+    end if
+  end for
+end procedure
+
+procedure check_include(sequence s, integer filter)
+  integer n = s[1] != INCLUDE
+  integer cache_idx = s[n+2]
+  integer cur_idx = find(cache_idx, cur_ast)
+  object ns = 0
+  if n+4 <= length(s) and and_bits(filter, FILTER_EXPORT) then
+    ns = s[n+4]  -- namespace
+  end if
+  if cur_idx then
+    cur_scope[cur_idx] = or_bits(cur_scope[cur_idx], filter)
+    if not atom(ns) then
+      cur_namespace[cur_idx] = ns
+    end if
+    return
+  end if
+  check_cache_timestamp(cache_idx)
+  cur_ast = append(cur_ast, cache_idx)
+  cur_scope = append(cur_scope, filter)
+  cur_namespace = append(cur_namespace, ns)
+  
+  sequence ast = cache[cache_idx]
+  for i = 3 to length(ast) do
+    s = ast[i]
+    if s[1] = INCLUDE then
+      if and_bits(filter, FILTER_LOCAL) then
+        check_include(s, FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
+      else
+        check_include(s, FILTER_GLOBAL)
+      end if
+    elsif s[1] = PUBLIC and s[2] = INCLUDE then
+      if and_bits(filter, FILTER_LOCAL) then
+        check_include(s, FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
+      else
+        check_include(s, and_bits(filter, FILTER_GLOBAL+FILTER_PUBLIC))
+      end if
+    end if
+  end for
+end procedure
+
+procedure check_ast(sequence ast, integer start_idx)
+
+  for j = start_idx to length(ast) do
+    sequence s = ast[j]
+    integer n = prefixed(s)
+    integer decl = s[n+1]
+
+    if decl = INCLUDE then
+      -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
+      --check_include(s, FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
+
+    elsif decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
+      -- {FUNC_DECL, "name", pos,
+      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
+      --    scope-start, scope-end, stmts...}
+      sequence args = s[n+4]
+      check_redefinition(s[n+2], s[n+3])
+      cur_sub = 1
+      for i = 1 to length(args) do
+        check_redefinition(args[i][2], args[i][3])
+        if length(args[i]) >= 5 then
+          check_expr(args[i][5])
+        end if
+      end for
+      check_ast(s, n+7)
+      cur_sub = 0
+
+    elsif decl = PROC then
+      -- {PROC, "name", pos, [args...]}
+      check_proc(s[n+2], s[n+3])
+      for i = n+4 to length(s) do
+        check_expr(s[i])
+      end for
+
+    elsif decl = VAR_DECL then
+      -- {VAR_DECL, "type", pos, {"name", pos, scope-start, [expr]}...}
+      check_type(s[n+2], s[n+3])
+      for i = n+4 to length(s) do
+        check_redefinition(s[i][1], s[i][2])
+        if length(s[i]) >= 4 then
+          check_expr(s[i][4])
+        end if
+      end for
+      
+    elsif decl = CONST_DECL then
+      -- {CONST_DECL, {"name", pos, scope-start, expr}... }
+      for i = n+2 to length(s) do
+        check_redefinition(s[i][1], s[i][2])
+        check_expr(s[i][4])
+      end for
+      
+    elsif decl = WHILE then
+      -- {WHILE, expr, scope-start, scope-end, stmts...}
+      check_expr(s[n+2])
+      check_ast(s, n+5)
+      
+    elsif decl = IF then
+      -- {IF, expr, {scope-start, scope-end, stmts...}, 
+      --     [expr, {scope-start, scope-end, elsif-stmts...},]... 
+      --     [{scope-start, scope-end, else-stmts...}]}
+      for i = n+2 to length(s) by 2 do
+        if i = length(s) then
+          check_ast(s[i], 3)
+        else
+          check_expr(s[i])
+          check_ast(s[i+1], 3)
+        end if
+      end for
+
+    elsif decl = FOR then
+      -- {FOR, "name", pos, expr, expr, by, scope-start, scope-end, stmts...}
+      check_redefinition(s[n+2], s[n+3])
+      check_expr(s[n+4]) -- first
+      check_expr(s[n+5]) -- last
+      check_expr(s[n+6]) -- by
+      check_ast(s, n+9)
+
+    elsif decl = ENUM_DECL then
+      -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
+      --             {"name", pos, scope-start, [expr]}...}
+      if length(s[n+2]) then
+        check_redefinition(s[n+2], s[n+3])
+      end if
+      check_expr(s[n+5])
+      for i = n+6 to length(s) do
+        check_redefinition(s[i][1], s[i][2])
+        if length(s[i]) >= 4 then
+          check_expr(s[i][4])
+        end if
+      end for
+
+    elsif decl = SWITCH then
+      -- {SWITCH, expr, bool-fallthru, label-string,
+      --   [{case-values...}, {scope-start, scope-end, stmts...},]... }
+      --  ("case else" will have case-values={} )
+      check_expr(s[n+2])
+      for i = n+6 to length(s) by 2 do
+        check_ast(s[i], 3)
+      end for
+
+    elsif find(decl, {ASSIGN, SUB_ASSIGN, SUB_ADDTO, SUB_SUBTO, SUB_MULTO,
+                      SUB_DIVTO, SUB_CATTO, SLICE_ASSIGN, SLICE_ADDTO,
+                      SLICE_SUBTO, SLICE_MULTO, SLICE_DIVTO, SLICE_CATTO}) then
+      -- {ASSIGN, "name", pos, expr}
+      -- {SUB_ASSIGN, "name", pos, index-expr..., expr}
+      -- {SLICE_ASSIGN, "name", pos, index-expr..., start-expr, end-expr, expr}
+      check_var(s[n+2], s[n+3])
+      for i = n+4 to length(s) do
+        check_expr(s[i])
+      end for
+
+    elsif decl = SEQ_ASSIGN then
+      -- {SEQ_ASSIGN, ["name1", pos1,]... expr}
+      for i = n+2 to length(s)-1 by 2 do
+        check_var(s[i], s[i+1])
+      end for
+      check_expr(s[$])
+      
+    elsif decl = QPRINT then
+      check_expr(s[2])
+
+    elsif decl = SYNTAX_ERROR then
+      -- {SYNTAX_ERROR, pos, len, "message"}
+      check_result &= s[2..4]
+    end if
+
+  end for
+end procedure
+
+-- returns sequence of error positions, lengths, and messages:
+--  {pos1, len1, msg1, pos2, len2, msg2, ...}
+global function parse_errors(sequence source_text, sequence file_name)
+  integer cache_idx
+  sequence result, ast
+
+  file_name = canonical_path(file_name, 0, CORRECT)
+  ast = parse(source_text, file_name)
+  cache_idx = cache_entry(file_name)
+  --? ast
+  cur_ast = {}
+  cur_scope = {}
+  cur_namespace = {}
+  -- check includes up front, so forward references work
+  check_include({INCLUDE, cache_idx}, FILTER_ALL)
+  check_ast(ast, 3)
+  --? cur_ast
+  --? cur_scope
+  --? cur_namespace
+  result = check_result
+  cur_ast = {}
+  cur_scope = {}
+  cur_namespace = {}
+  check_result = {}
+  return result
 end function
