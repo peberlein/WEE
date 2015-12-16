@@ -434,27 +434,32 @@ end function
 
 
 procedure num_token()
+    -- parse new hex/binary/octal format
+    if OE4 and idx <= length(text) and tok[1] = '0' and 
+               idx = tok_idx+1 and find(text[idx], "xXbBoO") then
+      idx += 1
+      while idx <= length(text) and isanyhex(text[idx]) do
+        idx += 1
+      end while
+      return
+    end if
+
+    -- parse digits if not starting with '.'
     if tok[1] != '.' then
       while idx <= length(text) and isnum(text[idx]) do
         idx += 1
       end while
-      if OE4 and idx <= length(text) and tok[1] = '0' and 
-                 idx = tok_idx+1 and find(text[idx], "xXbBoO") then
-        idx += 1
-        while idx <= length(text) and isanyhex(text[idx]) do
-          idx += 1
-        end while
-        return
-      end if
       if idx < length(text) and text[idx] = '.' and text[idx+1] != '.' then
         idx += 1
       end if
-    else
-      idx += 1
     end if
+    
+    -- parse fractional digits
     while idx <= length(text) and isnum(text[idx]) do
       idx += 1
     end while
+    
+    -- parse exponent
     if idx <= length(text) and (text[idx] = 'e' or text[idx] = 'E') then
       idx += 1
       while idx <= length(text) and isnum(text[idx]) do
@@ -683,7 +688,7 @@ function locate_eu_cfg(sequence current_dir)
     return {}
 end function
 
--- returns a unique timestamp for filename, or -1 if doesn't exist
+-- returns a unique timestamp for filename, or -1 if doesn't exist or is a directory
 global function get_timestamp(sequence filename)
   object info
   info = dir(filename)
@@ -691,6 +696,9 @@ global function get_timestamp(sequence filename)
     return -1
   end if
   info = info[1]
+  if find('d', info[D_ATTRIBUTES]) then
+    return -1 -- don't work on directories
+  end if
   -- timestamp is contrived (unlike seconds since epoch)
   -- just needs to be unique so we can tell if a file was changed.
   -- there will be gaps since not all months have 31 days.

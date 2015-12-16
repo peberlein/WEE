@@ -2785,13 +2785,13 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   elsif code = SCN_AUTOCSELECTION then
     -- check for "--include" in selection, then add include statement near top of file
     --  or after the first non-commented line, or ideally with other includes
-    pos = peek4u(notification+NOTIFICATION_POS)
+    pos = peek4s(notification+NOTIFICATION_POS)
     auto_complete_selection(pos, notification_text(notification))
     
   elsif code = SCN_MODIFIED then
     modifiers = peek4u(notification+NOTIFICATION_MODIFICATIONTYPE)
     if and_bits(modifiers, SC_MOD_BEFOREDELETE) then
-	pos = peek4u(notification+NOTIFICATION_POS)
+	pos = peek4s(notification+NOTIFICATION_POS)
 	len = peek4u(notification+NOTIFICATION_LENGTH)
 	--? {modifiers, pos, len}
 	if len = 1 then
@@ -2807,7 +2807,7 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
     open_uri(notification_text(notification))
     
   elsif code = SCN_DWELLSTART then
-    pos = peek4u(notification+NOTIFICATION_POS)
+    pos = peek4s(notification+NOTIFICATION_POS)
     if change_time = 0 then
 	dwell_error(pos)
     end if
