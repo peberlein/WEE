@@ -195,7 +195,6 @@ function read_file(sequence filename)
 
   f = open(filename, "rb")
   if f = -1 then
-    puts(2, "Warning: unable to read file: "&filename&"\n")
     return -1
   end if
   line = gets(f)
