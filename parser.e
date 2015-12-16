@@ -715,14 +715,6 @@ function cache_entry(sequence filename)
     end if
   end for
 
-  -- verify that the file can be opened
-  f = open(filename, "rb")
-  if f = -1 then
-    puts(2, "Warning: unable to read file: "&filename&"\n")
-    return -1 -- unable to read file
-  end if
-  close(f)
-
   -- create new cache and map entries
   cache = append(cache, {filename, 0})
   maps = append(maps, map:new())
@@ -779,9 +771,19 @@ function include_file(sequence filename)
   if ts = -1 then 
     return -1 -- file not found
   end if
+
+  filename = canonical_path(tmp, 0, CORRECT)
+
+  -- verify that the file can be opened
+  f = open(filename, "rb")
+  if f = -1 then
+    puts(2, "Warning: unable to read file: "&filename&"\n")
+    return -1 -- unable to read file
+  end if
+  close(f)
   
   --printf(1, "%s %d\n", {tmp, ts})
-  return cache_entry(canonical_path(tmp, 0, CORRECT))
+  return cache_entry(filename)
 end function
 
 
@@ -2680,16 +2682,12 @@ global function parse_errors(sequence source_text, sequence file_name)
   file_name = canonical_path(file_name, 0, CORRECT)
   ast = parse(source_text, file_name)
   cache_idx = cache_entry(file_name)
-  --? ast
   cur_ast = {}
   cur_scope = {}
   cur_namespace = {}
   -- check includes up front, so forward references work
   check_include({INCLUDE, cache_idx}, FILTER_ALL)
   check_ast(ast, 3)
-  --? cur_ast
-  --? cur_scope
-  --? cur_namespace
   result = check_result
   cur_ast = {}
   cur_scope = {}
