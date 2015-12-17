@@ -99,10 +99,11 @@ global constant
     DECL_ENUM = 3,
     DECL_FUNCTION = 4,
     DECL_INTEGER = 5,
-    DECL_OBJECT = 6,
-    DECL_PROCEDURE = 7,
-    DECL_SEQUENCE = 8,
-    DECL_TYPE = 9
+    DECL_NAMESPACE = 6,
+    DECL_OBJECT = 7,
+    DECL_PROCEDURE = 8,
+    DECL_SEQUENCE = 9,
+    DECL_TYPE = 10
 
 -- ast node types that are not opcodes
 global constant
@@ -1937,13 +1938,20 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
   integer x, decl, prefix, include_filter
 
   if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
-      filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
-      if filter = 0 then
-         return {}  -- no namespace or mismatch
-      end if
+    filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
+    if filter = 0 then
+       return {}  -- no namespace or mismatch
+    end if
   end if
 
   result = {}
+
+  if length(name_space) = 0 and length(ast) >= 3 and ast[3][1] = NAMESPACE then
+    if and_bits(filter, FILTER_PUBLIC) then
+      result = {{ast[3][2] & ':', 1, DECL_NAMESPACE}}
+    end if
+  end if
+
   for i = 3 to length(ast) do
     s = ast[i]
 
@@ -2152,8 +2160,7 @@ function walk_include(sequence path_name, sequence dirent)
     state = cache_entry(canonical_path(path_name, 0, CORRECT))
     if state > 0 then
       check_cache_timestamp(state)
-    end if
-    if state > 0 then
+      
       include_ids = {}
       include_flags = {}
       decls = get_decls(cache[state], 0, suggested_namespace, 
@@ -2177,7 +2184,7 @@ constant walk_include_id = routine_id("walk_include")
 
 -- returns a list of include files which contain a declaration decl
 global function suggest_includes(sequence word, sequence name_space)
-  sequence paths, path
+  sequence paths, path, result
 
   suggested_includes = {}
   suggested_word = word
@@ -2196,7 +2203,9 @@ global function suggest_includes(sequence word, sequence name_space)
       end if
     end if
   end for
-  return suggested_includes
+  result = suggested_includes
+  suggested_includes = {}
+  return result
 end function
 
 -- parse argument expressions, returning the last argument position

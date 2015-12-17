@@ -86,6 +86,7 @@ global constant
 --  Tabs now have mouseover tooltip with full path (win32: only the active tab)
 --  Adding run options: background and test run (thanks KDR)
 --  Error indicators and mouse dwell message
+--  Add namespaces to auto-complete
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -709,6 +710,7 @@ global procedure init_edit(atom edit)
     ssm(SCI_REGISTERIMAGE, DECL_ENUM, e_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_FUNCTION, f_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_INTEGER, i_xpm)
+    ssm(SCI_REGISTERIMAGE, DECL_NAMESPACE, n_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_OBJECT, o_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_PROCEDURE, p_xpm)
     ssm(SCI_REGISTERIMAGE, DECL_SEQUENCE, s_xpm)
@@ -2087,7 +2089,7 @@ global procedure view_subroutine_arguments()
     -- use scintilla's code completion
     text = get_edit_text()
     word = word_pos(text, pos)
-    if length(word) < 4 then
+    if length(word) < 4 or length(word[1]) = 0 then
         calltip_pos = calltip_save
         return
     end if
@@ -2096,11 +2098,6 @@ global procedure view_subroutine_arguments()
     name_space = word[2]
     word = word[1]
     
-    if length(word) = 0 then
-        calltip_pos = calltip_save
-        return
-    end if
-
     decls = get_subroutine_arguments(parse(text, file_name), word, name_space)
     if length(decls) then
         decls = decls[$] -- overloaded?  use the last one
