@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.39"
+  version = "0.40"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -122,6 +122,7 @@ global constant
 --    Crash when interpreter list is empty (thanks Irv)
 --    Crash on error while saving (thanks sdpringle)
 --    Crash on fail to open file during parsing (thanks sdpringle)
+--    Fixed crashes on auto-completion and error parsing (thanks dcuny)
 
 -- todo:
 --  bug with reloading files, first few characters get garbled
