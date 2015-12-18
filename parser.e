@@ -1316,7 +1316,6 @@ end function
 function statements(integer mode, integer sub)
   sequence ast, s
   integer var_decl_ok, prefix, prefix_idx, saved_ifdef_ok
-  object state
 
   ast = {idx, 0} -- scope-start, scope-end
   var_decl_ok = OE4 or find(mode, {NONE,FUNC_DECL,PROC_DECL,TYPE_DECL})
@@ -1509,20 +1508,15 @@ function statements(integer mode, integer sub)
     elsif token("include") then
       if check_mode(mode, "include") then exit end if
       tok = include_filename()
+      s = {INCLUDE, -1, idx}
       if ifdef_ok then
-        state = include_file(tok)
-        s = {INCLUDE, state, idx}
-        if state = -1 then
+        s[2] = include_file(tok)
+        if s[2] = -1 then
           error("can't find '"&tok&"'")
         end if
-        tok = ""
       end if
+      tok = ""
 
-      if prefix = PUBLIC then
-        --puts(1, "public include next_token="&tok&"\n")
-        s = PUBLIC & s
-        prefix = 0
-      end if
       if OE4 and token("as") then
         if identifier() then 
 	  s = append(s, get_token())
@@ -1530,6 +1524,10 @@ function statements(integer mode, integer sub)
 	else 
 	  error("expected an identifier")
 	end if
+      end if
+      if prefix = PUBLIC then
+        s = PUBLIC & s
+        prefix = 0
       end if
       if not ifdef_ok then
         s = {}
@@ -2101,7 +2099,7 @@ end function
 global function get_declarations(sequence ast, integer pos, sequence name_space)
   include_ids = {}
   include_flags = {}
-  return get_decls(ast, pos, name_space, FILTER_ALL)
+  return get_decls(ast, pos, name_space, choose(length(name_space), FILTER_INCLUDE + FILTER_INCLUDE_AS, FILTER_ALL))
 end function
 
 global function get_subroutines(sequence ast)
@@ -2182,8 +2180,11 @@ function walk_include(sequence path_name, sequence dirent)
       include_flags = {}
       sequence ast = cache[cache_idx]
       if length(suggested_namespace) = 0 or is_namespace(ast, suggested_namespace) then
-        decls = get_decls(ast, 0, suggested_namespace, 
-                          FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
+        integer filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
+        if length(suggested_namespace) then
+          filter += FILTER_INCLUDE
+        end if
+        decls = get_decls(ast, 0, suggested_namespace, filter)
         for i = 1 to length(decls) do
           --puts(1, "  "&decls[i]&"\n")
           if length(decls[i][1]) >= length(suggested_word) and
@@ -2671,7 +2672,6 @@ procedure check_ast(sequence ast, integer start_idx)
 
     if decl = INCLUDE then
       -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
-      --check_include(s, FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
       if n+4 <= length(s) then
         check_redefinition(s[n+4], s[n+3])
       end if
