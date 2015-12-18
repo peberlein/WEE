@@ -1990,7 +1990,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
           length(s) >= 4 and equal(s[4], name_space) and pos >= s[3] then
           -- found a matching "include as"
           filter = 0
-          include_filter = FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT
+          include_filter = FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT+FILTER_INCLUDE
           result = {}
           name_space = {}
         else  
