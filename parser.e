@@ -24,8 +24,6 @@
 --  OE4 while "with entry" and "label"
 --  OE4 loop until
 --  OE4 labels and goto
---  OE4 switch statement
---  use eu.cfg for finding includes
 --  get_declarations with namespace shouldn't include local symbols
 
 -- file.e doesn't work right on OSX
@@ -184,7 +182,7 @@ cache = {}
 
 sequence maps -- map "decl-name" -> { locator... }
 maps = {}
--- functions, procedures, types, enum types:
+-- functions, procedures, types, enum types, namespace, include-as:
 --   locator = ast-index
 -- variables, constants, enum values:
 --   locator = { ast-index, pos, scope-start, [scope-end] }
@@ -279,29 +277,51 @@ procedure declare_ast(sequence ast, integer start_idx, integer scope_end, intege
     
     if top then
       ast_idx = j
+      
+      if decl = NAMESPACE then
+        -- {NAMESPACE, "name"}
+        declare(s[n+2])
+
+      elsif decl = INCLUDE and n+4 <= length(s) then
+        -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
+        declare(s[n+4]) -- include as
+
+      elsif decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
+        -- {FUNC_DECL, "name", pos,
+        --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
+        --    scope-start, scope-end, stmts...}
+        declare(s[n+2])
+        sequence args = s[n+4]
+        integer sub_scope_end = s[n+6]
+        for i = 1 to length(args) do
+          declare(args[i][2..4] & sub_scope_end)
+        end for
+        declare_ast(s, n+7, sub_scope_end)
+
+      elsif decl = CONST_DECL then
+        -- {CONST_DECL, {"name", pos, scope-start, expr}... }
+        for i = n+2 to length(s) do
+          declare(s[i][1..3] & scope_end)
+        end for
+      
+      elsif decl = ENUM_DECL then
+        -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
+        --             {"name", pos, scope-start, [expr]}...}
+        if length(s[n+2]) then
+          declare(s[n+2])
+        end if
+        for i = n+6 to length(s) do
+          declare(s[i][1..3] & scope_end)
+        end for
+      elsif decl = NAMESPACE then
+        declare({s[1],1,1})
+      end if
+      
     end if
 
-    if decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
-      -- {FUNC_DECL, "name", pos,
-      --   {{"arg-type", "arg-name", pos, scope-start, [expr]}...}, 
-      --    scope-start, scope-end, stmts...}
-      declare(s[n+2])
-      sequence args = s[n+4]
-      integer sub_scope_end = s[n+6]
-      for i = 1 to length(args) do
-        declare(args[i][2..4] & sub_scope_end)
-      end for
-      declare_ast(s, n+7, sub_scope_end)
-
-    elsif decl = VAR_DECL then
+    if decl = VAR_DECL then
       -- {VAR_DECL, "type", pos, {"name", pos, scope-start, [expr]}...}
       for i = n+4 to length(s) do
-        declare(s[i][1..3] & scope_end)
-      end for
-      
-    elsif decl = CONST_DECL then
-      -- {CONST_DECL, {"name", pos, scope-start, expr}... }
-      for i = n+2 to length(s) do
         declare(s[i][1..3] & scope_end)
       end for
       
@@ -325,16 +345,6 @@ procedure declare_ast(sequence ast, integer start_idx, integer scope_end, intege
       -- {FOR, "name", pos, expr, expr, by, scope-start, scope-end, stmts...}
       declare(s[n+2..n+3] & s[n+7..n+8])
       declare_ast(s, n+9, s[n+8])
-
-    elsif decl = ENUM_DECL then
-      -- {ENUM_DECL, "typename"|"", pos, '+'|'-'|'*'|'/', expr,
-      --             {"name", pos, scope-start, [expr]}...}
-      if length(s[n+2]) then
-        declare(s[n+2])
-      end if
-      for i = n+6 to length(s) do
-        declare(s[i][1..3] & scope_end)
-      end for
 
     elsif decl = SWITCH then
       -- {SWITCH, expr, bool-fallthru, label-string,
@@ -1501,9 +1511,8 @@ function statements(integer mode, integer sub)
       tok = include_filename()
       if ifdef_ok then
         state = include_file(tok)
-        if state != -1 then
-          s = {INCLUDE, state, idx}
-        else
+        s = {INCLUDE, state, idx}
+        if state = -1 then
           error("can't find '"&tok&"'")
         end if
         tok = ""
@@ -1517,6 +1526,7 @@ function statements(integer mode, integer sub)
       if OE4 and token("as") then
         if identifier() then 
 	  s = append(s, get_token())
+	  s[3] = tok_idx
 	else 
 	  error("expected an identifier")
 	end if
@@ -1784,13 +1794,13 @@ end function
 
 sequence include_ids, include_flags
 constant
-  FILTER_LOCAL = 1,
-  FILTER_GLOBAL = 2,
-  FILTER_PUBLIC = 4,
-  FILTER_EXPORT = 8,
-  FILTER_INCLUDE = 16,
-  FILTER_INCLUDE_AS = 32,
-  FILTER_ALL = 63
+  FILTER_LOCAL = 1,       -- #01
+  FILTER_GLOBAL = 2,      -- #02
+  FILTER_PUBLIC = 4,      -- #04
+  FILTER_EXPORT = 8,      -- #08
+  FILTER_INCLUDE = 16,    -- #10
+  FILTER_INCLUDE_AS = 32, -- #20
+  FILTER_ALL = 63         -- #3F
 
 
 
@@ -1799,6 +1809,7 @@ function get_include_filter(sequence s, sequence name_space, integer filter, int
   integer idx, include_filter
 
   idx = s[2] -- cache[] index
+  check_cache_timestamp(idx)
   if length(name_space) then
     --if length(s) >= 3 then
     --    printf(1, "filter=%x namespace=%s include as %s\n", {filter, name_space, s[3]})
@@ -1806,13 +1817,14 @@ function get_include_filter(sequence s, sequence name_space, integer filter, int
     if filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT then
         -- include as namespace -> include
         include_filter = FILTER_PUBLIC
-    elsif filter = FILTER_PUBLIC and prefix = FILTER_PUBLIC then
+    elsif and_bits(filter, FILTER_PUBLIC) and prefix = FILTER_PUBLIC then
       -- a public include from nested include
       include_filter = FILTER_PUBLIC
     elsif and_bits(filter, FILTER_INCLUDE_AS) and length(cache[idx]) >= 3 and 
           equal(cache[idx][3], {NAMESPACE, name_space}) then
       -- include has same namespace
       include_filter = FILTER_GLOBAL + FILTER_PUBLIC + FILTER_EXPORT
+     
     else
       include_filter = 0
     end if
@@ -1850,7 +1862,7 @@ function get_args(sequence ast, sequence word, sequence name_space, integer filt
   integer x, decl, prefix, include_filter
 
   if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
-      filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
+      filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS + FILTER_PUBLIC)
       if filter = 0 then
          return {}  -- no namespace or mismatch
       end if
@@ -1938,7 +1950,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
   integer x, decl, prefix, include_filter
 
   if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
-    filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS)
+    filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS + FILTER_PUBLIC)
     if filter = 0 then
        return {}  -- no namespace or mismatch
     end if
@@ -2244,8 +2256,7 @@ end function
 
 -- cur_ast: {cache-idx...}
 -- cur_scope: {FILTER_* or'd...}
--- cur_namespace: {"namespace"...}
-sequence cur_ast, cur_scope, cur_namespace, check_result = {}
+sequence cur_ast, cur_scope, check_result = {}
 integer cur_sub = 0 -- whether or not inside subroutine
 
 -- scan ast for a declaration at pos, returns 0 if not found, otherwise
@@ -2396,37 +2407,66 @@ function decl_check(sequence ast, object d, integer pos, integer filter)
   return 0
 end function
 
+-- return a sequence of cache_idx 
+function public_includes(integer cache_idx, sequence result)
+  sequence ast = cache[cache_idx]
+  if not find(cache_idx, result) then
+    result &= cache_idx
+    for i = 3 to length(ast) do
+      sequence s = ast[i]
+      if s[1] = PUBLIC and s[2] = INCLUDE then
+        result = public_includes(s[3], result)
+      end if
+    end for
+  end if
+  return result
+end function
+
 -- returns 1 if the type of declaration "name" at pos is in the list of decls
 -- otherwise 0
 function check_name(sequence name, integer pos, sequence decls)
   integer ns = find(':', name)
-  integer first = 1, last = length(cur_ast)
+  sequence asts = cur_ast
+  sequence name_space = ""
   if ns then
-    -- search includes with "as"
-    last = find(name[1..ns-1], cur_namespace)
-    if last then
-      first = last
-    else
-      -- search includes with namespaces
-      for i = 1 to length(cur_ast) do
-        integer cache_idx = cur_ast[i]
-        sequence ast = cache[cache_idx]
-        if length(ast) >= 3 and ast[3][1] = NAMESPACE and equal(ast[3][2], name[1..ns-1]) then
-          first = i
-          last = i
-          exit
-        end if
-      end for
+    name_space = name[1..ns-1]
+    name = name[ns+1..$]
+    asts = {}
+
+    sequence ast = cache[cur_ast[1]]
+    -- scan for include as
+    for i = 3 to length(ast) do
+      sequence s = ast[i]
+      integer n = prefixed(s)
+      if s[n+1] = INCLUDE and length(s) >= n+4 and equal(s[n+4], name_space) and pos >= s[n+3] then
+        asts = public_includes(s[n+2], asts)
+        exit
+      end if
+    end for
+
+    if length(asts) = 0 then
+      if equal(name_space, "eu") then
+        ns = 0 -- special builtins namespace
+      else
+        -- search includes for a matching namespace
+        for i = 2 to length(cur_ast)  do
+          integer cache_idx = cur_ast[i]
+          ast = cache[cache_idx]
+          -- does it have a matching namespace at the top
+          if and_bits(cur_scope[i], FILTER_PUBLIC) and length(ast) >= 3 and
+             equal(ast[3], {NAMESPACE, name_space}) then
+            asts = public_includes(cache_idx, asts)
+          end if
+        end for
+      end if
     end if
-    if last then
-      name = name[ns+1..$]
-    end if
+    
   end if
-  for j = first to last do
-    integer cache_idx = cur_ast[j]
+  for j = 1 to length(asts) do
+    integer cache_idx = asts[j]
     sequence entries = map:get(maps[cache_idx], name, {})
     sequence ast = cache[cache_idx]
-    integer filter = cur_scope[j]
+    integer filter = cur_scope[find(asts[j], cur_ast)]
     for i = 1 to length(entries) do
       integer decl = decl_check(ast, entries[i], pos, filter)
       if find(decl, decls) then 
@@ -2434,13 +2474,15 @@ function check_name(sequence name, integer pos, sequence decls)
       end if
     end for
   end for
-  sequence sub_decls = {PROC_DECL, FUNC_DECL, TYPE_DECL}
-  -- check builtins
-  for i = 1 to length(builtins) do
-    if equal(builtins[i][2], name) then
-      return find(sub_decls[find(builtins[i][1], {P, F, T})], decls)
-    end if
-  end for
+  if ns = 0 then
+    sequence sub_decls = {PROC_DECL, FUNC_DECL, TYPE_DECL}
+    -- check builtins
+    for i = 1 to length(builtins) do
+      if equal(builtins[i][2], name) then
+        return find(sub_decls[find(builtins[i][1], {P, F, T})], decls)
+      end if
+    end for
+  end if
   return 0
 end function
 
@@ -2512,6 +2554,10 @@ procedure check_expr(sequence expr)
   end if
 end procedure
 
+procedure attempt_redefine(sequence name, integer pos)
+  check_result &= {pos, length(name), "attempt to redefine '"&name&"'"}
+end procedure
+
 -- scan "name" at pos for redefinitions
 procedure check_redefinition(sequence name, integer pos)
   integer cache_idx = cur_ast[1]
@@ -2525,50 +2571,71 @@ procedure check_redefinition(sequence name, integer pos)
       -- d: ast-index (func/proc/type/enum-type)
       if not cur_sub then
         integer n = prefixed(s)
-        if not find(s[n+1], {FUNC_DECL, PROC_DECL, TYPE_DECL, ENUM_DECL}) then
+        if find(s[n+1], {NAMESPACE, INCLUDE}) then
+          -- it must be a namespace or include-as
+          if s[n+1] = NAMESPACE or s[n+3] < pos then
+            -- check if pos is another include-as with the same name
+            for j = i+1 to length(entries) do
+              if atom(entries[j]) then
+                s = ast[entries[j]]
+                n = prefixed(s)
+                if s[n+1] = INCLUDE and n+4 <= length(s) and s[n+3] = pos then
+                  attempt_redefine(name, pos)
+                  return
+                end if
+              end if
+            end for
+          end if
+        elsif not find(s[n+1], {FUNC_DECL, PROC_DECL, TYPE_DECL, ENUM_DECL}) then
+          -- not a subroutine?  something is wrong with the parser
           printf(1, "%s %d %d\n", {name, s[n+1], d})
           ? entries
         elsif n+3 <= length(s) and s[n+3] < pos then
-          check_result &= {pos, length(name), "attempt to redefine '"&name&"'"}
+          attempt_redefine(name, pos)
           return
         end if
       end if
     elsif d[2] < pos then
       -- d: {ast-index, pos, scope-start, [scope-end]}
       sequence s = ast[d[1]]
-      integer top_level = 1
       integer n = prefixed(s)
+      integer top_level = 1
       if find(s[n+1], {FUNC_DECL, PROC_DECL, TYPE_DECL}) and s[n+3] != d[2] then
         top_level = 0
       end if
       if cur_sub != top_level and decl_check(ast, d, pos, FILTER_LOCAL) then
-        check_result &= {pos, length(name), "attempt to redefine '"&name&"'"}    
+        attempt_redefine(name, pos)
         return
       end if
     end if
   end for
 end procedure
 
+-- add an include to the cur_ast and calculate it's visibility/scope
 procedure check_include(sequence s, integer filter)
   integer n = s[1] != INCLUDE
   integer cache_idx = s[n+2]
   integer cur_idx = find(cache_idx, cur_ast)
-  object ns = 0
-  if n+4 <= length(s) and and_bits(filter, FILTER_EXPORT) then
-    ns = s[n+4]  -- namespace
-  end if
-  if cur_idx then
-    cur_scope[cur_idx] = or_bits(cur_scope[cur_idx], filter)
-    if not atom(ns) then
-      cur_namespace[cur_idx] = ns
-    end if
+
+  if cache_idx = -1 then
     return
   end if
-  check_cache_timestamp(cache_idx)
-  cur_ast = append(cur_ast, cache_idx)
-  cur_scope = append(cur_scope, filter)
-  cur_namespace = append(cur_namespace, ns)
-  
+
+  if cur_idx = 0 then
+    -- create a new entry
+    check_cache_timestamp(cache_idx)
+    cur_ast = append(cur_ast, cache_idx)
+    cur_scope = append(cur_scope, filter)
+  else
+    -- existing entry, filter bits already set?
+    if and_bits(cur_scope[cur_idx], filter) = filter then
+      return
+    end if
+    -- update the filter bits and rescan the ast
+    cur_scope[cur_idx] = or_bits(cur_scope[cur_idx], filter)
+  end if
+
+  -- scan the ast for sub-includes
   sequence ast = cache[cache_idx]
   for i = 3 to length(ast) do
     s = ast[i]
@@ -2598,6 +2665,9 @@ procedure check_ast(sequence ast, integer start_idx)
     if decl = INCLUDE then
       -- {INCLUDE, includes-idx, scope-start, ["namespace"]}
       --check_include(s, FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
+      if n+4 <= length(s) then
+        check_redefinition(s[n+4], s[n+3])
+      end if
 
     elsif decl = FUNC_DECL or decl = PROC_DECL or decl = TYPE_DECL then
       -- {FUNC_DECL, "name", pos,
@@ -2728,14 +2798,12 @@ global function parse_errors(sequence source_text, sequence file_name)
   cache_idx = cache_entry(file_name)
   cur_ast = {}
   cur_scope = {}
-  cur_namespace = {}
   -- check includes up front, so forward references work
   check_include({INCLUDE, cache_idx}, FILTER_ALL)
   check_ast(ast, 3)
   result = check_result
   cur_ast = {}
   cur_scope = {}
-  cur_namespace = {}
   check_result = {}
   return result
 end function
