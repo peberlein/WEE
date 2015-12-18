@@ -1792,6 +1792,14 @@ global function get_builtins()
 end function
 
 
+function is_namespace(sequence ast, sequence name_space)
+  if length(ast) >= 3 and ast[3][1] = NAMESPACE and equal(ast[3][2], name_space) then
+    return 1
+  end if
+  return 0
+end function
+
+
 sequence include_ids, include_flags
 constant
   FILTER_LOCAL = 1,       -- #01
@@ -1801,8 +1809,6 @@ constant
   FILTER_INCLUDE = 16,    -- #10
   FILTER_INCLUDE_AS = 32, -- #20
   FILTER_ALL = 63         -- #3F
-
-
 
   
 function get_include_filter(sequence s, sequence name_space, integer filter, integer prefix)
@@ -1861,7 +1867,7 @@ function get_args(sequence ast, sequence word, sequence name_space, integer filt
   sequence result, s
   integer x, decl, prefix, include_filter
 
-  if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
+  if length(name_space) and is_namespace(ast, name_space) then
       filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS + FILTER_PUBLIC)
       if filter = 0 then
          return {}  -- no namespace or mismatch
@@ -1949,7 +1955,7 @@ function get_decls(sequence ast, integer pos, sequence name_space, integer filte
   sequence result, s
   integer x, decl, prefix, include_filter
 
-  if length(name_space) and (length(ast) < 3 or not equal(ast[3], {NAMESPACE, name_space})) then
+  if length(name_space) and is_namespace(ast, name_space) then
     filter = and_bits(filter, FILTER_INCLUDE + FILTER_INCLUDE_AS + FILTER_PUBLIC)
     if filter = 0 then
        return {}  -- no namespace or mismatch
@@ -2161,7 +2167,6 @@ end function
 sequence suggested_includes, suggested_word, suggested_namespace, suggested_path
 
 function walk_include(sequence path_name, sequence dirent)
-    object state
     sequence decls
 
     path_name &= SLASH & dirent[D_NAME]
@@ -2169,24 +2174,27 @@ function walk_include(sequence path_name, sequence dirent)
       -- path_name doesn't end with .e or .E
       return 0
     end if
-    state = cache_entry(canonical_path(path_name, 0, CORRECT))
-    if state > 0 then
-      check_cache_timestamp(state)
+    integer cache_idx = cache_entry(canonical_path(path_name, 0, CORRECT))
+    if cache_idx > 0 then
+      check_cache_timestamp(cache_idx)
       
       include_ids = {}
       include_flags = {}
-      decls = get_decls(cache[state], 0, suggested_namespace, 
-                        FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
-      for i = 1 to length(decls) do
-        --puts(1, "  "&decls[i]&"\n")
-        if length(decls[i][1]) >= length(suggested_word) and 
-           equal(decls[i][1][1..length(suggested_word)], suggested_word) then
-          --puts(1, dirent[D_NAME]&" matched!\n")
-          suggested_includes = append(suggested_includes, 
-	    {decls[i][1] & " --include "& path_name[length(suggested_path)+2..$],
-		{cache[state][1], decls[i][2]}, decls[i][3]})
-        end if
-      end for
+      sequence ast = cache[cache_idx]
+      if length(suggested_namespace) = 0 or is_namespace(ast, suggested_namespace) then
+        decls = get_decls(ast, 0, suggested_namespace, 
+                          FILTER_GLOBAL+FILTER_PUBLIC+FILTER_EXPORT)
+        for i = 1 to length(decls) do
+          --puts(1, "  "&decls[i]&"\n")
+          if length(decls[i][1]) >= length(suggested_word) and
+             equal(decls[i][1][1..length(suggested_word)], suggested_word) then
+            --puts(1, dirent[D_NAME]&" matched!\n")
+            suggested_includes = append(suggested_includes, 
+              {decls[i][1] & " --include "& path_name[length(suggested_path)+2..$],
+                  {ast[1], decls[i][2]}, decls[i][3]})
+          end if
+        end for
+      end if
     end if
 
     return 0 -- keep searching all files
@@ -2410,7 +2418,7 @@ end function
 -- return a sequence of cache_idx 
 function public_includes(integer cache_idx, sequence result)
   sequence ast = cache[cache_idx]
-  if not find(cache_idx, result) then
+  if cache_idx > 0 and not find(cache_idx, result) then
     result &= cache_idx
     for i = 3 to length(ast) do
       sequence s = ast[i]
@@ -2453,8 +2461,7 @@ function check_name(sequence name, integer pos, sequence decls)
           integer cache_idx = cur_ast[i]
           ast = cache[cache_idx]
           -- does it have a matching namespace at the top
-          if and_bits(cur_scope[i], FILTER_PUBLIC) and length(ast) >= 3 and
-             equal(ast[3], {NAMESPACE, name_space}) then
+          if and_bits(cur_scope[i], FILTER_PUBLIC) and is_namespace(ast, name_space) then
             asts = public_includes(cache_idx, asts)
           end if
         end for
@@ -2579,7 +2586,7 @@ procedure check_redefinition(sequence name, integer pos)
               if atom(entries[j]) then
                 s = ast[entries[j]]
                 n = prefixed(s)
-                if s[n+1] = INCLUDE and n+4 <= length(s) and s[n+3] = pos then
+                if s[n+1] = INCLUDE and n+3 <= length(s) and s[n+3] = pos then
                   attempt_redefine(name, pos)
                   return
                 end if
