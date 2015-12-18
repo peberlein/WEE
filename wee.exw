@@ -2015,8 +2015,8 @@ end procedure
 
 -- show a list of possible words when autocomplete is triggered
 global procedure view_completions()
-    sequence text, word, decls, name_space, suggestions
-    integer pos, junk, style
+    sequence text, word, ast, decls, name_space, suggestions
+    integer pos, junk, style, ns = 0
 
     if ssm(SCI_AUTOCACTIVE) then
         return -- autocomplete is already active
@@ -2040,13 +2040,24 @@ global procedure view_completions()
     name_space = word[2]
     word = word[1]
 
-    decls = get_declarations(parse(text, file_name), pos, name_space)
+    ast = parse(text, file_name)
+    decls = get_declarations(ast, pos, name_space)
     if length(decls) = 0 or length(name_space) = 0 then
 	suggestions = suggest_includes(word, name_space)
+	
+	if length(suggestions) = 0 and length(word) = 0 and length(name_space) > 0 then
+	    decls = get_declarations(ast, pos, "")
+	    if length(decls) = 0 then
+	        suggestions = suggest_includes(name_space, "")
+	    end if
+	    ns = DECL_NAMESPACE
+	end if
 
 	-- filter duplicate suggestions
 	for i = 1 to length(suggestions) do
-	    if not find(suggestions[i], decls) then
+	    sequence tmp = suggestions[i]
+	    tmp[1] = tmp[1][1..find(' ', tmp[1])-1]
+	    if not find(tmp, decls) then
 		decls = append(decls, suggestions[i])
 	    end if
 	end for
@@ -2058,10 +2069,12 @@ global procedure view_completions()
     text = ""
     for i = 1 to length(decls) do
 	if length(decls[i][1]) >= length(word) and equal(decls[i][1][1..length(word)], word) then
-	  if length(text) then 
-	    text &= "\n"
-	  end if
-	  text &= decls[i][1] & sprintf("?%d", {decls[i][3]})
+	    if (ns = 0 or decls[i][3] = ns) then
+		if length(text) then
+		    text &= "\n"
+		end if
+		text &= decls[i][1] & sprintf("?%d", {decls[i][3]})    
+	    end if
 	end if
     end for
     if length(text) then
@@ -2325,9 +2338,25 @@ end procedure
 
 
 procedure auto_complete_selection(integer pos, sequence text)
-    integer inc, len, insert_line, arg
+    integer inc, len, insert_line, arg, ns
     sequence line
     
+    ns = match(": ", text)
+    if ns and ssm(SCI_GETCHARAT, pos-1) = ':' then
+        line = ""
+        while length(line) <= ns do
+            line = ssm(SCI_GETCHARAT, pos-length(line)-2) & line
+            ? line
+            ? text[1..length(line)]
+            if equal(line, text[1..length(line)]) then
+		ssm(SCI_DELETERANGE, pos-length(line)-1, pos-1)
+		ssm(SCI_AUTOCCANCEL, 0, 0)
+		exit
+            end if
+        end while
+    end if
+
+
     -- insert include statement if completion contains it
     inc = match(" --include", text)
     if inc then
@@ -2379,6 +2408,7 @@ procedure auto_complete_selection(integer pos, sequence text)
 	    view_subroutine_arguments()
 	end if
     end if
+    
 end procedure
 
 -- insert closing character when user types ( [ { ' "
