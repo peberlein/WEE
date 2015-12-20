@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.40"
+  version = "0.41"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -87,6 +87,7 @@ global constant
 --  Adding run options: background and test run (thanks KDR)
 --  Error indicators and mouse dwell message
 --  Add namespaces to auto-complete
+--  Improved parsing speed
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -129,8 +130,6 @@ global constant
 --  expanding "for" should then tab between "=", "to", and "do"
 --    as it is now, its really annoying (but better with overtyping)
 --  fix brace highlighting in comments and strings
---  configurable indent size (and auto-detect indent size)
---  namespaces might still need to be fixed (include as)
 --  put arguments after each subroutine completion (maybe)
 --  investigate Mike Duffy's scintilla Euphoria Lexer
 --    multicolored brackets and parens
@@ -149,8 +148,12 @@ global constant
 --  will crash by putting a function after sci_notify()  (Linux/OSX 64-bit)
 --    triggered by using Alt+1-9 to change tabs
 --    Euphoria bug?  file a ticket
+--  help->check for updates
+--    updating dll would require updater.ex
+--    option to bind/shround/recompile
+--  edit->tidy, to clean up indentation/formatting
 
-without warning
+--without warning
 
 include parser.e
 include scintilla.e
@@ -365,7 +368,7 @@ global procedure wee_init()
 	     {"for", " =  to ", " do", "end for"},
 	     {"case", "", " then"},
 	     {"loop", "", "do", "end loop"},
-	     {"switch", " do", "end switch"},
+	     {"switch", "", " do", "end switch"},
 	     {0, "global ", "public ", "export "},
 	     {"procedure", "()", "", "end procedure"},
 	     {"function", "()", "", "end function"},
@@ -1868,71 +1871,6 @@ global procedure goto_error(sequence err, integer idx)
         ssm(SCI_SETSEL, col, col + length(item))
         set_top_line(line)
     end if
-end procedure
-
-global procedure view_error()
-    atom fn, result
-    object s
-    integer line, colon, caret, tab
-    sequence file, message
-    
-    ui_view_error()
-    return
-    
-    fn = open("ex.err", "r")
-    if fn = -1 then
-	return
-    end if
-    s = gets(fn)  -- "filename:line"
-    if atom(s) then
-        close(fn)
-	return
-    end if
-    if length(s) < 3 then
-        close(fn)
-	return
-    end if
-    colon = match(":", s[3..length(s)]) + 2
-    if colon < 3 then
-        close(fn)
-	return
-    end if
-    file = s[1..colon-1]
-    tab = find(file, tab_file_names)
-    if tab then
-	select_tab(tab)
-    else
-	if ui_message_box_yes_no("Goto Error",
-		"The file ex.err refers to\n"&file&
-		"\n\nDo you want to open this file?")= 0 then
-            close(fn)
-	    return
-	end if
-	tab = open_file(file, 0)
-    end if
-    s = value(s[colon+1..length(s)])
-    if s[1] != GET_SUCCESS or not integer(s[2]) then
-        close(fn)
-	return
-    end if
-    line = s[2]
-    s = gets(fn)
-    if atom(s) then
-        close(fn)
-	return
-    end if
-    message = s
-    s = gets(fn)
-    s = gets(fn)
-    close(fn)
-    if atom(s) then
-	return
-    end if
-    caret = find('^', s)
-    caret += ssm(SCI_POSITIONFROMLINE, line-1)
-    result = ssm(SCI_SETSEL, caret, caret)
-    set_top_line(-1)
-    result = ui_message_box_error("Goto Error", message)
 end procedure
 
 global procedure reset_ex_err()
