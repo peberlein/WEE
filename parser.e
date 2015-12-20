@@ -419,14 +419,15 @@ procedure error(sequence msg)
   if ERROR_ABORT then abort(1) end if
 end procedure
 
-constant ALPHA = 1, NUM = 2, HEX = 4, WS = 8, PUNCT = 16
+constant ALPHA = 1, NUM = 2, HEX = 4, WS = 8, PUNCT = 16, ALPHANUM = 32
 sequence chars = repeat(0, 255)
-chars['A'..'Z'] = ALPHA
-chars['a'..'z'] = ALPHA
-chars['_'] = ALPHA + choose(OE4, NUM + HEX, 0)
-chars['0'..'9'] = NUM + HEX 
+chars['A'..'Z'] = ALPHA + ALPHANUM
+chars['a'..'z'] = ALPHA + ALPHANUM
+chars['_'] = ALPHA + choose(OE4, NUM + HEX + ALPHANUM, 0)
+chars['0'..'9'] = NUM + HEX + ALPHANUM
 chars['A'..'F'] += HEX
 chars['a'..'f'] += choose(OE4, HEX, 0)
+chars[':'] = choose(OE4, ALPHANUM, 0)
 chars['\n'] = WS
 chars['\t'] = WS
 chars['\r'] = WS
@@ -442,8 +443,8 @@ chars['!'] = PUNCT
 
 
 procedure skip_hashbang()
-  integer c = text[idx]
-  if idx = 1 and c = '#' and text[idx+1] = '!' then
+  integer c = 0
+  if length(text) >= 2 and text[1] = '#' and text[2] = '!' then
     -- skip special comment for shell interpreter
     while not find(c, "\r\n") do
       idx += 1
@@ -496,7 +497,7 @@ function isnum(integer c)
 end function
 
 function isalphanum(integer c)
-  return and_bits(chars[c], ALPHA + NUM)  
+  return and_bits(chars[c], ALPHANUM)
   --return isalpha(c) or isnum(c) or c = '_' or (OE4 and c = ':')
 end function
 
@@ -2648,7 +2649,7 @@ procedure check_redefinition(sequence name, integer pos)
           printf(1, "%s %d %d\n", {name, s[n+1], d})
           ? entries
         elsif n+3 <= length(s) and s[n+3] < pos then
-          printf(1, "%s at %d with %d\n", {name, pos, s[n+3]})
+          --printf(1, "%s at %d with %d\n", {name, pos, s[n+3]})
           attempt_redefine(name, pos)
           return
         end if
