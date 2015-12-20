@@ -26,8 +26,6 @@
 --  OE4 labels and goto
 --  get_declarations with namespace shouldn't include local symbols
 
--- file.e doesn't work right on OSX
---include file,e -- for walk_dir and dir
 include std/filesys.e
 include std/os.e
 include std/text.e
@@ -89,7 +87,8 @@ global constant
   NEG = 24,
   AND = 25,
   OR = 26,
-  XOR = 27
+  XOR = 27,
+  CAT = 28    -- {CAT, expr, expr}
 
 global constant
     DECL_ATOM = 1,
@@ -113,7 +112,6 @@ global constant
   SUBSCRIPT = 261, -- {SUBSCRIPT, expr, index-expr}
   SLICE = 262,     -- {SLICE, expr, start-expr, end-expr}
   CONST_DECL = 263, -- {CONST_DECL, {"name", pos, scope-start, expr}... }
-  CAT = 264,    -- {CAT, expr, expr}
   RETURN = 265, -- {RETURN, [expr]}
   EXIT = 266,   -- {EXIT}
   SEQ = 267,    -- {SEQ, [expr,]...}
@@ -168,18 +166,19 @@ global constant
   RETRY = 309,    -- {RETRY}, used with while loops
   LABEL = 310,    -- {LABEL, "label"}
   GOTO = 311,     -- {GOTO, "label"}
-  SYNTAX_ERROR = 312 -- {SYNTAX_ERROR, pos, len, "message"}
+  ELSIF = 312,    -- only for lookup table
+  ELSIFDEF = 313, -- only for lookup table
+  CASE = 314,
+  KEYWORD = 315,
+  WITH = 316,
+  WITHOUT = 317,
+  SYNTAX_ERROR = 318 -- {SYNTAX_ERROR, pos, len, "message"}
 
-global constant ast_names = { "var_decl", "assign", "func", "proc", "variable",
-  "subscript", "slice", "const_decl", "not", "mul", "div", "add", "sub",
-  "cat", "lt", "gt", "lte", "gte", "eq", "neq", "and", "or", "xor",
-  "seq", "integer", "while", "if", "for", "proc", "func_decl",
-  "proc_decl", "elsif", "else", "qprint", "addto", "subto", 
-  "multo", "divto", "catto", "string" }
-
+-- keep a copy of parsed files, reparsing if timestamp changes
 sequence cache -- { {"path", timestamp, stmts...} ...}
 cache = {}
 
+-- a sequence of maps makes identifier lookups fast
 sequence maps -- map "decl-name" -> { locator... }
 maps = {}
 -- functions, procedures, types, enum types, namespace, include-as:
@@ -187,14 +186,34 @@ maps = {}
 -- variables, constants, enum values:
 --   locator = { ast-index, pos, scope-start, [scope-end] }
 
-sequence keywords
-keywords = {"global", "function", "procedure", "type", "end", "if", "then",
-            "else", "elsif", "for", "to", "by", "while", "do", "include", 
-            "with", "without"}
-if OE4 then
-  keywords &= {"enum", "label", "break", "case", "fallthru", "routine", "entry", "retry"}
-  -- "namespace" is not a reserved word, since it can be used as an identifier
-end if
+-- returns a if test is true, otherwise b
+function choose(integer test, object a, object b)
+  if test then
+    return a
+  end if
+  return b
+end function
+
+-- use lookup table for faster keyword checking
+map:map lookup_table = map:new_from_kvpairs({
+  {"?", QPRINT},  {"&", CAT}, {"+", ADD}, {"-",SUB}, {"*", MUL}, {"/", DIV},
+  {"=", EQ}, {"!=", NEQ}, {"<", LT}, {"<=", LTE}, {">", GT}, {">=", GTE},
+  {"not", NOT}, {"or", OR}, {"and", AND}, {"xor", XOR},
+  {"global", GLOBAL}, {"constant", CONST_DECL}, {"return", RETURN},
+  {"while", WHILE}, {"if", IF}, {"else", ELSE}, {"elsif", ELSIF}, {"end", END},
+  {"for", FOR}, {"to", KEYWORD}, {"by", KEYWORD}, {"do", KEYWORD}, {"exit", EXIT},
+  {"function", FUNC_DECL}, {"procedure", PROC_DECL}, {"type", TYPE_DECL},
+  {"+=", ADDTO}, {"-=", SUBTO}, {"*=", MULTO}, {"/=", DIVTO}, {"&=", CATTO},   
+  {"\"", '"'}, {"$", '$'}, {"'", '\''}, {"(", '('}, {"{", '{'},
+  {"include", INCLUDE}, {"with", WITH}, {"without", WITHOUT}
+} & choose(OE4, {
+  {"namespace", NAMESPACE}, {"public", PUBLIC}, {"export", EXPORT},
+  {"ifdef", IFDEF}, {"elsifdef", ELSIFDEF}, {"elsedef", ELSEDEF}, 
+  {"switch", SWITCH}, {"case", CASE}, {"break", BREAK}, 
+  {"continue", CONTINUE}, {"as", KEYWORD}, {"enum", ENUM_DECL},
+  {"default", DEFAULT}, {"entry", ENTRY}, {"retry", RETRY}, {"label", LABEL},
+  {"goto", GOTO}, {"routine", KEYWORD}, {"fallthru", KEYWORD}, {"`", '`'}
+},{}))
 
 -- returns text from file, else -1
 function read_file(sequence file_name)
@@ -240,7 +259,7 @@ map:map cur_map -- the current maps[] during parsing
 -- declare name, with name = "name" or {"name", pos, scope-start, [scope-end]}
 procedure declare(sequence name)
   object loc = ast_idx
-  
+
   if length(name) = 0 or length(name[1]) = 0 then
     return
   end if
@@ -400,12 +419,30 @@ procedure error(sequence msg)
   if ERROR_ABORT then abort(1) end if
 end procedure
 
+constant ALPHA = 1, NUM = 2, HEX = 4, WS = 8, PUNCT = 16
+sequence chars = repeat(0, 255)
+chars['A'..'Z'] = ALPHA
+chars['a'..'z'] = ALPHA
+chars['_'] = ALPHA + choose(OE4, NUM + HEX, 0)
+chars['0'..'9'] = NUM + HEX 
+chars['A'..'F'] += HEX
+chars['a'..'f'] += choose(OE4, HEX, 0)
+chars['\n'] = WS
+chars['\t'] = WS
+chars['\r'] = WS
+chars[' '] = WS
+chars['<'] = PUNCT
+chars['>'] = PUNCT
+chars['+'] = PUNCT
+chars['-'] = PUNCT
+chars['*'] = PUNCT
+chars['/'] = PUNCT
+chars['&'] = PUNCT
+chars['!'] = PUNCT
 
 
-procedure skip_whitespace()
-  integer c
-  if idx > length(text) then return end if
-  c = text[idx]
+procedure skip_hashbang()
+  integer c = text[idx]
   if idx = 1 and c = '#' and text[idx+1] = '!' then
     -- skip special comment for shell interpreter
     while not find(c, "\r\n") do
@@ -414,6 +451,12 @@ procedure skip_whitespace()
       c = text[idx]
     end while
   end if
+end procedure
+
+procedure skip_whitespace()
+  integer c
+  if idx > length(text) then return end if
+  c = text[idx]
   while find(c, "\t\r\n -") or (OE4 and c='/') do
     if c = '-' then
       if idx >= length(text) or text[idx+1] != '-' then 
@@ -442,34 +485,36 @@ procedure skip_whitespace()
 end procedure
 
 
-  
 function isalpha(integer c)
-  return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (OE4 and c = '_')
+  return and_bits(chars[c], ALPHA)
+  --return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (OE4 and c = '_')
 end function
 
 function isnum(integer c)
-  return (c >= '0' and c <= '9') or (OE4 and c = '_')
+  return and_bits(chars[c], NUM)
+  --return (c >= '0' and c <= '9') or (OE4 and c = '_')
 end function
 
 function isalphanum(integer c)
-  return isalpha(c) or isnum(c) or c = '_' or (OE4 and c = ':')
+  return and_bits(chars[c], ALPHA + NUM)  
+  --return isalpha(c) or isnum(c) or c = '_' or (OE4 and c = ':')
 end function
 
 function ishex(integer c)
-  return isnum(c) or (c >= 'A' and c <= 'F')
+  return and_bits(chars[c], HEX)
+  --return isnum(c) or (c >= 'A' and c <= 'F')
 end function
 
-function isanyhex(integer c)
-  return isnum(c) or (c >= 'A' and c <= 'F') or (c >= 'a' and c <= 'f')
+function ispunct(integer c)
+  return and_bits(chars[c], PUNCT)
 end function
-
 
 procedure num_token()
     -- parse new hex/binary/octal format
     if OE4 and idx <= length(text) and tok[1] = '0' and 
                idx = tok_idx+1 and find(text[idx], "xXbBoO") then
       idx += 1
-      while idx <= length(text) and isanyhex(text[idx]) do
+      while idx <= length(text) and ishex(text[idx]) do
         idx += 1
       end while
       return
@@ -522,7 +567,7 @@ function token(sequence try)
     elsif isnum(tok[1]) or tok[1] = '.' then
       num_token()
       tok = text[tok_idx..idx-1]
-    elsif idx <= length(text) and text[idx] = '=' and find(tok[1], "<>+-*/&!") then
+    elsif idx <= length(text) and text[idx] = '=' and ispunct(tok[1]) then
       tok &= '='
       idx += 1
     elsif tok[1] = '#' then
@@ -553,11 +598,15 @@ function identifier()
       return 0
     end if
   end if
-  return isalpha(tok[1]) and not find(tok, keywords)
+  -- note: namespace is the only keyword than can also be used as an identifier
+  return isalpha(tok[1]) and map:get(lookup_table, tok, NAMESPACE) = NAMESPACE
 end function
 
 function get_token()
   sequence result
+  if length(tok) = 0 then
+    token("")
+  end if
   result = tok
   tok = ""
   return result
@@ -714,11 +763,6 @@ global function parse_eu_cfg(sequence name, sequence mode = "interpret")
     return result
 end function
 
--- TODO: return a list of paths
-function locate_eu_cfg(sequence current_dir)
-    return {}
-end function
-
 -- returns a unique timestamp for filename, or -1 if doesn't exist or is a directory
 global function get_timestamp(sequence file_name)
   object info
@@ -748,7 +792,7 @@ global function get_timestamp(sequence file_name)
          info[D_YEAR]))))
 end function
 
--- returns index of new/existing cache entry, or -1 if file can't be opened
+-- returns index of new/existing cache entry
 function cache_entry(sequence filename)
   object tmp
   integer f
@@ -880,119 +924,133 @@ function to_number(sequence s)
   return x
 end function
 
+function variable_or_function_call()
+  sequence e = {VARIABLE, get_token(), tok_idx}
+  --printf(1, "identifier %s\n", {e[2]})
+  if token("(") then
+    -- function call
+    e[1] = FUNC
+    if not token(")") then
+      --printf(1, "function call %s\n", {e[2]})
+      integer ok = 1
+      while ok do
+        if OE4 and token(",") then
+          e = append(e, {DEFAULT})
+        else
+          e = append(e, expr(1))
+          ok = token(",")
+        end if
+      end while
+      expect(")")
+    end if
+  else 
+    while token("[") do
+      e = {SUBSCRIPT, e, expr(1)}
+      if token("..") then
+        e[1] = SLICE
+        e = append(e, expr(1))
+        expect("]")
+        exit
+      end if
+      expect("]")
+    end while
+  end if
+  return e
+end function
 
-constant 
-  precedence = {
-    {"and", "or", "xor"},
-    {"<=", ">=", "<", ">", "=", "!="},
-    {"&"},
-    {"+", "-"},
-    {"*", "/"}
-  },
-  precedence_ast = {
-    {AND, OR, XOR},
-    {LTE, GTE, LT, GT, EQ, NEQ},
-    {CAT},
-    {ADD, SUB},
-    {MUL, DIV}
-  }
-
+constant precedence = {
+  0, -- LOAD
+  0, -- LOADHI
+  0, -- MOV
+  4, -- ADD
+  0, -- ADDU8
+  5, -- MUL
+  5, -- DIV
+  0, -- REM
+  2, -- JL
+  2, -- JLE
+  2, -- JE
+  2, -- JNE
+  0, -- JMP
+  2, -- EQ
+  2, -- NEQ
+  2, -- LT
+  2, -- GTE
+  2, -- LTE
+  2, -- GT
+  0, -- QPRINT
+  4, -- SUB
+  0, -- SUBU8
+  0, -- NOT
+  0, -- NEG
+  1, -- AND
+  1, -- OR
+  1, -- XOR
+  3  -- CAT
+}
 
 function expr(integer depth)
-  sequence e
-  integer ok
+  sequence e, t
   
-  if depth <= length(precedence) then
-    e = expr(depth + 1)
-    ok = 1
-    while ok do
-      ok = 0
-      for i = 1 to length(precedence[depth]) do
-        if token(precedence[depth][i]) then
-          e = {precedence_ast[depth][i], e, expr(depth+1)}
-          ok = 1
-        end if
-      end for
-    end while
-    return e
-  end if
-
-  if token("not") then
-    e = {NOT, expr(depth)}
-  elsif identifier() then
-    e = {VARIABLE, get_token(), tok_idx}
-    --printf(1, "identifier %s\n", {e[2]})
-    if token("(") then
-      -- function call
-      e[1] = FUNC
-      if not token(")") then
-        --printf(1, "function call %s\n", {e[2]})
-        ok = 1
-        while ok do
-          if OE4 and token(",") then
-            e = append(e, {DEFAULT})
-          else
-            e = append(e, expr(1))
-            ok = token(",")
-          end if
-        end while
-        expect(")")
+  t = get_token()
+  switch t do
+    case "not" then
+      e = {NOT, expr(100)}
+    case "(" then
+      e = expr(1)
+      expect(")")
+    case "-" then
+      e = {NEG, expr(100)}
+      if length(e[2]) and e[2][1] = NUMBER then
+        e = {NUMBER, -e[2][2]}
       end if
-    else 
-      while token("[") do
-        e = {SUBSCRIPT, e, expr(1)}
-        if token("..") then
-          e[1] = SLICE
-          e = append(e, expr(1))
-          expect("]")
-          exit
-        end if
-        expect("]")
-      end while
-    end if
-
-  elsif token("(") then
-    e = expr(1)
-    expect(")")
-
-  elsif token("{") then
-    e = {SEQ}
-    if not token("}") then
-      e = append(e, expr(1))
-      while token(",") do
-        if OE4 and token("$") then exit end if
+    case "+" then
+      e = expr(100)
+    case "\"" then
+      e = {STRING, string_literal()}
+    case "`" then
+      e = {STRING, multiline_string_literal()}
+    case "'" then
+      e = {NUMBER, character_literal()}
+    case "$" then
+      e = {SEQ_LEN}
+    case "{" then
+      e = {SEQ}
+      if not token("}") then
         e = append(e, expr(1))
-      end while
-      expect("}")
-    end if
+        while token(",") do
+          if OE4 and token("$") then exit end if
+          e = append(e, expr(1))
+        end while
+        expect("}")
+      end if
 
-  elsif token("..") then
-    --error("expected an expression")
-    e = {SYNTAX_ERROR, tok_idx, length(tok), "expected an expression"}
-  elsif length(tok) and (isnum(tok[1]) or tok[1] = '#' or tok[1] = '.') then
-    e = {NUMBER, to_number(get_token())}
-  elsif token("-") then
-    e = {NEG, expr(depth)}
-    if length(e[2]) and e[2][1] = NUMBER then
-      e = {NUMBER, -e[2][2]}
-    end if
-  elsif token("+") then
-    e = expr(depth)
-  elsif token("\"") then
-    e = {STRING, string_literal()}
-  elsif OE4 and token("`") then
-    e = {STRING, multiline_string_literal()}
-  elsif token("'") then
-    e = {NUMBER, character_literal()}
-  elsif token("$") then
-    e = {SEQ_LEN}
-  else
-    --error("expected an expression  tok="&tok)
-    e = {SYNTAX_ERROR, tok_idx, length(tok), "expected an expression"}
-  end if
-  
-  --printf(1, "expr(%d): ", {depth})
-  --? e
+    case else
+      tok = t
+      if identifier() then
+        e = variable_or_function_call()
+      elsif length(tok) and (isnum(tok[1]) or tok[1] = '#' or tok[1] = '.') then
+        e = {NUMBER, to_number(get_token())}
+      else
+        return {SYNTAX_ERROR, tok_idx, length(tok), "expected an expression"}
+      end if
+  end switch
+
+  while 1 do
+    t = get_token()
+    switch t do
+    case "and","or","xor","<","<=",">",">=","=","!=","&","+","-","*","/" then
+      integer op = map:get(lookup_table, t)
+      if depth > precedence[op] then 
+        exit
+      end if
+      e = {op, e, expr(precedence[op])}
+    case else
+      exit
+    end switch
+  end while
+
+  tok = t
   return e
 end function
 
@@ -1274,13 +1332,6 @@ procedure with_or_without(integer mode)
   end if
 end procedure
 
--- returns a if test is true, otherwise b
-function choose(integer test, object a, object b)
-  if test then
-    return a
-  end if
-  return b
-end function
 
 constant NONE = 0
 
@@ -1314,310 +1365,307 @@ end function
 -- mode is NONE, FUNC_DEC, PROC_DECL, TYPE_DECL, IF, IFDEF, SWITCH, WHILE, FOR
 -- sub is 0, FUNC, PROC (used to determine if return needs expr)
 function statements(integer mode, integer sub)
-  sequence ast, s
+  sequence ast, s, t
   integer var_decl_ok, prefix, prefix_idx, saved_ifdef_ok
-
+  
+  s = {}
   ast = {idx, 0} -- scope-start, scope-end
-  var_decl_ok = OE4 or find(mode, {NONE,FUNC_DECL,PROC_DECL,TYPE_DECL})
+  var_decl_ok = OE4 or find(mode, {NONE,FUNC_DECL,PROC_DECL,TYPE_DECL})  
+  prefix = 0
   while idx <= length(text) do
-    if mode = IF and token("elsif") then
-        tok = "elsif"
+    t = get_token()
+    switch t do
+      case "elsif", "else" then
+        tok = t
         exit
-    elsif mode = IF and token("else") then
-        tok = "else"
+        
+      case "elsifdef", "elsedef" then
+        tok = t
         exit
-    elsif mode = IFDEF and token("elsifdef") then
-        tok = "elsifdef"
+        
+      case "case" then
+        tok = t
         exit
-    elsif mode = IFDEF and token("elsedef") then
-        tok = "elsedef"
-        exit
-    elsif mode = SWITCH and token("case") then
-        tok = "case"
-        exit
-    elsif mode = SWITCH and token("end") then
-        tok = "end"
-        exit
-    elsif token("end") then
-      if mode != NONE then
-        exit
-      end if
-      error("'end' was not expected here")
-    end if
-    prefix = 0
 
-    if token("global") then
-      if check_mode(mode, "global") then exit end if
-      prefix = GLOBAL
-      prefix_idx = tok_idx
-    elsif OE4 and token("public") then
-      if check_mode(mode, "public") then exit end if
-      prefix = PUBLIC
-      prefix_idx = tok_idx
-    elsif OE4 and token("export") then
-      if check_mode(mode, "export") then exit end if
-      prefix = EXPORT
-      prefix_idx = tok_idx
-    end if
+      case "end" then
+        if mode = SWITCH then
+          tok = t
+        end if
+        if mode != NONE then
+          exit
+        end if
 
-    s = {}
-    if token("while") then
-      s = {WHILE, expr(1)}
-      if OE4 and token("with") then
-        expect("entry")
-      elsif OE4 and token("entry") then
-        -- weird early syntax? appears in std includes
-      end if
-      if OE4 and token("label") then
-        if token("\"") and length(string_literal()) then
-            -- optional label string
+      case "global" then
+        prefix = GLOBAL
+        prefix_idx = tok_idx
+      case "public" then
+        prefix = PUBLIC
+        prefix_idx = tok_idx
+      case "export" then
+        prefix = EXPORT
+        prefix_idx = tok_idx
+      
+      case "while" then          
+        s = {WHILE, expr(1)}
+        if OE4 and token("with") then
+          expect("entry")
+        elsif OE4 and token("entry") then
+          -- weird early syntax? appears in std includes
+        end if
+        if OE4 and token("label") then
+          if token("\"") and length(string_literal()) then
+              -- optional label string
+          else
+              error("expected a label string")
+          end if
+        end if
+        expect("do")
+        s &= statements(WHILE, sub)
+        expect("while")
+
+      case "entry" then
+        s = {ENTRY}
+
+      case "label" then
+        if token("\"") then
+            s = {LABEL, string_literal()}-- optional label string
         else
             error("expected a label string")
         end if
-      end if
-      expect("do")
-      s &= statements(WHILE, sub)
-      expect("while")
 
-    elsif OE4 and token("entry") then
-      s = {ENTRY}
-    
-    elsif OE4 and token("label") then
-      if token("\"") then
-          s = {LABEL, string_literal()}-- optional label string
-      else
-          error("expected a label string")
-      end if
+      case "for" then
+        s = for_declaration()
+        s &= statements(FOR, sub)
+        -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
+        expect("for")
+      case "exit" then
+        -- FIXME: error if not in a loop
+        s = {EXIT}
+        if OE4 and token("\"") then
+          s &= {string_literal()}  -- optional label string
+        end if
 
-    elsif token("for") then
-      s = for_declaration()
-      s &= statements(FOR, sub)
-      -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
-      expect("for")
-
-    elsif token("exit") then
-      -- FIXME: error if not in a loop
-      s = {EXIT}
-      if OE4 and token("\"") then
-        s &= {string_literal()}  -- optional label string
-      end if
-
-    elsif token("if") then
-      s = {IF, expr(1)}
-      expect("then")
-      s = append(s, statements(IF, sub))
-      while token("elsif") do
-        s = append(s, expr(1))
+      case "if" then
+        s = {IF, expr(1)}
         expect("then")
         s = append(s, statements(IF, sub))
-      end while
-      if token("else") then
-        s = append(s, statements(ELSE, sub))
-      end if
-      expect("if")
-
-    elsif OE4 and token("ifdef") then
-      if not identifier() then error("expected an identifier") end if
-      saved_ifdef_ok = ifdef_ok
-      ifdef_ok = ifdef_reduce(expr(1)) and saved_ifdef_ok
-      expect("then")
-      s = choose(ifdef_ok, statements(IFDEF, sub), {})
-      while token("elsifdef") do
-        if not identifier() then error("expected an identifier") end if
-        ifdef_ok = ifdef_reduce(expr(1)) and length(s) = 0 and saved_ifdef_ok
-        expect("then")
-        s = choose(ifdef_ok, statements(IFDEF, sub), s)
-      end while
-      if token("elsedef") then
-        ifdef_ok = length(s) = 0 and saved_ifdef_ok
-        s = choose(ifdef_ok, statements(ELSEDEF, sub), s)
-      end if
-      expect("ifdef")
-      ifdef_ok = saved_ifdef_ok
-      if length(s) then
-        -- splice statements into ast
-        ast &= s[3..$]
-        s = {}
-      end if
-
-    elsif OE4 and token("switch") then
-      s = {SWITCH, expr(1), 0, ""}
-      if token("with") then
-        expect("fallthru")
-        s[3] = 1 -- enable fallthru
-      end if
-      if token("label") then
-        if token("\"") then
-            s[4] = string_literal()  -- optional label string
-        else
-            error("expected a label string")
-        end if
-      end if
-      expect("do")
-      while token("case") do
-        s = append(s, {})
-        if token("else") then
-          s = append(s, statements(SWITCH, sub)) -- case else statements
-          exit
-        else
-          while identifier() or find(tok[1], "\"'0123456789#") do
-            if token("\"") then
-              s[$] = append(s[$], '"'&string_literal()&'"') -- case values
-            elsif token("'") then
-              s[$] = append(s[$], '\''&character_literal()&'\'') -- case values
-            else
-              s[$] = append(s[$], get_token()) -- case values
-            end if
-            if not token(",") then exit end if
-          end while
+        while token("elsif") do
+          s = append(s, expr(1))
           expect("then")
-          s = append(s, statements(SWITCH, sub)) -- case statements
+          s = append(s, statements(IF, sub))
+        end while
+        if token("else") then
+          s = append(s, statements(ELSE, sub))
         end if
-      end while
-      expect("end")
-      expect("switch")
+        expect("if")
 
-    elsif OE4 and token("break") then
-      s = {BREAK}
-      if token("\"") then
-        s = append(s, string_literal()) -- optional label string
-      end if
-
-    elsif OE4 and token("continue") then
-      s = {CONTINUE}
-      if token("\"") then
-        s = append(s, string_literal()) -- optional label string
-      end if
-
-    elsif OE4 and token("goto") then
-      s = {GOTO}
-      expect("\"")
-      s = append(s, string_literal()) -- label string
-
-    elsif token("?") then
-      s = {QPRINT, expr(1)}
-      
-    elsif token("with") then
-      if check_mode(mode, "with") then exit end if
-      with_or_without(1)
-
-    elsif token("without") then
-      if check_mode(mode, "without") then exit end if
-      with_or_without(0)
-
-    elsif token("include") then
-      if check_mode(mode, "include") then exit end if
-      tok = include_filename()
-      s = {INCLUDE, -1, idx}
-      if ifdef_ok then
-        s[2] = include_file(tok)
-        if s[2] = -1 then
-          error("can't find '"&tok&"'")
+      case "ifdef" then
+        if not identifier() then error("expected an identifier") end if
+        saved_ifdef_ok = ifdef_ok
+        ifdef_ok = ifdef_reduce(expr(1)) and saved_ifdef_ok
+        expect("then")
+        s = choose(ifdef_ok, statements(IFDEF, sub), {})
+        while token("elsifdef") do
+          if not identifier() then error("expected an identifier") end if
+          ifdef_ok = ifdef_reduce(expr(1)) and length(s) = 0 and saved_ifdef_ok
+          expect("then")
+          s = choose(ifdef_ok, statements(IFDEF, sub), s)
+        end while
+        if token("elsedef") then
+          ifdef_ok = length(s) = 0 and saved_ifdef_ok
+          s = choose(ifdef_ok, statements(ELSEDEF, sub), s)
         end if
-      end if
-      tok = ""
-
-      if OE4 and token("as") then
-        if identifier() then 
-	  s = append(s, get_token())
-	  s[3] = tok_idx
-	else 
-	  error("expected an identifier")
-	end if
-      end if
-      if prefix = PUBLIC then
-        s = PUBLIC & s
-        prefix = 0
-      end if
-      if not ifdef_ok then
-        s = {}
-      end if
-
-    elsif token("constant") then
-      if check_mode(mode, "constant") then exit end if
-      s = constant_declaration()
-
-    elsif token("function") then
-      if check_mode(mode, "function") then exit end if
-      s = subroutine_declaration(FUNC_DECL)
-      s &= statements(FUNC_DECL, FUNC)
-      expect("function")
-
-    elsif token("procedure") then
-      if check_mode(mode, "procedure") then exit end if
-      s = subroutine_declaration(PROC_DECL)
-      s &= statements(PROC_DECL, PROC)
-      expect("procedure")
-
-    elsif token("type") then
-      if check_mode(mode, "type") then exit end if
-      s = subroutine_declaration(TYPE_DECL)
-      s &= statements(TYPE_DECL, FUNC)
-      expect("type")
-
-    elsif token("return") then
-      s = return_statement(sub)
-
-    elsif OE4 and token("enum") then
-      if check_mode(mode, "enum") then exit end if
-      s = enum_declaration()
-      
-    elsif OE4 and mode = NONE and length(ast) = 2 and token("namespace") then
-      if not identifier() then 
-        error("expected namespace identifier")
-      end if
-      s = {NAMESPACE, get_token()}
-
-    elsif OE4 and token("{") then
-      s = {SEQ_ASSIGN}
-      while identifier() do
-        s &= {get_token(), tok_idx}
-        if not token(",") then
-          exit
+        expect("ifdef")
+        ifdef_ok = saved_ifdef_ok
+        if length(s) then
+          -- splice statements into ast
+          ast &= s[3..$]
+          s = {}
         end if
-      end while
-      expect("}")
-      expect("=")
-      s &= {expr(1)}
-    
-    elsif identifier() then
-      if var_decl_ok then
-        s = variable_declaration()
-      end if
-      if length(s) = 0 then
-        s = assignment_or_procedure_call()
-      end if
-      if length(s) = 0 then
-        error("expected statement, not '"&tok&"'")
+
+      case "switch" then
+        s = {SWITCH, expr(1), 0, ""}
+        if token("with") then
+          expect("fallthru")
+          s[3] = 1 -- enable fallthru
+        end if
+        if token("label") then
+          if token("\"") then
+              s[4] = string_literal()  -- optional label string
+          else
+              error("expected a label string")
+          end if
+        end if
+        expect("do")
+        while token("case") do
+          s = append(s, {})
+          if token("else") then
+            s = append(s, statements(SWITCH, sub)) -- case else statements
+            exit
+          else
+            while identifier() or find(tok[1], "\"'0123456789#") do
+              if token("\"") then
+                s[$] = append(s[$], '"'&string_literal()&'"') -- case values
+              elsif token("'") then
+                s[$] = append(s[$], '\''&character_literal()&'\'') -- case values
+              else
+                s[$] = append(s[$], get_token()) -- case values
+              end if
+              if not token(",") then exit end if
+            end while
+            expect("then")
+            s = append(s, statements(SWITCH, sub)) -- case statements
+          end if
+        end while
+        expect("end")
+        expect("switch")
+
+      case "break" then
+        s = {BREAK}
+        if token("\"") then
+          s = append(s, string_literal()) -- optional label string
+        end if
+
+      case "continue" then
+        s = {CONTINUE}
+        if token("\"") then
+          s = append(s, string_literal()) -- optional label string
+        end if
+
+      case "goto" then
+        s = {GOTO}
+        expect("\"")
+        s = append(s, string_literal()) -- label string
+
+      case "?" then
+        s = {QPRINT, expr(1)}
+        
+      case "with" then
+        if check_mode(mode, "with") then exit end if
+        with_or_without(1)
+
+      case "without" then
+        if check_mode(mode, "without") then exit end if
+        with_or_without(0)
+
+      case "include" then
+        if check_mode(mode, "include") then exit end if
+        tok = include_filename()
+        s = {INCLUDE, -1, idx}
+        if ifdef_ok then
+          s[2] = include_file(tok)
+          if s[2] = -1 then
+            error("can't find '"&tok&"'")
+          end if
+        end if
         tok = ""
-      end if
 
-    elsif length(tok) then
-      error("expected statement, not '"&tok&"'")
-      tok = ""
-    end if
-    if prefix then
-      if (length(s) > 0 and find(s[1], {VAR_DECL, CONST_DECL, ENUM_DECL, 
-                                        PROC_DECL, FUNC_DECL, TYPE_DECL})) then
-        s = prefix & s
-      else
-        tok_idx = prefix_idx
-        error("scope prefix wasn't expected here")
-        tok = ""
-      end if
-    end if
+        if OE4 and token("as") then
+          if identifier() then 
+            s = append(s, get_token())
+            s[3] = tok_idx
+          else 
+            error("expected an identifier")
+          end if
+        end if
+        if prefix = PUBLIC then
+          s = PUBLIC & s
+          prefix = 0
+        end if
+        if not ifdef_ok then
+          s = {}
+        end if
 
+      case "constant" then
+        if check_mode(mode, "constant") then exit end if
+        s = constant_declaration()
+
+      case "function" then
+        if check_mode(mode, "function") then exit end if
+        s = subroutine_declaration(FUNC_DECL)
+        s &= statements(FUNC_DECL, FUNC)
+        expect("function")
+
+      case "procedure" then
+        if check_mode(mode, "procedure") then exit end if
+        s = subroutine_declaration(PROC_DECL)
+        s &= statements(PROC_DECL, PROC)
+        expect("procedure")
+
+      case "type" then
+        if check_mode(mode, "type") then exit end if
+        s = subroutine_declaration(TYPE_DECL)
+        s &= statements(TYPE_DECL, FUNC)
+        expect("type")
+
+      case "return" then
+        s = return_statement(sub)
+
+      case "enum" then
+        if check_mode(mode, "enum") then exit end if
+        s = enum_declaration()
+        
+      case "namespace" then
+        if mode != NONE or length(ast) > 2 then
+          error("namespace must be the first statement")
+        elsif not identifier() then 
+          error("expected namespace identifier")
+        end if
+        s = {NAMESPACE, get_token()}
+
+      case "{" then
+        s = {SEQ_ASSIGN}
+        while identifier() do
+          s &= {get_token(), tok_idx}
+          if not token(",") then
+            exit
+          end if
+        end while
+        expect("}")
+        expect("=")
+        s &= {expr(1)}
+      
+      case else
+        tok = t
+        if identifier() then
+          if var_decl_ok then
+            s = variable_declaration()
+          end if
+          if length(s) = 0 then
+            s = assignment_or_procedure_call()
+          end if
+          if length(s) = 0 then
+            error("expected statement, not '"&tok&"'")
+            tok = ""
+          end if
+
+        elsif length(tok) then
+          error("expected statement, not '"&tok&"'")
+          tok = ""
+        end if
+    end switch
+        
     if length(s) then
+      if prefix then
+        if (length(s) > 0 and find(s[1], {VAR_DECL, CONST_DECL, ENUM_DECL, 
+                                          PROC_DECL, FUNC_DECL, TYPE_DECL})) then
+          s = prefix & s
+          prefix = 0
+        else
+          tok_idx = prefix_idx
+          error("scope prefix wasn't expected here")
+          tok = ""
+        end if
+      end if
       ast = append(ast, s)
+      s = {}
     end if
     if length(errors) then
       ast &= errors
       errors = {}
     end if
+
   end while
-  if mode != NONE and idx > length(text) then
-    error("unexpected end of input")
-  end if
   ast[2] = idx -- scope-end
   return ast
 end function
@@ -1638,6 +1686,7 @@ global function parse(sequence source_text, sequence file_name)
   ast_idx = 3
   cur_map = maps[cache_idx]
   map:clear(cur_map)
+  skip_hashbang()
   ast = statements(NONE, 0)
   declare_ast(ast, 3, length(text), 1)
   ast[1..2] = cache[cache_idx][1..2]
@@ -2458,7 +2507,7 @@ function check_name(sequence name, integer pos, sequence decls)
         ns = 0 -- special builtins namespace
       else
         -- search includes for a matching namespace
-        for i = 2 to length(cur_ast)  do
+        for i = 1 to length(cur_ast)  do
           integer cache_idx = cur_ast[i]
           ast = cache[cache_idx]
           -- does it have a matching namespace at the top
@@ -2599,6 +2648,7 @@ procedure check_redefinition(sequence name, integer pos)
           printf(1, "%s %d %d\n", {name, s[n+1], d})
           ? entries
         elsif n+3 <= length(s) and s[n+3] < pos then
+          printf(1, "%s at %d with %d\n", {name, pos, s[n+3]})
           attempt_redefine(name, pos)
           return
         end if
@@ -2814,3 +2864,4 @@ global function parse_errors(sequence source_text, sequence file_name)
   check_result = {}
   return result
 end function
+
