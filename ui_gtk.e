@@ -628,23 +628,33 @@ function OptionsIndent(atom handle)
     return 0
 end function
 
--- runs the cmd, maybe in a terminal emulator
-procedure Run(sequence cmd)
+-- runs the script, maybe in a terminal emulator
+procedure Run(sequence script)
+    sequence tmp_name = sprintf("/tmp/wee_run_%d.sh", {rand(1000000)})
+    sequence cmd = tmp_name
     if length(terminal_program) then
         if run_waitkey then
+	    -- need bash for "read -n"
+	    script = "#!/bin/bash\n" & script
             -- don't show "Press Enter" on errors
-            cmd = match_replace("eui ", cmd, "eui -batch ")
-            cmd &= " ; read -p \"\nPress any key...\" -n1 -s"
+            script = match_replace("eui ", script, "eui -batch ")
+            script &= "\nread -n1 -s -p \"Press any key...\"\n"
         end if
-        if run_waitkey or ends(" -e", terminal_program) then
-            cmd = quote_spaces(cmd)
-        end if
-        cmd = terminal_program & ' ' & cmd
+        cmd = terminal_program & ' ' & tmp_name
     end if
+    -- write script file
+    if write_file(tmp_name, script) = -1 then
+        printf(2, "Failed to write file %s\n", {tmp_name})
+        return
+    end if
+    -- remove script after running it
+    cmd &= "; rm " & tmp_name
     if run_background then
-        cmd &= " &"
+	-- put the command in background
+        cmd = "(" & cmd & ") &"
     end if
-    system(cmd)
+    -- make script executable and run it
+    system("chmod +x " & tmp_name & "; " & cmd)
 end procedure
 
 function RunStart(atom ctl)
@@ -656,7 +666,7 @@ function RunStart(atom ctl)
     end if
 
     run_file_name = file_name
-    chdir(dirname(run_file_name))
+    cmd = "cd " & dirname(run_file_name) & "\n"
     if match("Start", lbl) = 1 then
 	reset_ex_err()
 	cmd &= get_eu_bin(interpreter) & ' ' & quote_spaces(file_name)
@@ -672,26 +682,22 @@ function RunStart(atom ctl)
 	check_ex_err()
     elsif equal(lbl, "Bind") then
 	cmd &= get_eu_bin("eubind") & ' ' & quote_spaces(file_name)
-	if system_exec("which upx") = 0 then
-	    cmd &= "; upx " & filebase(file_name)
-	end if
+	cmd &= "\nwhich upx && upx " & filebase(file_name)
 	if run_testrun then
-	    cmd &= " && ./" & filebase(file_name)
+	    cmd &= "\n./" & filebase(file_name)
 	end if
 	Run(cmd)
     elsif equal(lbl, "Shroud") then
 	cmd &= get_eu_bin("eushroud") & ' ' & quote_spaces(file_name)
 	if run_testrun then
-	    cmd &= " && ./" & filebase(file_name) & ".il"
+	    cmd &= "\n./" & filebase(file_name) & ".il"
 	end if
 	Run(cmd)
     elsif equal(lbl, "Translate and Compile") then
 	cmd &= get_eu_bin("euc") & ' ' & quote_spaces(file_name)
-	if system_exec("which upx") = 0 then
-	    cmd &= " && upx " & filebase(file_name)
-	end if
+	cmd &= "\nwhich upx && upx " & filebase(file_name)
 	if run_testrun then
-	    cmd &= " && ./" & filebase(file_name)
+	    cmd &= "\n./" & filebase(file_name)
 	end if
 	Run(cmd)
     elsif equal(lbl, "Run Terminal Emulator") then

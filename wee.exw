@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.41"
+  version = "0.42"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -88,6 +88,7 @@ global constant
 --  Error indicators and mouse dwell message
 --  Add namespaces to auto-complete
 --  Improved parsing speed
+--  Run commands in a temporary script (Linux/OSX)
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
@@ -2569,7 +2570,7 @@ end function
 global function quote_spaces(sequence text)
     if find(' ', text) then
 	for i = length(text) to 1 by -1 do
-	    if text[i] = '"' then
+	    if text[i] = '"' or text[i] = '\\' then
 	        text = text[1..i-1] & '\\' & text[i..$]
 	    end if
 	end for
