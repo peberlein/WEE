@@ -635,10 +635,10 @@ procedure Run(sequence script)
     if length(terminal_program) then
         if run_waitkey then
 	    -- need bash for "read -n"
-	    script = "#!/bin/bash\n" & script
-            -- don't show "Press Enter" on errors
-            script = match_replace("eui ", script, "eui -batch ")
-            script &= "\nread -n1 -s -p \"Press any key...\"\n"
+	    script = "#!/bin/bash\n" &
+		-- don't show "Press Enter" on errors
+		match_replace("eui ", script, "eui -batch ") &
+		"\nread -n1 -s -p \"Press any key...\"\n"
         end if
         cmd = terminal_program & ' ' & tmp_name
     end if
@@ -701,7 +701,7 @@ function RunStart(atom ctl)
 	end if
 	Run(cmd)
     elsif equal(lbl, "Run Terminal Emulator") then
-	Run("$SHELL")
+	Run(cmd & "$SHELL")
     else
 	crash("Unable to get menu label")
     end if
