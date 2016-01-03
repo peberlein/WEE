@@ -30,6 +30,7 @@ files = {
  {"scintilla/scintilla32.so", 0, 0, 32, LINUX},
  {"scintilla/scintilla64.so", 0, 0, 64, LINUX},
  {"scintilla/scintillaOSX.dylib", 0, 0, 64, OSX},
+ {"scintilla/scintilla32armhf.so", 0, 0, 32, LINUX},
  {"scintilla/License.txt", 0, 0, 0}
 }
 

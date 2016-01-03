@@ -1,14 +1,14 @@
 {
   {
     "wee.exw",
-    273638644,
-    "d914894452",
+    968510246,
+    "9414ec48b6",
     0
   },
   {
     "scintilla.e",
-    350515402,
-    "fa17cbf00c",
+    13846666,
+    "e3cc5860ac",
     0
   },
   {
@@ -133,6 +133,13 @@
     "b6035dbac0",
     64,
     4
+  },
+  {
+    "scintilla/scintilla32armhf.so",
+    572289041,
+    "e3cc5860ac",
+    32,
+    3
   },
   {
     "scintilla/License.txt",
