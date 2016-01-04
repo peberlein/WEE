@@ -2243,6 +2243,7 @@ procedure do_auto_indent()
 	end_pos = get_line_end_position(line + 1)
 	ssm(SCI_GOTOPOS, end_pos)
         expand_line = -1
+        insert_chars = {}
         return
     end if
     expand_line = -1
