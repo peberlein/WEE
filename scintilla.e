@@ -22,6 +22,8 @@ elsedef
     dll = "scintilla/scintillaOSX.dylib"
   elsifdef BITS64 then
     dll = "scintilla/scintilla64.so"
+  elsifdef ARM then
+    dll = "scintilla/scintilla32armhf.so"
   elsedef
     dll = "scintilla/scintilla32.so"
   end ifdef

@@ -1,6 +1,6 @@
 -- Wee Euphoria Editor
 -- 
--- Copyright (c) 1998-2015  Pete Eberlein
+-- Copyright (c) 1998-2016  Pete Eberlein
 -- 
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -23,7 +23,7 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.43"
+  version = "0.44"
 
 -- revision notes:
 --  added: syntax coloring!
@@ -89,6 +89,7 @@ global constant
 --  Add namespaces to auto-complete
 --  Improved parsing speed
 --  Run commands in a temporary script (Linux/OSX)
+--  ARMHF scintilla library (tested on Raspberry PI 2)
 
 --  bugs fixed:
 --    ViewDeclaration wrong cursor pos
