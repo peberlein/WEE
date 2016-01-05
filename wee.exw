@@ -619,7 +619,6 @@ global procedure init_edit(atom edit)
     
     hedit = edit
     
-    --? {hedit, ssm(SCI_GETIDENTIFIER, 0, 0)}
     font = font_name
     ifdef not WINDOWS then
 	font = sreplace(font, "Medium", "")
@@ -784,7 +783,6 @@ procedure auto_detect_indent(sequence text)
             i += 1
         end while
         
-        --printf(1, "%d: %s", {last, text[start..i]})
         start = i+1
         
     end while
@@ -1396,8 +1394,7 @@ global procedure check_externally_modified_tabs()
         if length(tab_file_names[i]) and tab_timestamps[i] != -1 then
             ts = get_timestamp(tab_file_names[i])
             if ts != tab_timestamps[i] then
-	          --? {ts, tab_timestamps[i]}
-                 -- clear the timestamp here so that don't repeat when the MessageBox retriggers WM_SETFOCUS
+		-- clear the timestamp here so that don't repeat when the MessageBox retriggers WM_SETFOCUS
 		tab_timestamps[i] = -1
                 if ui_message_box_yes_no(window_title, tab_file_names[i] & 
                                          "\n\nThis file has been modified by another application.  Do you want to reload it?") then
@@ -1891,7 +1888,6 @@ global procedure check_ex_err()
   if length(run_file_name) = 0 then return end if
 
   ts = get_timestamp(ex_err_name)
---printf(1, "%s %d %d\n", {ex_err_name, ts, ex_err_timestamp})
   if ts > ex_err_timestamp then
     run_file_name = ""
     ui_view_error()
@@ -1978,7 +1974,6 @@ global procedure view_completions()
     if length(word) < 4 then 
 	return
     end if
-    --printf(1, "word=%s namespace=%s pos=%d end=%d\n", word)
     ssm(SCI_SETSEL, word[4], word[4])
     name_space = word[2]
     word = word[1]
@@ -2064,7 +2059,6 @@ global procedure view_subroutine_arguments()
         decls = decls[$] -- overloaded?  use the last one
         if calltip_save != -1 then
 	    calltip_stack &= {calltip_save, calltip_args, calltip_text}
-	    --? calltip_stack
         end if
         text = decls[1] & " " & decls[2] & "("
 	calltip_args = {}
@@ -2334,7 +2328,6 @@ procedure auto_complete_selection(integer pos, sequence text)
 	insert_line = -1
 	for i = 0 to 100 do
 	    line = ltrim(get_line(i))
-	    --printf(1, "%d %d %s\n", insert_line
 	    if length(line) >= 8 and equal(line[1..8], "include ") then
 	        insert_line = i+1
 	    elsif insert_line != -1 then
@@ -2387,7 +2380,6 @@ procedure insert_pair()
     for i = pos+1 to get_line_end_position(-1) do
 	ch = ssm(SCI_GETCHARAT, i)
 	style = ssm(SCI_GETSTYLEAT, i)
-	--? {ch, style}
 	if find(ch, ",)}]\r\n+-*/=!<>#&\0") or style = SCE_LUA_WORD then
 	    exit
 	elsif ch != ' ' and ch != '\t' then
@@ -2562,7 +2554,6 @@ global function get_eu_bin(sequence bin)
 	    end ifdef
 	    exe = canonical_path(exe)
 	    if file_exists(exe) then
-		--printf(1, "Using %s\n", {exe})
 		return exe
 	    end if
 	end for
@@ -2590,7 +2581,6 @@ end function
 
 procedure log_notification(atom notification)
   integer code, pos, ch, modifiers
-  --? peek4u({notification, 24})
   code = peek4u(notification+8)
   pos = peek4u(notification+12)
   if code = SCN_STYLENEEDED then
@@ -2694,16 +2684,13 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
   if notification = 0 then return 0 end if
   --log_notification(notification)
   code = peek4u(notification+NOTIFICATION_CODE)
-  --? {hedit, data, notification, userdata, code}
   if code = SCN_UPDATEUI then
     updated = peek4u(notification+NOTIFICATION_UPDATED)
-    --? {updated, insert_chars, last_deleted_char}
     if ssm(SCI_CALLTIPACTIVE) then
         update_subroutine_arguments()
     end if
     if and_bits(updated, SC_UPDATE_SELECTION+SC_UPDATE_CONTENT) = SC_UPDATE_SELECTION then
 	-- selection moved and content was not changed
-	--? {updated, insert_chars}
 	insert_chars = ""
     elsif last_deleted_char then
 	delete_pair()
@@ -2742,7 +2729,6 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
 
   elsif code = SCN_CHARADDED then
     ch = peek4s(notification+NOTIFICATION_CH)
-    --printf(1, "SCN_CHARADDED ch=%d '%s'\n", {ch, {ch}})
 
     if length(insert_chars) and ch = insert_chars[$] then
 	-- the user retyped the insert character, so delete it
@@ -2779,7 +2765,6 @@ global function sci_notify(atom hedit, atom data, atom notification, atom userda
     if and_bits(modifiers, SC_MOD_BEFOREDELETE) then
 	pos = peek4s(notification+NOTIFICATION_POS)
 	len = peek4u(notification+NOTIFICATION_LENGTH)
-	--? {modifiers, pos, len}
 	if len = 1 then
 	    last_deleted_char = ssm(SCI_GETCHARAT, pos)
 	end if
