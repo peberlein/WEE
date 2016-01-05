@@ -91,16 +91,16 @@ global constant
   CAT = 28    -- {CAT, expr, expr}
 
 global constant
-    DECL_ATOM = 1,
-    DECL_CONSTANT = 2,
-    DECL_ENUM = 3,
-    DECL_FUNCTION = 4,
-    DECL_INTEGER = 5,
-    DECL_NAMESPACE = 6,
-    DECL_OBJECT = 7,
-    DECL_PROCEDURE = 8,
-    DECL_SEQUENCE = 9,
-    DECL_TYPE = 10
+  DECL_ATOM = 1,
+  DECL_CONSTANT = 2,
+  DECL_ENUM = 3,
+  DECL_FUNCTION = 4,
+  DECL_INTEGER = 5,
+  DECL_NAMESPACE = 6,
+  DECL_OBJECT = 7,
+  DECL_PROCEDURE = 8,
+  DECL_SEQUENCE = 9,
+  DECL_TYPE = 10
 
 -- ast node types that are not opcodes
 global constant
@@ -512,7 +512,7 @@ end function
 
 procedure num_token()
     -- parse new hex/binary/octal format
-    if OE4 and idx <= length(text) and tok[1] = '0' and 
+    if OE4 and idx <= length(text) and text[tok_idx] = '0' and 
                idx = tok_idx+1 and find(text[idx], "xXbBoO") then
       idx += 1
       while idx <= length(text) and ishex(text[idx]) do
@@ -522,7 +522,7 @@ procedure num_token()
     end if
 
     -- parse digits if not starting with '.'
-    if tok[1] != '.' then
+    if text[tok_idx] != '.' then
       while idx <= length(text) and isnum(text[idx]) do
         idx += 1
       end while
@@ -545,9 +545,6 @@ procedure num_token()
     end if
 end procedure
 
-integer print_token
-print_token = 0
-
 function token(sequence try)
   if length(tok) = 0 then
     skip_whitespace()
@@ -555,29 +552,34 @@ function token(sequence try)
       return equal(tok, try)
     end if
     tok_idx = idx
-    tok = {text[idx]}
     idx += 1
-    if isalpha(tok[1]) then
-      while idx <= length(text) and (isalphanum(text[idx]) or (OE4 and text[idx] = ':')) do
-        idx += 1
-      end while
-      tok = text[tok_idx..idx-1]
-    elsif tok[1] = '.' and idx <= length(text) and text[idx] = '.' then
-      tok &= '.'
-      idx += 1
-    elsif isnum(tok[1]) or tok[1] = '.' then
-      num_token()
-      tok = text[tok_idx..idx-1]
-    elsif idx <= length(text) and text[idx] = '=' and ispunct(tok[1]) then
-      tok &= '='
-      idx += 1
-    elsif tok[1] = '#' then
-      while idx <= length(text) and ishex(text[idx]) do
-        idx += 1
-      end while
-      tok = text[tok_idx..idx-1]
-    end if
-    --if print_token then printf(1, "token: %s\n", {tok}) end if
+    switch text[tok_idx] do
+      case 'a','b','c','d','e','f','g','h','i','j','k','l','m','n',
+           'o','p','q','r','s','t','u','v','w','x','y','z','_',
+           'A','B','C','D','E','F','G','H','I','J','K','L','M','N',
+           'O','P','Q','R','S','T','U','V','W','X','Y','Z' then
+        while idx <= length(text) and (isalphanum(text[idx]) or (OE4 and text[idx] = ':')) do
+          idx += 1
+        end while
+      case '0','1','2','3','4','5','6','7','8','9' then
+        num_token()
+      case '.' then
+        if idx <= length(text) and text[idx] = '.' then
+          idx += 1
+        else
+          num_token()
+        end if
+      case '+','-','*','/','&','<','>','!' then
+        if idx <= length(text) and text[idx] = '=' then
+          idx += 1
+        end if
+      case '#' then
+        while idx <= length(text) and ishex(text[idx]) do
+          idx += 1
+        end while
+    end switch
+    tok = text[tok_idx..idx-1]
+    -- printf(1, "token: %s\n", {tok})
   end if
   if equal(tok, try) then
     tok = ""
@@ -1461,13 +1463,11 @@ function statements(integer mode, integer sub)
         expect("if")
 
       case "ifdef" then
-        if not identifier() then error("expected an identifier") end if
         saved_ifdef_ok = ifdef_ok
         ifdef_ok = ifdef_reduce(expr(1)) and saved_ifdef_ok
         expect("then")
         s = choose(ifdef_ok, statements(IFDEF, sub), {})
         while token("elsifdef") do
-          if not identifier() then error("expected an identifier") end if
           ifdef_ok = ifdef_reduce(expr(1)) and length(s) = 0 and saved_ifdef_ok
           expect("then")
           s = choose(ifdef_ok, statements(IFDEF, sub), s)
@@ -2852,7 +2852,9 @@ global function parse_errors(sequence source_text, sequence file_name)
   sequence result, ast
 
   file_name = canonical_path(file_name, 0, CORRECT)
+--atom t0 = time()
   ast = parse(source_text, file_name)
+--? time() - t0
   cache_idx = cache_entry(file_name)
   cur_ast = {}
   cur_scope = {}
