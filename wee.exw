@@ -1145,6 +1145,8 @@ global procedure new_tab(sequence file_name)
     end if
     select_tab(tab)
     init_edit(hedit)
+    ssm(SCI_SETINDENT, 4)
+    ssm(SCI_SETUSETABS, 0)
 end procedure
 
 global procedure close_tab()
