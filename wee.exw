@@ -1532,7 +1532,7 @@ global procedure context_help()
 
     -- load the search.dat file
     if length(search_dat) = 0 then
-        sequence paths = include_paths(0)
+        sequence paths = include_search_paths
         for i = 1 to length(paths) do
 	    path = paths[i]
 	    if path[$] = SLASH then
