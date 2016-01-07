@@ -56,8 +56,9 @@ constant
     Options_Indent = 609,
     Options_ErrorIndicators = 610,
     Help_About = 701,
-    Help_Tutorial = 702,
-    Help_Context = 703,
+    Help_ReleaseNotes = 702,
+    Help_Tutorial = 703,
+    Help_Context = 704,
     Select_Tab = 801,
     Select_Next_Tab = 811,
     Select_Prev_Tab = 812
@@ -1414,6 +1415,9 @@ global function WndProc(atom hwnd, atom iMsg, atom wParam, atom lParam)
 	    elsif wParam = Help_Tutorial then
 		open_tutorial()
 		return rc
+	    elsif wParam = Help_ReleaseNotes then
+		release_notes()
+	        return rc
 	    elsif wParam = Help_Context then
 		context_help()
 		return rc
@@ -1719,6 +1723,8 @@ global procedure ui_main()
     hhelpmenu = c_func(CreateMenu, {})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Help_About, alloc_string("&About...")})
+    junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
+	Help_ReleaseNotes, alloc_string("&Release Notes...")})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 
 	Help_Tutorial, alloc_string("&Tutorial")})
     junk = c_func(AppendMenu, {hhelpmenu, MF_BYPOSITION + MF_STRING + MF_ENABLED, 

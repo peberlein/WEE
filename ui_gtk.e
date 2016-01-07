@@ -885,6 +885,11 @@ function HelpAbout()
   return 0
 end function
 
+function HelpReleaseNotes()
+  release_notes()
+  return 0
+end function
+
 function HelpTutorial()
   open_tutorial()
   return 0
@@ -1080,6 +1085,7 @@ set(menuOptions, "submenu", optionsmenu)
 
 add(helpmenu, {
   createmenuitem("About...", "HelpAbout"),
+  createmenuitem("Release Notes...", "HelpReleaseNotes"),
   createmenuitem("Tutorial", "HelpTutorial"),
   createmenuitem("Help", "HelpHelp", "F1")
   })

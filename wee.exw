@@ -23,109 +23,195 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.44"
+  version = "0.44",
+  changelog = `
 
--- revision notes:
---  added: syntax coloring!
---  bug fixed: save mode changed to "wb" (Thanks Lucius)
---  added: replace all
---  added: goto error
---  fixed: hotkeys
---  added: cursor position
---  added: recent files list
---  added: saving window pos+size and recent files to "wee_conf.txt"
---  added: subroutines list dialog (F2)
---  added: choose font dialog (we suggest "Consolas" 11pt)
---  added: tabs (can be selected using Alt+1..9)
---  added: watch tabs for changes to files and ex.err
---  added: goto declaration (Ctrl+F2) and view completions (Ctrl+Space)
---  added: Scintilla edit control (using Lua lexer :/)
---  added: view completions will search std includes
---  added: Search->Find will remember last phrase
---  added: auto expansions for "if" "while" "for" and subroutines (thanks dcuny)
---  added: auto indent newlines
---  added: type ':' to autocomplete a namespace
---  added: auto-complete with include puts it near top of file
---  added: auto insert closing characters for ( { [ " '
---  added: typing '(' after a subroutine will popup hints
---  added: hardcoded list of builtins and arguments in get_subroutine_arguents()
---  updated: ex.err dialog with buttons: <cancel> <open ex.err> <goto error>
---    and listbox with call stack or multiple undeclared references
---  updated: indent/unindent selection with tab/shift-tab
---  Linux/Mac (using EuGTK)
---  store syntax highlighting colors in wee.conf
---  context-sensitive help (hit F1 on a word)
---  run with arguments (Shift+F5)
---  move options to separate menu
---  option to sort subroutines in View Subroutines dialog
---  added Bind, Shroud and Translate to Run menu
---  dialog to change syntax highlighting colors
---  popup menu on tab control
---  drag'n'drop files
---  fill in Find dialog with current selection
---  allow search backward in Find and Replace dialogs
---  quick search Find Next (Ctrl+G) Find Previous (Shift+Ctrl+G)
---  comment/uncomment selected lines (Ctrl+M)
---  go back (Esc) after doing View Declaration or Goto Error
---    if there is a selection, it will be deselected first
---  line wrap option
---  autocompletion list shows icons for each type of declaration
---  Run menu choose which intepreter to use
---  Run will choose interpreter location based on eu.cfg include path
---  Option to reopen tabs next time
---  Options to disable auto-completing statements or braces
---  Auto-completion and syntax coloring disabled for non-Euphoria files
---  Bold options for syntax coloring
---  64-bit supported on Windows (joining Linux/OSX)
---  select next tab (Ctrl+Tab) and previous tab (Shift+Ctrl+Tab)
---  select next/prev tab using mouse wheel over tabs
---  close tab with middle mouse button
---  Windows icon built-in
---  Run Set Interpreter now lets you override the interpreter used
---  Filename first in window title
---  Tabs now have mouseover tooltip with full path (win32: only the active tab)
---  Adding run options: background and test run (thanks KDR)
---  Error indicators and mouse dwell message
---  Add namespaces to auto-complete
---  Improved parsing speed
---  Run commands in a temporary script (Linux/OSX)
---  ARMHF scintilla library (tested on Raspberry PI 2)
+Version 0.45
+ - Help->Release Notes to view changelog
+ - Bug fix: use EUDIR when locating help index
+ - Bug fix: 'not' in ifdefs was flagged as an error
+ - Bug fix: set default indentation for new tabs
+ - Bug fix: clear insert chars after auto-indent
 
---  bugs fixed:
---    ViewDeclaration wrong cursor pos
---    audible ding when pressing Alt+1..9
---    ViewCompletions on whitespace crash
---    parser updates cache for modified include files
---    files are now opened in binary mode since scintilla can handle any line endings
---    fixed tab names not updating when save-as
---    fixed "too many open files" error, wasn't closing files in view_error function
---    fixed parsing ifdefs
---    fixed crash after changing font (thanks euphoric)
---    reloading a file that is modified externally loads into wrong tab (thanks dcuny)
---    autocomplete avoids activating inside comments and strings
---    fix weirdness with deletion autoinserted closing characters
---    fix calltip popup displaying incorrect highlight after first time
---    fix EOL mode on Linux/OSX
---    completions are now sorted
---    switch/case syntax highlight and autocomplete were missing
---    shift-ctrl-Z does redo
---    better at locating scintilla library when bound/compiled
---    run/bind/shroud/translate didn't like spaces in the path
---    preserve selection during comment/uncomment lines
---    fix crash + lose wee_conf when closing on Windows with reopen_tabs=1
---    fix crash when typing character literals with calltip active
---    GTK version: close tab didn't prompt to save modified files
---    incorrect tab or new tab selected when reopening tabs
---    Cursor color changes based on background (thanks Andreas)
---    String color not loaded from config file (thanks Andreas)
---    Fix bold options reversed for String and Number
---    No message when opening saved tab whose file no longer exists
---    Fix crash on parsing "-type ..." (thanks dcuny)
---    Allow quoted include filename (thanks dcuny)
---    Crash when interpreter list is empty (thanks Irv)
---    Crash on error while saving (thanks sdpringle)
---    Crash on fail to open file during parsing (thanks sdpringle)
---    Fixed crashes on auto-completion and error parsing (thanks dcuny)
+Version 0.44
+ - ARM scintilla library (tested on Raspberry Pi 2)
+
+Version 0.43
+ - Bug fixed: open shell in current directory (UNIX)
+
+Version 0.42
+ - Run commands in a temporary script (Linux/OSX)
+
+Version 0.41
+ - Improved parsing speed
+
+Version 0.40
+ - Bug fixed: crashes on auto-completion and error parsing (thanks dcuny)
+
+Version 0.39
+ - Error indicators and mouse dwell message
+ - Add namespaces to auto-complete (with 'n' icon)
+ - Add EUDIR support
+ - Bug fixed: mousewheel tab change on Windows
+
+Version 0.38
+ - Adding run options: background and test run (thanks KDR)
+ - Bug fixed: crash on fail to open file during parsing (thanks sdpringle)
+ - Bug fixed: crash on error while saving (thanks sdpringle)
+
+Version 0.37
+ - Filename first in window title
+ - Tabs now have mouseover tooltip with full path (win32: only the active tab)
+ - Bug fixed: crash when interpreter list is empty (thanks Irv)
+
+Version 0.36
+ - Windows icon built-in
+ - Run Set Interpreter now lets you override the interpreter used
+
+Version 0.35
+ - Allow quoted include filename (thanks dcuny)
+
+Version 0.34
+ - Bug fix: crash on parsing "-type ..." (thanks dcuny)
+
+Version 0.33
+ - select next/prev tab using mouse wheel over tabs
+ - close tab with middle mouse button
+ - select next tab (Ctrl+Tab) and previous tab (Shift+Ctrl+Tab)
+
+Version 0.32
+ - 64-bit supported on Windows (joining Linux/OSX)
+ - Bug fix: no message when opening saved tab whose file no longer exists
+
+Version 0.31
+ - Bug fix: cursor color changes based on background (thanks Andreas)
+ - Bug fix: string color not loaded from config file (thanks Andreas)
+ - Bug fix: bold options reversed for String and Number
+ - Bug fix: incorrect tab or new tab selected when reopening tabs
+
+Version 0.30
+ - Options to disable auto-completing statements or braces
+ - Auto-completion and syntax coloring disabled for non-Euphoria files
+ - Bold options for syntax coloring
+ - Bug fix: crash when typing character literals with calltip active
+ - Bug fix: GTK version: close tab didn't prompt to save modified files
+ 
+Version 0.29
+ - Bug fix: crash + lose wee_conf when closing on Windows with reopen_tabs=1
+
+Version 0.28
+ - Run menu choose which intepreter to use
+ - Run will choose interpreter location (based on eu.cfg include path)
+ - Option to reopen tabs next time
+
+Version 0.27
+ - autocompletion list shows icons for each type of declaration
+
+Version 0.26
+ - line wrap option
+ - Bug fix: preserve selection during comment/uncomment lines
+
+Version 0.25
+ - fill in Find dialog with current selection
+ - allow search backward in Find and Replace dialogs
+ - quick search Find Next (Ctrl+G) Find Previous (Shift+Ctrl+G)
+ - comment/uncomment selected lines (Ctrl+M)
+ - go back (Esc) after doing View Declaration or Goto Error
+ -    if there is a selection, it will be deselected first
+
+Version 0.24
+ - drag'n'drop files
+
+Version 0.23
+ - Bug fix: run/bind/shroud/translate didn't like spaces in the path
+
+Version 0.22
+ - Bug fix: better at locating scintilla library when bound/compiled
+
+Version 0.21
+ - dialog to change syntax highlighting colors
+ - popup menu on tab control
+
+Version 0.20
+ - run with arguments (Shift+F5)
+ - move options to separate menu
+ - option to sort subroutines in View Subroutines dialog
+ - added Bind, Shroud and Translate to Run menu
+
+Version 0.19
+ - Linux/Mac (using EuGTK)
+ - context-sensitive help (hit F1 on a word)
+
+Version 0.18
+ - store syntax highlighting colors in wee.conf
+
+Version 0.17
+ - updated: indent/unindent selection with tab/shift-tab
+
+Version 0.16
+ - updated: ex.err dialog with buttons: <cancel> <open ex.err> <goto error>
+ -   and listbox with call stack or multiple undeclared references
+ - Bug fix: weirdness with deletion autoinserted closing characters
+ - Bug fix: calltip popup displaying incorrect highlight after first time
+ - Bug fix: EOL mode on Linux/OSX
+ - Bug fix: completions are now sorted
+ - Bug fix: switch/case syntax highlight and autocomplete were missing
+ - Bug fix: shift-ctrl-Z does redo
+
+Version 0.15
+ - hardcoded list of builtins and arguments in get_subroutine_arguents()
+
+Version 0.13
+ - auto-complete with include puts it near top of file
+ - auto insert closing characters for ( { [ " '
+ - typing '(' after a subroutine will popup hints
+ - Bug fix: autocomplete avoids activating inside comments and strings
+
+Version 0.12
+ - auto expansions for "if" "while" "for" and subroutines (thanks dcuny)
+ - auto indent newlines
+ - type ':' to autocomplete a namespace
+
+Version 0.11
+ - view completions will search std includes
+ - Search->Find will remember last phrase
+ - fixed tab names not updating when save-as
+ - fixed "too many open files" error, wasn't closing files in view_error function
+ - fixed parsing ifdefs
+ - fixed crash after changing font (thanks euphoric)
+ - reloading a file that is modified externally loads into wrong tab (thanks dcuny)
+ 
+Version 0.10
+ - Bug fix: ViewCompletions on whitespace crash
+
+Version 0.09
+ - Scintilla edit control (using Lua lexer :/)
+
+Version 0.08
+ - watch tabs for changes to files and ex.err
+ - goto declaration (Ctrl+F2) and view completions (Ctrl+Space)
+
+Version 0.07
+ - tabs (can be selected using Alt+1..9)
+
+Older Versions
+ - syntax coloring!
+ - Bug fix: save mode changed to "wb" (Thanks Lucius)
+ - replace all
+ - goto error
+ - hotkeys
+ - cursor position
+ - recent files list
+ - saving window pos+size and recent files to "wee_conf.txt"
+ - subroutines list dialog (F2)
+ - choose font dialog (we suggest "Consolas" 11pt)
+
+ - bugs fixed:
+ - ViewDeclaration wrong cursor pos
+ - audible ding when pressing Alt+1..9
+ - parser updates cache for modified include files
+ - files are now opened in binary mode since scintilla can handle any line endings
+`
 
 -- todo:
 --  bug with reloading files, first few characters get garbled
@@ -183,9 +269,16 @@ global constant max_recent_files = 5
 
 -- these are configuration settings saved to wee_conf
 global atom x_pos, y_pos, x_size, y_size
-global sequence font_name, recent_files
-global integer font_height, line_numbers, sorted_subs, line_wrap, 
-    reopen_tabs, tab_width, indentation_guides, caret_width, 
+global sequence font_name, recent_files,
+    terminal_program -- for GTK, runs programs in a terminal
+global integer font_height, 
+    line_numbers, -- boolean
+    sorted_subs, -- boolean
+    line_wrap, -- boolean
+    reopen_tabs, -- boolean
+    tab_width, -- usually 8
+    indentation_guides, -- boolean
+    caret_width, -- in pixels
     complete_statements, -- when typing "if " -> "if | then\n    \nend if"
     complete_braces, -- when typing '(' or '[' or '{' or ''' or '"'
     auto_namespace, -- when typing ':'
@@ -195,10 +288,8 @@ global integer font_height, line_numbers, sorted_subs, line_wrap,
     auto_indicator, -- underline words that are not in scope
     run_testrun, -- run exe after bind/shroud/translate
     run_background, -- for GTK, run programs/terminal in background
-    run_waitkey -- wait for keypress after running in a terminal
-global sequence
-    terminal_program -- for GTK, runs programs in a terminal
-global integer keyword_color, builtin_color, string_color,
+    run_waitkey, -- wait for keypress after running in a terminal
+    keyword_color, builtin_color, string_color,
     comment_color, number_color, normal_color, background_color,
     linenumber_color, bracelight_color, bold_flags
 sequence tabs_to_open -- {{"filename", pos, topline},...}
@@ -1609,6 +1700,13 @@ global procedure context_help()
     ui_show_uri("file://" & help_dir & help[1][1] & ".html#" & help[1][2])
 end procedure
 
+global procedure release_notes()
+    new_file()
+    ssm(SCI_SETLEXER, SCLEX_NULL)
+    ssm(SCI_SETTEXT, 0, changelog)
+    ssm(SCI_SETSAVEPOINT)
+end procedure
+
 global procedure open_tutorial()
     new_file()
     ssm(SCI_SETTEXT, 0, `
@@ -1763,6 +1861,7 @@ for
 
 -- That's all, have fun!
 `)
+    ssm(SCI_SETSAVEPOINT)
 end procedure
 
 
