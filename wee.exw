@@ -23,8 +23,12 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.45",
+  version = "0.46",
   changelog = `
+
+Version 0.46
+ - Bug fix: parser should allow case statements inside ifdef
+ - Bug fix: crash in parser for non-existent namespace include (thanks Andreas)
 
 Version 0.45
  - Help->Release Notes to view changelog
