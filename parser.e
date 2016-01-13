@@ -168,7 +168,7 @@ global constant
   GOTO = 311,     -- {GOTO, "label"}
   ELSIF = 312,    -- only for lookup table
   ELSIFDEF = 313, -- only for lookup table
-  CASE = 314,
+  CASE = 314,     -- {CASE, prev-scope-end, scope-start, [values, ...]} (case else will have no values)
   KEYWORD = 315,
   WITH = 316,
   WITHOUT = 317,
@@ -1300,14 +1300,31 @@ function for_declaration()
     return result
 end function
 
-function return_statement(integer subroutine)
-  if subroutine = FUNC then
-    return {RETURN, expr(1)}
-  elsif subroutine = PROC then
-    return {RETURN}
+
+function filter_case_statements(sequence result, sequence ast)
+  -- {SWITCH, expr, bool-fallthru, label-string,
+  --   [{case-values...}, {scope-start, scope-end, stmts...},]... }
+  --  ("case else" will have case-values={} )
+  integer case_idx = 0, scope_start, scope_end
+
+  scope_start = ast[1]
+  for i = 3 to length(ast) do
+    sequence s = ast[i]
+    if s[1] = CASE then
+      scope_end = s[2]
+      if case_idx then
+        result = append(result, scope_start & scope_end & ast[case_idx+1..i-1])
+      end if
+      result = append(result, s[4..$])
+      case_idx = i
+      scope_start = s[3]
+    end if
+  end for
+  if case_idx then
+    scope_end = ast[2]
+    result = append(result, scope_start & scope_end & ast[case_idx+1..$])
   end if
-  error("'return' is not allowed here")
-  return {}
+  return result
 end function
 
 procedure with_or_without(integer mode)
@@ -1365,12 +1382,31 @@ function check_mode(integer mode, sequence token)
   return 1
 end function
 
+constant
+  PROC_FLAG = 1, -- return is allowed
+  FUNC_FLAG = 2, -- return with expr is allowed
+  LOOP_FLAG = 4, -- exit is allowed
+  CASE_FLAG = 8  -- case statement allowed
+
+function return_statement(integer flags)
+  if and_bits(flags, FUNC_FLAG) then
+    return {RETURN, expr(1)}
+  elsif and_bits(flags, PROC_FLAG) then
+    return {RETURN}
+  end if
+  error("'return' is not allowed here")
+  return {}
+end function
+  
+
 -- mode is NONE, FUNC_DEC, PROC_DECL, TYPE_DECL, IF, IFDEF, SWITCH, WHILE, FOR
 -- sub is 0, FUNC, PROC (used to determine if return needs expr)
-function statements(integer mode, integer sub)
+function statements(integer mode, integer flags)
   sequence ast, s, t
   integer var_decl_ok, prefix, prefix_idx, saved_ifdef_ok
+  integer case_ok = and_bits(flags, CASE_FLAG)
   
+  flags -= case_ok  -- clear CASE_FLAG if set
   s = {}
   ast = {idx, 0} -- scope-start, scope-end
   var_decl_ok = OE4 or find(mode, {NONE,FUNC_DECL,PROC_DECL,TYPE_DECL})  
@@ -1386,14 +1422,7 @@ function statements(integer mode, integer sub)
         tok = t
         exit
         
-      case "case" then
-        tok = t
-        exit
-
       case "end" then
-        if mode = SWITCH then
-          tok = t
-        end if
         if mode != NONE then
           exit
         end if
@@ -1423,7 +1452,7 @@ function statements(integer mode, integer sub)
           end if
         end if
         expect("do")
-        s &= statements(WHILE, sub)
+        s &= statements(WHILE, or_bits(flags, LOOP_FLAG))
         expect("while")
 
       case "entry" then
@@ -1438,11 +1467,16 @@ function statements(integer mode, integer sub)
 
       case "for" then
         s = for_declaration()
-        s &= statements(FOR, sub)
+        s &= statements(FOR, or_bits(flags, LOOP_FLAG))
         -- {FOR, name, pos, expr, expr, by, scope-start, scope-end, stmts...}
         expect("for")
+
       case "exit" then
-        -- FIXME: error if not in a loop
+        if not and_bits(flags, LOOP_FLAG) then
+          tok = t
+          error("'exit' must be inside a loop")
+          tok = ""
+        end if
         s = {EXIT}
         if OE4 and token("\"") then
           s &= {string_literal()}  -- optional label string
@@ -1451,33 +1485,35 @@ function statements(integer mode, integer sub)
       case "if" then
         s = {IF, expr(1)}
         expect("then")
-        s = append(s, statements(IF, sub))
+        s = append(s, statements(IF, flags))
         while token("elsif") do
           s = append(s, expr(1))
           expect("then")
-          s = append(s, statements(IF, sub))
+          s = append(s, statements(IF, flags))
         end while
         if token("else") then
-          s = append(s, statements(ELSE, sub))
+          s = append(s, statements(ELSE, flags))
         end if
         expect("if")
 
       case "ifdef" then
         saved_ifdef_ok = ifdef_ok
+        flags += case_ok
         ifdef_ok = ifdef_reduce(expr(1)) and saved_ifdef_ok
         expect("then")
-        s = choose(ifdef_ok, statements(IFDEF, sub), {})
+        s = choose(ifdef_ok, statements(IFDEF, flags), {})
         while token("elsifdef") do
           ifdef_ok = ifdef_reduce(expr(1)) and length(s) = 0 and saved_ifdef_ok
           expect("then")
-          s = choose(ifdef_ok, statements(IFDEF, sub), s)
+          s = choose(ifdef_ok, statements(IFDEF, flags), s)
         end while
         if token("elsedef") then
           ifdef_ok = length(s) = 0 and saved_ifdef_ok
-          s = choose(ifdef_ok, statements(ELSEDEF, sub), s)
+          s = choose(ifdef_ok, statements(ELSEDEF, flags), s)
         end if
         expect("ifdef")
         ifdef_ok = saved_ifdef_ok
+        flags -= case_ok
         if length(s) then
           -- splice statements into ast
           ast &= s[3..$]
@@ -1498,28 +1534,30 @@ function statements(integer mode, integer sub)
           end if
         end if
         expect("do")
-        while token("case") do
-          s = append(s, {})
-          if token("else") then
-            s = append(s, statements(SWITCH, sub)) -- case else statements
-            exit
-          else
-            while identifier() or find(tok[1], "\"'0123456789#") do
-              if token("\"") then
-                s[$] = append(s[$], '"'&string_literal()&'"') -- case values
-              elsif token("'") then
-                s[$] = append(s[$], '\''&character_literal()&'\'') -- case values
-              else
-                s[$] = append(s[$], get_token()) -- case values
-              end if
-              if not token(",") then exit end if
-            end while
-            expect("then")
-            s = append(s, statements(SWITCH, sub)) -- case statements
-          end if
-        end while
-        expect("end")
+        s = filter_case_statements(s, statements(SWITCH, or_bits(flags, CASE_FLAG)))
         expect("switch")
+
+      case "case" then
+        s = {CASE, tok_idx, 0}
+        if not case_ok then
+          tok = t
+          error("'case' must be inside 'switch'")
+          tok = ""
+        end if
+        if not token("else") then
+          while identifier() or find(tok[1], "\"'0123456789#") do
+            if token("\"") then
+              s = append(s, '"'&string_literal()&'"') -- case values
+            elsif token("'") then
+              s = append(s, '\''&character_literal()&'\'') -- case values
+            else
+              s = append(s, get_token()) -- case values
+            end if
+            if not token(",") then exit end if
+          end while
+          expect("then")
+        end if
+        s[3] = tok_idx -- scope-start
 
       case "break" then
         s = {BREAK}
@@ -1584,23 +1622,23 @@ function statements(integer mode, integer sub)
       case "function" then
         if check_mode(mode, "function") then exit end if
         s = subroutine_declaration(FUNC_DECL)
-        s &= statements(FUNC_DECL, FUNC)
+        s &= statements(FUNC_DECL, or_bits(flags, FUNC_FLAG))
         expect("function")
 
       case "procedure" then
         if check_mode(mode, "procedure") then exit end if
         s = subroutine_declaration(PROC_DECL)
-        s &= statements(PROC_DECL, PROC)
+        s &= statements(PROC_DECL, or_bits(flags, PROC_FLAG))
         expect("procedure")
 
       case "type" then
         if check_mode(mode, "type") then exit end if
         s = subroutine_declaration(TYPE_DECL)
-        s &= statements(TYPE_DECL, FUNC)
+        s &= statements(TYPE_DECL, or_bits(flags, FUNC_FLAG))
         expect("type")
 
       case "return" then
-        s = return_statement(sub)
+        s = return_statement(flags)
 
       case "enum" then
         if check_mode(mode, "enum") then exit end if
@@ -2473,7 +2511,7 @@ function public_includes(integer cache_idx, sequence result)
     result &= cache_idx
     for i = 3 to length(ast) do
       sequence s = ast[i]
-      if s[1] = PUBLIC and s[2] = INCLUDE then
+      if s[1] = PUBLIC and s[2] = INCLUDE and s[3] != -1 then
         result = public_includes(s[3], result)
       end if
     end for
@@ -2497,7 +2535,7 @@ function check_name(sequence name, integer pos, sequence decls)
     for i = 3 to length(ast) do
       sequence s = ast[i]
       integer n = prefixed(s)
-      if s[n+1] = INCLUDE and length(s) >= n+4 and equal(s[n+4], name_space) and pos >= s[n+3] then
+      if s[n+1] = INCLUDE and s[n+2] != -1 and length(s) >= n+4 and equal(s[n+4], name_space) and pos >= s[n+3] then
         asts = public_includes(s[n+2], asts)
         exit
       end if
