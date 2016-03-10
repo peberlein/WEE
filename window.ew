@@ -165,7 +165,7 @@ function sizeof(sequence pattern)
     return size
 end function
 
-global procedure pack(atom ptr, sequence pattern, sequence data)
+global function pack(atom ptr, sequence pattern, sequence data)
     object tmp
     integer x
 
@@ -214,7 +214,8 @@ global procedure pack(atom ptr, sequence pattern, sequence data)
 	    printf(1, "unknown pack char %s\n", {{x}})
         end if
     end for
-end procedure
+    return ptr
+end function
 
 global function allocate_pack(sequence pattern, sequence data)
     atom ptr
@@ -228,7 +229,11 @@ global function allocate_pack(sequence pattern, sequence data)
     end if
     ptr = allocate(size)
     --printf(1, "ptr=%x pattern=%s size=%d\n", {ptr, pattern, size})
-    pack(ptr, pattern, data)
+    atom tmp = pack(ptr, pattern, data)
+    if tmp - ptr != size then
+        printf(1, "overflow! ptr=%x pattern=%s size=%d\n", {ptr, pattern, size})
+    end if
+    
     return ptr
 end function
 

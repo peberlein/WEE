@@ -23,8 +23,11 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.46",
+  version = "0.47",
   changelog = `
+
+Version 0.47
+ - Bug fix: parser support for "loop until" statement
 
 Version 0.46
  - Bug fix: parser should allow case statements inside ifdef
@@ -1553,48 +1556,6 @@ end procedure
 --------------------------------------
 
 sequence help_dir
-
-global procedure show_help(sequence file, sequence anchor)
-    integer ok = 0
-    integer f = open(help_dir & file & ".html", "r")
-    sequence html = ""
-    if f = -1 then
-        return
-    end if
-    object line = gets(f)
-    while sequence(line) do
-	if match("<a name=", line) = 1 then
-	    sequence a = ""
-	    for i = 10 to length(line) do
-	        if line[i] = '"' then
-	            a = line[10..i-1]
-	            exit
-	        end if
-	    end for
-	    --puts(1, a&"\n")
-	    if equal(a, anchor) then
-	        ok = 1
-	    elsif ok = 1 and (
-		match("_comments", a) or
-		match("_example", a) or
-		match("_returns", a) or
-		match("_parameters", a) or
-		match("_platform", a) or
-		match("_seealso", a)
-	    ) then
-		ok = 1
-	    else
-		ok = 0
-	    end if
-	end if
-	if ok then
-	    html &= line
-	end if
-        line = gets(f)
-    end while
-    close(f)
-    ui_show_help(html)
-end procedure
 
 function tr(sequence s, sequence src, sequence dst)
     for i = 1 to length(s) do
