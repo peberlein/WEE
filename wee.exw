@@ -23,11 +23,15 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.47",
+  version = "0.48",
   changelog = `
 
+Version 0.48
+ - Bug fix: hang during replace all (thanks Andreas)
+ - Auto-detect EOL characters when opening
+
 Version 0.47
- - Bug fix: parser support for "loop until" statement
+ - Bug fix: parser support for "loop until" statement (thanks dcuny)
 
 Version 0.46
  - Bug fix: parser should allow case statements inside ifdef
@@ -686,7 +690,7 @@ procedure update_lexer()
     if length(tab_file_names[current_tab]) then
 	ext = lower(fileext(tab_file_names[current_tab]))
     else
-	ext = "ex"
+	ext = "ex" -- New file
     end if
     
     lexer = SCLEX_NULL
@@ -835,13 +839,11 @@ global procedure reinit_all_edits()
     hedit = saved_hedit
 end procedure
 
-
 procedure auto_detect_indent(sequence text)
     integer i = 0, indent = 0, last = 0, tabs_used = 0, spaces_used = 0
+    integer cr = 0, crlf = 0, lf = 0
     sequence indents = repeat(0, 8)
-    integer start 
-    
-    start = 1
+
     while i < length(text) do
         i += 1
 	-- count spaces and tabs
@@ -865,23 +867,25 @@ procedure auto_detect_indent(sequence text)
 	last = indent
 	indent = 0
 
-	-- scan to end of line
+	-- scan to end of line and count eol styles
         while i <= length(text) do
-	    if text[i] = '\r' then
-		if i < length(text) and text[i+1] = '\n' then
+	    if text[i] = '\r' then -- cr
+		if i < length(text) and text[i+1] = '\n' then -- crlf
 		    i += 1
+		    crlf += 1
+		else
+		    cr += 1
 		end if
 	        exit
-	    elsif text[i] = '\n' then
-		if i < length(text) and text[i+1] = '\r' then
+	    elsif text[i] = '\n' then -- lf
+		lf += 1
+		if i < length(text) and text[i+1] = '\r' then -- lfcr - not counted
 		    i += 1
 		end if
 	        exit
 	    end if
             i += 1
         end while
-        
-        start = i+1
         
     end while
     
@@ -895,9 +899,17 @@ procedure auto_detect_indent(sequence text)
     
     ssm(SCI_SETINDENT, indent)
     ssm(SCI_SETUSETABS, tabs_used > spaces_used)
-    
-end procedure
 
+    -- pick the most used eol style
+    if cr > crlf and cr > lf then
+	ssm(SCI_SETEOLMODE, SC_EOL_CR)
+    elsif crlf > cr and crlf > lf then
+	ssm(SCI_SETEOLMODE, SC_EOL_CRLF)
+    elsif lf > cr and lf > crlf then
+	ssm(SCI_SETEOLMODE, SC_EOL_LF)
+    end if
+
+end procedure
 
 -- pos is integer position in current tab, or {"filename", pos}
 -- note: first character in document is at pos=1
@@ -1072,7 +1084,7 @@ end procedure
 
 -- search for the phrase (sequence or pointer) and set the editor target
 -- returns 1 if found, otherwise 0
-global function search_find(sequence phrase, integer backward = 0)
+global function search_find(sequence phrase, integer backward = 0, integer in_replace_all = 0)
     if backward then
 	ssm(SCI_SETTARGETSTART, ssm(SCI_GETSELECTIONSTART))
 	ssm(SCI_SETTARGETEND, 0)
@@ -1083,7 +1095,9 @@ global function search_find(sequence phrase, integer backward = 0)
     
     if ssm(SCI_SEARCHINTARGET, length(phrase), phrase) < 0 then
 	-- wrap around and search again
-	if backward then
+	if in_replace_all then
+	    return 0
+	elsif backward then
 	    ssm(SCI_SETTARGETSTART, ssm(SCI_GETTEXTLENGTH))
 	else
 	    ssm(SCI_SETTARGETSTART, 0)
@@ -1134,7 +1148,7 @@ global function search_replace_all(sequence what, sequence phrase)
     ssm(SCI_SETCURRENTPOS, 0)
     -- search until not found
     ssm(SCI_BEGINUNDOACTION)
-    while search_find(what, 0) do
+    while search_find(what, 0, 1) do
         search_replace(phrase)
         count += 1
     end while
