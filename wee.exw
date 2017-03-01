@@ -1,6 +1,6 @@
 -- Wee Euphoria Editor
 -- 
--- Copyright (c) 1998-2016  Pete Eberlein
+-- Copyright (c) 1998-2017  Pete Eberlein
 -- 
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -23,8 +23,11 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.48",
+  version = "0.49",
   changelog = `
+
+Version 0.49
+ - Bug fix: crash if wee_conf can't be opened for writing (thanks Bugmagnet)
 
 Version 0.48
  - Bug fix: hang during replace all (thanks Andreas)
@@ -624,6 +627,13 @@ end procedure
 global procedure save_wee_conf(sequence wee_conf_file)
     integer f
     f = open(wee_conf_file, "w")
+    if f < 0 then
+        ui_message_box_error(window_title, 
+          "Unable to open "&wee_conf_file&" for writing.\n\n"&
+          "Your configuration settings can't be saved.")
+        return
+    end if
+    
     printf(f, "x_pos=%d\ny_pos=%d\nx_size=%d\ny_size=%d\nline_numbers=%d\n", 
 	{x_pos, y_pos, x_size, y_size, line_numbers})
     for i = 1 to length(recent_files) do
@@ -763,6 +773,14 @@ global procedure init_edit(atom edit)
 	ssm(SCI_STYLESETBOLD, SCE_C_COMMENT, 0 != and_bits(bold_flags, 2))
 	ssm(SCI_STYLESETFORE, SCE_C_COMMENTLINE, comment_color)
 	ssm(SCI_STYLESETBOLD, SCE_C_COMMENTLINE, 0 != and_bits(bold_flags, 2))
+	ssm(SCI_STYLESETFORE, SCE_C_COMMENTDOC, comment_color)
+	ssm(SCI_STYLESETBOLD, SCE_C_COMMENTDOC, 0 != and_bits(bold_flags, 2))
+	ssm(SCI_STYLESETFORE, SCE_C_COMMENTLINEDOC, comment_color)
+	ssm(SCI_STYLESETBOLD, SCE_C_COMMENTLINEDOC, 0 != and_bits(bold_flags, 2))
+	ssm(SCI_STYLESETFORE, SCE_C_PREPROCESSORCOMMENT, comment_color)
+	ssm(SCI_STYLESETBOLD, SCE_C_PREPROCESSORCOMMENT, 0 != and_bits(bold_flags, 2))
+	ssm(SCI_STYLESETFORE, SCE_C_PREPROCESSORCOMMENTDOC, comment_color)
+	ssm(SCI_STYLESETBOLD, SCE_C_PREPROCESSORCOMMENTDOC, 0 != and_bits(bold_flags, 2))
 	ssm(SCI_STYLESETFORE, SCE_C_STRING, string_color)
 	ssm(SCI_STYLESETBOLD, SCE_C_STRING, 0 != and_bits(bold_flags, 4))
 	ssm(SCI_STYLESETFORE, SCE_C_WORD, keyword_color)
