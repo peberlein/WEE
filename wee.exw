@@ -23,8 +23,11 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.49",
+  version = "0.50",
   changelog = `
+
+Version 0.50
+ - Set codepage to UTF-8 (thanks Irv)
 
 Version 0.49
  - Bug fix: crash if wee_conf can't be opened for writing (thanks Bugmagnet)
@@ -797,6 +800,7 @@ global procedure init_edit(atom edit)
     ssm(SCI_STYLESETFORE, STYLE_LINENUMBER, linenumber_color)
     ssm(SCI_STYLESETBOLD, STYLE_LINENUMBER, 0 != and_bits(bold_flags, #80))
     
+    ssm(SCI_SETCODEPAGE,SC_CP_UTF8) -- added by Irv
     ssm(SCI_SETMARGINWIDTHN, 0, 48*line_numbers) -- line numbers margin visible
     ssm(SCI_SETMARGINWIDTHN, 1, 0) -- non-folding symbols margin hidden
     
