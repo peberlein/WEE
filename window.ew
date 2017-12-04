@@ -210,6 +210,7 @@ global function pack(atom ptr, sequence pattern, sequence data)
 		ptr += 4
 	    end ifdef
 	elsif x = '$' then
+            ptr = tmp
 	else
 	    printf(1, "unknown pack char %s\n", {{x}})
         end if
@@ -224,10 +225,10 @@ global function allocate_pack(sequence pattern, sequence data)
     if pattern[1] = 'z' then
         data = prepend(data, size)
     end if
-    if pattern[$] = '$' then
-        data = append(data, 0)
-    end if
     ptr = allocate(size)
+    if pattern[$] = '$' then
+        data = append(data, ptr+size)
+    end if
     --printf(1, "ptr=%x pattern=%s size=%d\n", {ptr, pattern, size})
     atom tmp = pack(ptr, pattern, data)
     if tmp - ptr != size then
