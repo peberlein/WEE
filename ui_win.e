@@ -225,12 +225,12 @@ global procedure ui_close_tab(integer tab)
 end procedure
 
 procedure rightclick_tab()
-    atom point
-    integer tab, x, y
+    atom point, x, y
+    integer tab
     point = allocate(12)
     c_func(GetCursorPos, {point})
-    x = peek4u(point)
-    y = peek4u(point+4)
+    x = peek4s(point)
+    y = peek4s(point+4)
     c_func(ScreenToClient, {hMainWnd, point})
     tab = c_func(SendMessage, {htabs, TCM_HITTEST, 0, point})
     if tab >= 0 then
@@ -301,10 +301,10 @@ procedure get_window_size()
     atom rect
     rect = allocate(16)
     c_proc(GetWindowRect, {hMainWnd, rect})
-    x_pos = peek4u(rect)
-    y_pos = peek4u(rect+4)
-    x_size = peek4u(rect+8) - x_pos
-    y_size = peek4u(rect+12) - y_pos
+    x_pos = peek4s(rect)
+    y_pos = peek4s(rect+4)
+    x_size = peek4s(rect+8) - x_pos
+    y_size = peek4s(rect+12) - y_pos
     free(rect)
 end procedure
 
