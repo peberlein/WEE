@@ -78,9 +78,9 @@ elsedef
 --
 
 constant
-    libcurl = open_dll("libcurl.so.3")
+    libcurl = open_dll("libcurl.so")
 if libcurl = 0 then
-    puts(1, "Failed to open libcurl.so.3\n")
+    puts(1, "Failed to open libcurl.so\n")
     abort(1)
 end if
 
@@ -154,15 +154,11 @@ if wait_key() = 'q' then
     abort(0)
 end if
 
+puts(1, "Downloading manifest.json...\n")
 constant
   repo = "peberlein/WEE/",
-  base_url = "https://cdn.rawgit.com/" & repo -- & "commit/filename"
-
--- this needs to be .json since rawgit.com has a whitelist of extensions
--- otherwise it will just redirect to https://raw.githubusercontent.com
--- and http_get doesn't support https: protocol
-constant
-  manifest = http_get("https://rawgit.com/"& repo &"master/manifest.json")
+  base_url = "https://raw.githubusercontent.com/" & repo, -- & "commit/filename"
+  manifest = http_get(base_url & "master/manifest.json")
 
 procedure fail(sequence fmt, object args={})
     printf(1, fmt, args)
