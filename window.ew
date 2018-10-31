@@ -330,7 +330,9 @@ constant
     gdi32 = get_dll("gdi32.dll"),
     winmm = get_dll("winmm.dll"),
     kernel32 = get_dll("kernel32.dll"),
-    shell32 = get_dll("shell32.dll")
+    shell32 = get_dll("shell32.dll"),
+    C_HANDLE = C_POINTER,  -- std/dll.e is wrong about this!
+    C_HWND = C_HANDLE      -- std/dll.e is wrong about this!
 
     
 -- get handles to some dll routines
