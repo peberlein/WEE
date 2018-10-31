@@ -355,6 +355,9 @@ function SubsDialogProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
         free_strings()
 
     elsif iMsg = WM_COMMAND then
+        if LOWORD(wParam) = DialogListID and HIWORD(wParam) = LBN_DBLCLK then
+	    wParam = IDOK -- double clicked item in list
+        end if
         if LOWORD(wParam) = IDOK then
             hList = c_func(GetDlgItem, {hdlg, DialogListID})
             pos = c_func(SendMessage, {hList, LB_GETCURSEL, 0, 0})+1
@@ -398,7 +401,7 @@ procedure view_subroutines()
 	  {{WS_POPUP, WS_BORDER, WS_SYSMENU, DS_MODALFRAME, WS_CAPTION}, 0,
          50,50, 100,124, 0, 0, "Subroutines"},
         --DLGITEMTEMPLATE{style, exstyle, x, y, cx, cy, id, dlgclass, text}
-        {{WS_CHILD, WS_VISIBLE, WS_VSCROLL}, WS_EX_CLIENTEDGE,
+        {{WS_CHILD, WS_VISIBLE, WS_VSCROLL, LBS_NOTIFY}, WS_EX_CLIENTEDGE,
          4,4, 92,110, DialogListID, DIALOG_CLASS_LIST, "ListBox"},
         {{WS_CHILD, WS_VISIBLE, BS_PUSHBUTTON}, 0,
          4,108, 44,12, IDCANCEL, DIALOG_CLASS_BUTTON, "Cancel"},
@@ -454,7 +457,7 @@ function ViewErrorProc(atom hdlg, atom iMsg, atom wParam, atom lParam)
             junk = c_func(EndDialog, {hdlg, 1})
             return 1
         elsif LOWORD(wParam) = IDRETRY then
-	    open_file(ex_err_name, 1)
+            open_file(ex_err_name, 1)
             junk = c_func(EndDialog, {hdlg, 0})
             return 1
         elsif LOWORD(wParam) = IDCANCEL then
