@@ -331,60 +331,61 @@ constant
     winmm = get_dll("winmm.dll"),
     kernel32 = get_dll("kernel32.dll"),
     shell32 = get_dll("shell32.dll")
+
     
 -- get handles to some dll routines
 
 global constant
-    LoadIcon = link_c_func(user32, "LoadIconA", {C_POINTER, C_INT}, C_INT),
-    LoadCursor = link_c_func(user32, "LoadCursorA", {C_POINTER, C_INT}, C_INT),
-    GetStockObject = link_c_func(gdi32, "GetStockObject", {C_INT}, C_INT),
-    DeleteObject = link_c_func(gdi32, "DeleteObject", {C_INT}, C_INT),
-    CreateFontIndirect = link_c_func(gdi32, "CreateFontIndirectA", {C_POINTER}, C_INT),
-    CreateBitmap = link_c_func(gdi32, "CreateBitmap", {C_INT, C_INT, C_UINT, C_UINT, C_POINTER}, C_INT),
-    CreateIcon = link_c_func(user32, "CreateIcon", {C_POINTER, C_INT, C_INT, C_UINT, C_UINT, C_POINTER, C_POINTER}, C_INT),
-    CreateIconIndirect = link_c_func(user32, "CreateIconIndirect", {C_POINTER}, C_INT),
+    LoadIcon = link_c_func(user32, "LoadIconA", {C_HANDLE, C_POINTER}, C_HANDLE),
+    LoadCursor = link_c_func(user32, "LoadCursorA", {C_HANDLE, C_POINTER}, C_HANDLE),
+    GetStockObject = link_c_func(gdi32, "GetStockObject", {C_INT}, C_HANDLE),
+    DeleteObject = link_c_func(gdi32, "DeleteObject", {C_HANDLE}, C_BOOL),
+    CreateFontIndirect = link_c_func(gdi32, "CreateFontIndirectA", {C_POINTER}, C_HANDLE),
+    CreateBitmap = link_c_func(gdi32, "CreateBitmap", {C_INT, C_INT, C_UINT, C_UINT, C_POINTER}, C_HANDLE),
+    CreateIcon = link_c_func(user32, "CreateIcon", {C_HANDLE, C_INT, C_INT, C_UINT, C_UINT, C_POINTER, C_POINTER}, C_HANDLE),
+    CreateIconIndirect = link_c_func(user32, "CreateIconIndirect", {C_POINTER}, C_HANDLE),
     RegisterClassEx = link_c_func(user32, "RegisterClassExA", {C_POINTER}, C_USHORT),
     CreateWindowEx = link_c_func(user32, "CreateWindowExA", 
-     {C_UINT,C_POINTER,C_POINTER,C_UINT,C_INT,C_INT,C_INT,C_INT,C_UINT,C_UINT,C_UINT,C_POINTER},
-      C_UINT),
-    CloseWindow = link_c_proc(user32, "CloseWindow", {C_POINTER}),
-    DestroyWindow = link_c_func(user32, "DestroyWindow", {C_POINTER}, C_INT),
-    MoveWindow = link_c_proc(user32, "MoveWindow", {C_POINTER, C_INT, C_INT, C_INT, C_LONG, C_INT}),
-    ShowWindow = link_c_proc(user32, "ShowWindow", {C_POINTER, C_INT}),
-    UpdateWindow = link_c_proc(user32, "UpdateWindow", {C_POINTER}),
-    RegisterWindowMessage = link_c_func(user32, "RegisterWindowMessageA", {C_POINTER}, C_LONG),
-    PlaySound = link_c_proc(winmm, "PlaySound", {C_INT, C_INT, C_INT}),
-    BeginPaint = link_c_func(user32, "BeginPaint", {C_INT, C_POINTER}, C_INT),
-    GetClientRect = link_c_proc(user32, "GetClientRect", {C_INT, C_POINTER}),
-    GetWindowRect = link_c_proc(user32, "GetWindowRect", {C_INT, C_POINTER}),
-    InvalidateRect = link_c_proc(user32, "InvalidateRect", {C_INT, C_POINTER, C_INT}),
+     {C_DWORD,C_POINTER,C_POINTER,C_DWORD,C_INT,C_INT,C_INT,C_INT,C_HWND,C_HANDLE,C_HANDLE,C_POINTER},
+      C_HWND),
+    CloseWindow = link_c_proc(user32, "CloseWindow", {C_HWND}),
+    DestroyWindow = link_c_func(user32, "DestroyWindow", {C_HWND}, C_BOOL),
+    MoveWindow = link_c_proc(user32, "MoveWindow", {C_HWND, C_INT, C_INT, C_INT, C_INT, C_INT}),
+    ShowWindow = link_c_proc(user32, "ShowWindow", {C_HWND, C_INT}),
+    UpdateWindow = link_c_proc(user32, "UpdateWindow", {C_HWND}),
+    RegisterWindowMessage = link_c_func(user32, "RegisterWindowMessageA", {C_POINTER}, C_UINT),
+    PlaySound = link_c_proc(winmm, "PlaySound", {C_POINTER, C_HANDLE, C_UINT}),
+    BeginPaint = link_c_func(user32, "BeginPaint", {C_HWND, C_POINTER}, C_HANDLE),
+    GetClientRect = link_c_proc(user32, "GetClientRect", {C_HWND, C_POINTER}),
+    GetWindowRect = link_c_proc(user32, "GetWindowRect", {C_HWND, C_POINTER}),
+    InvalidateRect = link_c_proc(user32, "InvalidateRect", {C_HWND, C_POINTER, C_BOOL}),
     DrawText = link_c_proc(user32, "DrawTextA", 
-                           {C_INT, C_INT, C_INT, C_INT, C_INT}),
-    EndPaint = link_c_proc(user32, "EndPaint", {C_INT, C_INT}),
-    PostQuitMessage = link_c_proc(user32, "PostQuitMessage", {C_POINTER}),
+                           {C_HANDLE, C_POINTER, C_INT, C_POINTER, C_UINT}),
+    EndPaint = link_c_proc(user32, "EndPaint", {C_HWND, C_POINTER}),
+    PostQuitMessage = link_c_proc(user32, "PostQuitMessage", {C_INT}),
     DefWindowProc = link_c_func(user32, "DefWindowProcA", 
-                                {C_POINTER, C_INT, C_POINTER, C_POINTER}, C_INT),
+                                {C_POINTER, C_UINT, C_POINTER, C_POINTER}, C_HANDLE),
 
-    SetFocus = link_c_func(user32, "SetFocus", {C_LONG}, C_LONG),
-    GetFocus = link_c_func(user32, "GetFocus", {}, C_LONG),
-    GetActiveWindow = link_c_func(user32, "GetActiveWindow", {}, C_LONG),
-    EnableWindow = link_c_func(user32, "EnableWindow", {C_LONG, C_LONG}, C_LONG),
-    IsWindowEnabled = link_c_func(user32, "IsWindowEnabled", {C_LONG}, C_LONG),
-    GetScrollPos = link_c_func(user32, "GetScrollPos", {C_INT, C_INT}, C_INT),
-    SetScrollPos = link_c_func(user32, "SetScrollPos", {C_INT, C_INT, C_INT, C_INT}, C_INT),
-    GetKeyState = link_c_func(user32, "GetKeyState", {C_INT}, C_INT),
-    GetCursorPos = link_c_func(user32, "GetCursorPos", {C_POINTER}, C_INT),
-    ScreenToClient = link_c_func(user32, "ScreenToClient", {C_LONG, C_POINTER}, C_INT),
+    SetFocus = link_c_func(user32, "SetFocus", {C_HWND}, C_HWND),
+    GetFocus = link_c_func(user32, "GetFocus", {}, C_HWND),
+    GetActiveWindow = link_c_func(user32, "GetActiveWindow", {}, C_HWND),
+    EnableWindow = link_c_func(user32, "EnableWindow", {C_HWND, C_BOOL}, C_BOOL),
+    IsWindowEnabled = link_c_func(user32, "IsWindowEnabled", {C_HWND}, C_BOOL),
+    GetScrollPos = link_c_func(user32, "GetScrollPos", {C_HWND, C_INT}, C_INT),
+    SetScrollPos = link_c_func(user32, "SetScrollPos", {C_HWND, C_INT, C_INT, C_BOOL}, C_INT),
+    GetKeyState = link_c_func(user32, "GetKeyState", {C_INT}, C_SHORT),
+    GetCursorPos = link_c_func(user32, "GetCursorPos", {C_POINTER}, C_BOOL),
+    ScreenToClient = link_c_func(user32, "ScreenToClient", {C_HWND, C_POINTER}, C_BOOL),
 
-    LoadLibrary = link_c_func(kernel32, "LoadLibraryA", {C_POINTER}, C_LONG),
-    GetModuleHandle = link_c_func(kernel32, "GetModuleHandleA", {C_POINTER}, C_INT),
+    LoadLibrary = link_c_func(kernel32, "LoadLibraryA", {C_POINTER}, C_HANDLE),
+    GetModuleHandle = link_c_func(kernel32, "GetModuleHandleA", {C_POINTER}, C_HANDLE),
     GetLastError = link_c_func(kernel32, "GetLastError", {}, C_UINT),
-    ShellExecute = link_c_func(shell32, "ShellExecuteA", {C_INT,C_INT,C_INT,C_INT,C_INT,C_INT}, C_INT),
-    SHGetFolderPath = link_c_func(shell32, "SHGetFolderPathA", {C_INT, C_INT, C_INT, C_LONG, C_POINTER}, C_INT),
-    DragAcceptFiles = link_c_proc(shell32, "DragAcceptFiles", {C_INT, C_INT}),
-    DragFinish = link_c_proc(shell32, "DragFinish", {C_POINTER}),
-    DragQueryFile = link_c_func(shell32, "DragQueryFile", {C_POINTER, C_UINT, C_POINTER, C_UINT}, C_UINT),
-    DragQueryPoint = link_c_func(shell32, "DragQueryPoint", {C_POINTER, C_POINTER}, C_INT)
+    ShellExecute = link_c_func(shell32, "ShellExecuteA", {C_HWND, C_POINTER, C_POINTER, C_POINTER, C_POINTER, C_INT}, C_HANDLE),
+    SHGetFolderPath = link_c_func(shell32, "SHGetFolderPathA", {C_HANDLE, C_INT, C_HANDLE, C_UINT, C_POINTER}, C_LONG),
+    DragAcceptFiles = link_c_proc(shell32, "DragAcceptFiles", {C_HWND, C_BOOL}),
+    DragFinish = link_c_proc(shell32, "DragFinish", {C_HANDLE}),
+    DragQueryFile = link_c_func(shell32, "DragQueryFile", {C_HANDLE, C_UINT, C_POINTER, C_UINT}, C_UINT),
+    DragQueryPoint = link_c_func(shell32, "DragQueryPoint", {C_HANDLE, C_POINTER}, C_BOOL)
 
 global constant
     CW_USEDEFAULT = #80000000,
@@ -1237,23 +1238,23 @@ global constant
 
 -- dialog specific stuff
 global constant
-    EndDialog = link_c_func(user32, "EndDialog", {C_LONG, C_LONG}, C_LONG),
-    GetDlgItem = link_c_func(user32, "GetDlgItem", {C_LONG, C_LONG}, C_LONG),
-    SetDlgItemInt = link_c_func(user32, "SetDlgItemInt", {C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    GetDlgItemInt = link_c_func(user32, "GetDlgItemInt", {C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    SetDlgItemText = link_c_func(user32, "SetDlgItemTextA", {C_LONG, C_LONG, C_POINTER}, C_LONG),
-    GetDlgItemText = link_c_func(user32, "GetDlgItemTextA", {C_LONG, C_LONG, C_POINTER, C_LONG}, C_LONG),
+    EndDialog = link_c_func(user32, "EndDialog", {C_HWND, C_HANDLE}, C_BOOL),
+    GetDlgItem = link_c_func(user32, "GetDlgItem", {C_HWND, C_INT}, C_HWND),
+    SetDlgItemInt = link_c_func(user32, "SetDlgItemInt", {C_HWND, C_INT, C_UINT, C_BOOL}, C_BOOL),
+    GetDlgItemInt = link_c_func(user32, "GetDlgItemInt", {C_HWND, C_INT, C_POINTER, C_BOOL}, C_UINT),
+    SetDlgItemText = link_c_func(user32, "SetDlgItemTextA", {C_HWND, C_INT, C_POINTER}, C_BOOL),
+    GetDlgItemText = link_c_func(user32, "GetDlgItemTextA", {C_HWND, C_INT, C_POINTER, C_INT}, C_UINT),
 --    CheckDlgButton = link_c_func(user32, "CheckDLGButtonA", {C_LONG, C_LONG, C_LONG}, C_LONG),
 --    CheckRadioButton = link_c_func(user32, "CheckRadioButtonA", {C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    IsDlgButtonChecked = link_c_func(user32, "IsDlgButtonChecked", {C_LONG, C_LONG}, C_LONG),
-    SendDlgItemMessage = link_c_func(user32, "SendDlgItemMessageA", {C_LONG, C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
-    GetNextDlgGroupItem = link_c_func(user32, "GetNextDlgGroupItem", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    GetNextDlgTabItem = link_c_func(user32, "GetNextDlgTabItem", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    GetDlgCtrlID = link_c_func(user32, "GetDlgCtrlID", {C_LONG}, C_LONG),
+    IsDlgButtonChecked = link_c_func(user32, "IsDlgButtonChecked", {C_HWND, C_INT}, C_UINT),
+    SendDlgItemMessage = link_c_func(user32, "SendDlgItemMessageA", {C_HWND, C_INT, C_UINT, C_WPARAM, C_LPARAM}, C_HANDLE),
+    GetNextDlgGroupItem = link_c_func(user32, "GetNextDlgGroupItem", {C_HWND, C_HWND, C_BOOL}, C_HWND),
+    GetNextDlgTabItem = link_c_func(user32, "GetNextDlgTabItem", {C_HWND, C_HWND, C_BOOL}, C_HWND),
+    GetDlgCtrlID = link_c_func(user32, "GetDlgCtrlID", {C_HWND}, C_INT),
     GetDialogBaseUnits = link_c_func(user32, "GetDialogBaseUnits", {}, C_LONG),
-    DefDlgProc = link_c_func(user32, "DefDlgProcA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
-    CreateDialogIndirectParam_ = link_c_func(user32, "CreateDialogIndirectParamW", {C_LONG, C_POINTER, C_LONG, C_POINTER, C_LONG}, C_LONG),
-    DialogBoxIndirectParam_ = link_c_func(user32, "DialogBoxIndirectParamW", {C_LONG, C_POINTER, C_LONG, C_POINTER, C_LONG}, C_LONG)
+    DefDlgProc = link_c_func(user32, "DefDlgProcA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM}, C_HANDLE),
+    CreateDialogIndirectParam_ = link_c_func(user32, "CreateDialogIndirectParamW", {C_HANDLE, C_POINTER, C_HWND, C_POINTER, C_LPARAM}, C_HWND),
+    DialogBoxIndirectParam_ = link_c_func(user32, "DialogBoxIndirectParamW", {C_HANDLE, C_POINTER, C_HWND, C_POINTER, C_LPARAM}, C_HANDLE)
 
 
 global constant
@@ -1286,9 +1287,9 @@ global constant
     DWL_USER = 8,
 
 -- Dialog Manager Routines
-    IsDialogMessage = link_c_func(user32, "IsDialogMessageA", {C_POINTER, C_POINTER}, C_LONG),
-    MapDialogRect = link_c_func(user32, "MapDialogRect", {C_LONG, C_POINTER}, C_LONG),
-    DlgDirList = link_c_func(user32, "DlgDirListA", {C_LONG, C_POINTER, C_LONG, C_LONG, C_LONG}, C_LONG),
+    IsDialogMessage = link_c_func(user32, "IsDialogMessageA", {C_HWND, C_POINTER}, C_BOOL),
+    MapDialogRect = link_c_func(user32, "MapDialogRect", {C_HWND, C_POINTER}, C_BOOL),
+    DlgDirList = link_c_func(user32, "DlgDirListA", {C_HWND, C_POINTER, C_INT, C_INT, C_UINT}, C_INT),
 
 -- DlgDirList, DlgDirListComboBox flags values
     DDL_READWRITE = #0,
@@ -1302,9 +1303,9 @@ global constant
     DDL_DRIVES = #4000,
     DDL_EXCLUSIVE = #8000,
 
-    DlgDirSelectEx = link_c_func(user32, "DlgDirSelectExA", {C_LONG, C_POINTER, C_LONG, C_LONG}, C_LONG),
-    DlgDirListComboBox = link_c_func(user32, "DlgDirListComboBoxA", {C_LONG, C_POINTER, C_LONG, C_LONG, C_LONG}, C_LONG),
-    DlgDirSelectComboBoxEx = link_c_func(user32, "DlgDirSelectComboBoxExA", {C_LONG, C_POINTER, C_LONG, C_LONG}, C_LONG),
+    DlgDirSelectEx = link_c_func(user32, "DlgDirSelectExA", {C_HWND, C_POINTER, C_INT, C_INT}, C_BOOL),
+    DlgDirListComboBox = link_c_func(user32, "DlgDirListComboBoxA", {C_HWND, C_POINTER, C_INT, C_INT, C_UINT}, C_INT),
+    DlgDirSelectComboBoxEx = link_c_func(user32, "DlgDirSelectComboBoxExA", {C_HWND, C_POINTER, C_INT, C_INT}, C_BOOL),
 
 -- Dialog Styles
     DS_ABSALIGN = #1,
@@ -1514,30 +1515,30 @@ global constant
     CLIENTCREATESTRUCT_idFirstChild = 4,
     SIZEOF_CLIENTCREATESTRUCT = 8,
 
-    DefFrameProc = link_c_func(user32, "DefFrameProcA", {C_LONG, C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
-    DefMDIChildProc = link_c_func(user32, "DefMDIChildProcA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
+    DefFrameProc = link_c_func(user32, "DefFrameProcA", {C_HWND, C_HWND, C_UINT, C_WPARAM, C_LPARAM}, C_HANDLE),
+    DefMDIChildProc = link_c_func(user32, "DefMDIChildProcA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM}, C_HANDLE),
 
-    TranslateMDISysAccel = link_c_func(user32, "TranslateMDISysAccel", {C_LONG, C_POINTER}, C_LONG),
+    TranslateMDISysAccel = link_c_func(user32, "TranslateMDISysAccel", {C_HWND, C_POINTER}, C_BOOL),
 
-    ArrangeIconicWindows = link_c_func(user32, "ArrangeIconicWindows", {C_LONG}, C_LONG),
+    ArrangeIconicWindows = link_c_func(user32, "ArrangeIconicWindows", {C_HWND}, C_UINT),
 
-    CreateMDIWindow = link_c_func(user32, "CreateMDIWindowA", {C_POINTER, C_POINTER, C_LONG, C_LONG, C_LONG, C_LONG, C_LONG, C_LONG,
-        C_LONG, C_LONG}, C_LONG)
+    CreateMDIWindow = link_c_func(user32, "CreateMDIWindowA", {C_POINTER, C_POINTER, C_DWORD,
+                            C_INT, C_INT, C_INT, C_INT, C_HWND, C_HANDLE, C_POINTER}, C_HWND)
 
 global constant
 -- Message Function Templates
-    GetMessage = link_c_func(user32, "GetMessageA", {C_POINTER, C_LONG, C_LONG, C_LONG}, C_LONG),
-    TranslateMessage = link_c_func(user32, "TranslateMessage", {C_POINTER}, C_LONG),
-    DispatchMessage = link_c_func(user32, "DispatchMessageA", {C_POINTER}, C_LONG),
-    PeekMessage = link_c_func(user32, "PeekMessageA", {C_POINTER, C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
+    GetMessage = link_c_func(user32, "GetMessageA", {C_POINTER, C_HWND, C_UINT, C_UINT}, C_BOOL),
+    TranslateMessage = link_c_func(user32, "TranslateMessage", {C_POINTER}, C_BOOL),
+    DispatchMessage = link_c_func(user32, "DispatchMessageA", {C_POINTER}, C_HANDLE),
+    PeekMessage = link_c_func(user32, "PeekMessageA", {C_POINTER, C_HWND, C_UINT, C_UINT, C_UINT}, C_BOOL),
 
 -- PeekMessage() Options
     PM_NOREMOVE = #0,
     PM_REMOVE = #1,
     PM_NOYIELD = #2,
 
-    RegisterHotKey = link_c_func(user32, "RegisterHotKey", {C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    UnregisterHotKey = link_c_func(user32, "UnregisterHotKey", {C_LONG, C_LONG}, C_LONG),
+    RegisterHotKey = link_c_func(user32, "RegisterHotKey", {C_HWND, C_INT, C_UINT, C_UINT}, C_BOOL),
+    UnregisterHotKey = link_c_func(user32, "UnregisterHotKey", {C_HWND, C_INT}, C_BOOL),
 
     MOD_ALT = #1,
     MOD_CONTROL = #2,
@@ -1556,18 +1557,18 @@ global constant
     READ_WRITE = 2,
 
 --    ExitWindows = link_c_func(user32, "ExitWindows", {C_LONG, C_LONG}, C_LONG),
-    ExitWindowsEx = link_c_func(user32, "ExitWindowsEx", {C_LONG, C_LONG}, C_LONG),
+    ExitWindowsEx = link_c_func(user32, "ExitWindowsEx", {C_UINT, C_DWORD}, C_BOOL),
 
-    SwapMouseButton = link_c_func(user32, "SwapMouseButton", {C_INT}, C_INT),
-    GetMessagePos = link_c_func(user32, "GetMessagePos", {}, C_UINT),
+    SwapMouseButton = link_c_func(user32, "SwapMouseButton", {C_BOOL}, C_BOOL),
+    GetMessagePos = link_c_func(user32, "GetMessagePos", {}, C_DWORD),
     GetMessageTime = link_c_func(user32, "GetMessageTime", {}, C_LONG),
-    GetMessageExtraInfo = link_c_func(user32, "GetMessageExtraInfo", {}, C_POINTER),
-    SendMessage = link_c_func(user32, "SendMessageA", {C_POINTER, C_UINT, C_POINTER, C_POINTER}, C_LONG),
-    SendMessageTimeout = link_c_func(user32, "SendMessageTimeoutA", {C_LONG, C_LONG, C_INT, C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    SendNotifyMessage = link_c_func(user32, "SendNotifyMessageA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
-    SendMessageCallback = link_c_func(user32, "SendMessageCallbackA", {C_LONG, C_LONG, C_INT, C_LONG, C_LONG, C_LONG}, C_LONG),
-    PostMessage = link_c_func(user32, "PostMessageA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
-    PostThreadMessage = link_c_func(user32, "PostThreadMessageA", {C_LONG, C_LONG, C_INT, C_LONG}, C_LONG),
+    GetMessageExtraInfo = link_c_func(user32, "GetMessageExtraInfo", {}, C_LPARAM),
+    SendMessage = link_c_func(user32, "SendMessageA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM}, C_HANDLE),
+    SendMessageTimeout = link_c_func(user32, "SendMessageTimeoutA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM, C_UINT, C_UINT, C_POINTER}, C_HANDLE),
+    SendNotifyMessage = link_c_func(user32, "SendNotifyMessageA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM}, C_BOOL),
+    SendMessageCallback = link_c_func(user32, "SendMessageCallbackA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM, C_POINTER, C_POINTER}, C_BOOL),
+    PostMessage = link_c_func(user32, "PostMessageA", {C_HWND, C_UINT, C_WPARAM, C_LPARAM}, C_BOOL),
+    PostThreadMessage = link_c_func(user32, "PostThreadMessageA", {C_DWORD, C_UINT, C_WPARAM, C_LPARAM}, C_BOOL),
 
 -- Special HWND value for use with PostMessage and SendMessage
     HWND_BROADCAST = #FFFF
@@ -1684,33 +1685,33 @@ global constant
 
 -- menu-specific commands
 global constant
-    LoadMenu = link_c_func(user32, "LoadMenuA", {C_LONG, C_POINTER}, C_LONG),
-    LoadMenuIndirect = link_c_func(user32, "LoadMenuIndirectA", {C_LONG}, C_LONG),
-    GetMenu = link_c_func(user32, "GetMenu", {C_LONG}, C_LONG),
-    SetMenu = link_c_func(user32, "SetMenu", {C_LONG, C_LONG}, C_LONG),
-    HiliteMenuItem = link_c_func(user32, "HiliteMenuItem", {C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    GetMenuString = link_c_func(user32, "GetMenuStringA", {C_LONG, C_LONG, C_POINTER, C_LONG, C_LONG}, C_LONG),
-    GetMenuState = link_c_func(user32, "GetMenuState", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    DrawMenuBar = link_c_func(user32, "DrawMenuBar", {C_LONG}, C_LONG),
-    GetSystemMenu = link_c_func(user32, "GetSystemMenu", {C_LONG, C_LONG}, C_LONG),
-    CreateMenu = link_c_func(user32, "CreateMenu", {}, C_LONG),
-    CreatePopupMenu = link_c_func(user32, "CreatePopupMenu", {}, C_LONG),
-    DestroyMenu = link_c_func(user32, "DestroyMenu", {C_LONG}, C_LONG),
-    CheckMenuItem = link_c_func(user32, "CheckMenuItem", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    CheckMenuRadioItem = link_c_func(user32, "CheckMenuRadioItem", {C_LONG, C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
-    EnableMenuItem = link_c_func(user32, "EnableMenuItem", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    GetSubMenu = link_c_func(user32, "GetSubMenu", {C_LONG, C_LONG}, C_LONG),
-    GetMenuItemID = link_c_func(user32, "GetMenuItemID", {C_LONG, C_LONG}, C_LONG),
-    GetMenuItemCount = link_c_func(user32, "GetMenuItemCount", {C_LONG}, C_LONG),
+    LoadMenu = link_c_func(user32, "LoadMenuA", {C_HANDLE, C_POINTER}, C_HANDLE),
+    LoadMenuIndirect = link_c_func(user32, "LoadMenuIndirectA", {C_POINTER}, C_HANDLE),
+    GetMenu = link_c_func(user32, "GetMenu", {C_HWND}, C_HANDLE),
+    SetMenu = link_c_func(user32, "SetMenu", {C_HWND, C_HANDLE}, C_BOOL),
+    HiliteMenuItem = link_c_func(user32, "HiliteMenuItem", {C_HWND, C_HANDLE, C_UINT, C_UINT}, C_BOOL),
+    GetMenuString = link_c_func(user32, "GetMenuStringA", {C_HANDLE, C_UINT, C_POINTER, C_INT, C_UINT}, C_INT),
+    GetMenuState = link_c_func(user32, "GetMenuState", {C_HANDLE, C_UINT, C_UINT}, C_UINT),
+    DrawMenuBar = link_c_func(user32, "DrawMenuBar", {C_HWND}, C_BOOL),
+    GetSystemMenu = link_c_func(user32, "GetSystemMenu", {C_HWND, C_BOOL}, C_HANDLE),
+    CreateMenu = link_c_func(user32, "CreateMenu", {}, C_HANDLE),
+    CreatePopupMenu = link_c_func(user32, "CreatePopupMenu", {}, C_HANDLE),
+    DestroyMenu = link_c_func(user32, "DestroyMenu", {C_HANDLE}, C_BOOL),
+    CheckMenuItem = link_c_func(user32, "CheckMenuItem", {C_HANDLE, C_UINT, C_UINT}, C_DWORD),
+    CheckMenuRadioItem = link_c_func(user32, "CheckMenuRadioItem", {C_HANDLE, C_UINT, C_UINT, C_UINT, C_UINT}, C_BOOL),
+    EnableMenuItem = link_c_func(user32, "EnableMenuItem", {C_HANDLE, C_UINT, C_UINT}, C_BOOL),
+    GetSubMenu = link_c_func(user32, "GetSubMenu", {C_HANDLE, C_INT}, C_HANDLE),
+    GetMenuItemID = link_c_func(user32, "GetMenuItemID", {C_HANDLE, C_INT}, C_UINT),
+    GetMenuItemCount = link_c_func(user32, "GetMenuItemCount", {C_HANDLE}, C_INT),
 
-    InsertMenu = link_c_func(user32, "InsertMenuA", {C_LONG, C_LONG, C_LONG, C_LONG, C_POINTER}, C_LONG),
-    AppendMenu = link_c_func(user32, "AppendMenuA", {C_LONG, C_LONG, C_LONG, C_POINTER}, C_LONG),
-    ModifyMenu = link_c_func(user32, "ModifyMenuA", {C_LONG, C_LONG, C_LONG, C_LONG, C_POINTER}, C_LONG),
-    RemoveMenu = link_c_func(user32, "RemoveMenu", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    DeleteMenu = link_c_func(user32, "DeleteMenu", {C_LONG, C_LONG, C_LONG}, C_LONG),
-    SetMenuItemBitmaps = link_c_func(user32, "SetMenuItemBitmaps", {C_LONG, C_LONG, C_LONG, C_LONG, C_LONG}, C_LONG),
+    InsertMenu = link_c_func(user32, "InsertMenuA", {C_HANDLE, C_UINT, C_UINT, C_POINTER, C_POINTER}, C_BOOL),
+    AppendMenu = link_c_func(user32, "AppendMenuA", {C_HANDLE, C_UINT, C_POINTER, C_POINTER}, C_BOOL),
+    ModifyMenu = link_c_func(user32, "ModifyMenuA", {C_HANDLE, C_UINT, C_UINT, C_POINTER, C_POINTER}, C_BOOL),
+    RemoveMenu = link_c_func(user32, "RemoveMenu", {C_HANDLE, C_UINT, C_UINT}, C_BOOL),
+    DeleteMenu = link_c_func(user32, "DeleteMenu", {C_HANDLE, C_UINT, C_UINT}, C_BOOL),
+    SetMenuItemBitmaps = link_c_func(user32, "SetMenuItemBitmaps", {C_HANDLE, C_UINT, C_UINT, C_HANDLE, C_HANDLE}, C_BOOL),
     GetMenuCheckMarkDimensions = link_c_func(user32, "GetMenuCheckMarkDimensions", {}, C_LONG),
-    TrackPopupMenu = link_c_func(user32, "TrackPopupMenu", {C_LONG, C_LONG, C_LONG, C_LONG, C_LONG, C_LONG, C_POINTER}, C_LONG),
+    TrackPopupMenu = link_c_func(user32, "TrackPopupMenu", {C_HANDLE, C_UINT, C_INT, C_INT, C_INT, C_HWND, C_POINTER}, C_BOOL),
 
 -- Menu flags for Add/Check/EnableMenuItem()
     MF_INSERT = #0,
@@ -1757,8 +1758,8 @@ global constant
 
 -- message box stuff
 global constant
-    MessageBox = link_c_func(user32, "MessageBoxA", {C_LONG, C_POINTER, C_POINTER, C_LONG}, C_LONG),
-    MessageBoxEx = link_c_func(user32, "MessageBoxExA", {C_LONG, C_POINTER, C_POINTER, C_LONG, C_LONG}, C_LONG),
+    MessageBox = link_c_func(user32, "MessageBoxA", {C_HWND, C_POINTER, C_POINTER, C_UINT}, C_INT),
+    MessageBoxEx = link_c_func(user32, "MessageBoxExA", {C_HWND, C_POINTER, C_POINTER, C_UINT, C_WORD}, C_INT),
 
 -- MessageBox() Flags
     MB_OK = #0,
@@ -1959,9 +1960,9 @@ end function
 -- open/save filename common dialogs
 global constant
     comdlg32 = get_dll("comdlg32.dll"),
-    GetOpenFileName_ = link_c_func(comdlg32, "GetOpenFileNameA", {C_POINTER}, C_LONG),
-    GetSaveFileName_ = link_c_func(comdlg32, "GetSaveFileNameA", {C_POINTER}, C_LONG),
-    GetFileTitle_ = link_c_func(comdlg32, "GetFileTitleA", {C_POINTER, C_POINTER, C_INT}, C_INT),
+    GetOpenFileName_ = link_c_func(comdlg32, "GetOpenFileNameA", {C_POINTER}, C_BOOL),
+    GetSaveFileName_ = link_c_func(comdlg32, "GetSaveFileNameA", {C_POINTER}, C_BOOL),
+    GetFileTitle_ = link_c_func(comdlg32, "GetFileTitleA", {C_POINTER, C_POINTER, C_WORD}, C_SHORT),
 
     OFN_READONLY = #1,
     OFN_OVERWRITEPROMPT = #2,
@@ -2109,8 +2110,8 @@ global constant
     FR_HIDEMATCHCASE = #8000,
     FR_HIDEWHOLEWORD = #10000,
 
-    FindText_ = link_c_func(comdlg32, "FindTextA", {C_POINTER}, C_LONG),
-    ReplaceText_ = link_c_func(comdlg32, "ReplaceTextA", {C_POINTER}, C_LONG)
+    FindText_ = link_c_func(comdlg32, "FindTextA", {C_POINTER}, C_HWND),
+    ReplaceText_ = link_c_func(comdlg32, "ReplaceTextA", {C_POINTER}, C_HWND)
 
 constant 
     struct_FINDREPLACE = "zppdsswwppp",
@@ -2206,7 +2207,7 @@ end function
 
 -- choose font common dialog
 global constant
-    ChooseFont_ = link_c_func(comdlg32, "ChooseFontA", {C_POINTER}, C_INT),
+    ChooseFont_ = link_c_func(comdlg32, "ChooseFontA", {C_POINTER}, C_BOOL),
     CF_SCREENFONTS = 1,
     CF_PRINTERFONTS = 2,
     CF_BOTH = 3,
@@ -2293,7 +2294,7 @@ end function
 
 -- choose color common dialog
 global constant
-    ChooseColor_ = link_c_func(comdlg32, "ChooseColorA", {C_POINTER}, C_INT),
+    ChooseColor_ = link_c_func(comdlg32, "ChooseColorA", {C_POINTER}, C_BOOL),
     CC_ANYCOLOR = #100,
     CC_ENABLEHOOK = #10,
     CC_ENABLETEMPLATE = #20,
@@ -2338,5 +2339,5 @@ end function
 global constant 
     SPI_GETNONCLIENTMETRICS = #29,
     SystemParametersInfo = link_c_func(user32, "SystemParametersInfoA", 
-        {C_INT, C_INT, C_POINTER, C_INT}, C_INT)
+        {C_UINT, C_UINT, C_POINTER, C_UINT}, C_BOOL)
 
