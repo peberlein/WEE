@@ -1,6 +1,6 @@
 -- Wee Euphoria Editor
 -- 
--- Copyright (c) 1998-2017  Pete Eberlein
+-- Copyright (c) 1998-2018  Pete Eberlein
 -- 
 -- Permission is hereby granted, free of charge, to any person obtaining a copy
 -- of this software and associated documentation files (the "Software"), to deal
@@ -23,8 +23,15 @@
 global constant
   window_title = "Wee Euphoria Editor",
   author = "Pete Eberlein <pete.eberlein@gmail.com>",
-  version = "0.51",
+  version = "0.52",
   changelog = `
+
+Version 0.52
+ - Change updater to raw.githubusercontent.com from cdn.rawgit.com
+ - Bug fix: Incorrect window position on multi-monitor (thanks Phil D.)
+ - Bug fix: Negative pointer crash due to incorrect link_c_* arguments (thanks Phil D.)
+ - View Subroutines list now accepts double-click as OK
+ - Bug fix: View Error/Open Ex.err was overwriting current tab
 
 Version 0.51
  - Fix terminal warning about overflow (thanks Irv)
@@ -1355,9 +1362,11 @@ global function open_file(sequence file_name, integer reload)
 
     -- check if already existing tab
     tab = find(file_name, tab_file_names)
-    if tab and reload = 0 then
+    if tab then
       select_tab(tab)
-      return tab
+      if reload = 0 then
+        return tab
+      end if
     end if
 
     text = ""
@@ -1566,6 +1575,15 @@ global procedure add_recent_file(sequence filename)
         recent_files = {filename} & recent_files[1..idx]
         recent_pos = {0} & recent_pos[1..idx]
     end if
+    
+    for i = 1 to length(recent_files) do
+        if length(recent_files[i]) = 0 then
+            printf(1, "recent_files[%d] = {}\n", {i})
+        elsif length(recent_files[i][1]) = 0 then
+            printf(1, "recent_files[%d][1] = {}\n", {i})
+        end if
+    end for
+    
     ui_refresh_file_menu(recent_files)
 end procedure
 
@@ -1821,9 +1839,10 @@ for
 -- Wee also knows about subroutines you've defined.
 -- Press F2 to see a list.  If you've filled in names for the 
 -- subroutine declarations above, they should appear.
--- Pressing OK or Enter will move the cursor to the subroutine
--- definition.  If your cursor is on the name of an existing
--- subroutine, it will be the highlighted entry.
+-- Double-clicking and item in the list, clicking OK, or Enter 
+-- will move the cursor to the subroutine definition.  If your 
+-- cursor is on the name of an existing subroutine, it will be 
+-- the highlighted entry.  
 -- Try it!  Type the name of a subroutine and hit F2.
 
 
@@ -2668,7 +2687,7 @@ end function
 global function quote_spaces(sequence text)
     if find(' ', text) then
 	for i = length(text) to 1 by -1 do
-	    if text[i] = '"' or text[i] = '\\' then
+	    if text[i] = '"' then
 	        text = text[1..i-1] & '\\' & text[i..$]
 	    end if
 	end for
