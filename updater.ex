@@ -77,8 +77,14 @@ elsedef
 -- Implement http_get via libcurl for UNIX
 --
 
-constant
+integer
     libcurl = open_dll("libcurl.so")
+if libcurl = 0 then
+    libcurl = open_dll("libcurl.so.3")
+end if
+if libcurl = 0 then
+    libcurl = open_dll("libcurl.so.4")
+end if
 if libcurl = 0 then
     puts(1, "Failed to open libcurl.so\n")
     abort(1)
